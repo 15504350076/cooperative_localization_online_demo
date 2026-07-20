@@ -1,0 +1,31 @@
+# CMake/编译产物
+build*/
+cmake-build-*/
+dist/
+install*/
+CMakeUserPresets.json
+*.obj
+*.o
+*.lib
+*.a
+*.dll
+*.so
+*.exe
+*.pdb
+*.exp
+*.ilk
+*.rej
+
+# 运行数据和缓存
+logs/
+*.zjlg
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# IDE/系统临时文件
+.vs/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
