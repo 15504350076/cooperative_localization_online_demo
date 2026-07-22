@@ -1,4 +1,6 @@
-// 稠密矩阵基本运算实现，所有维度和有限值错误均显式失败。
+// 模块实现：小规模稠密矩阵乘法、转置、对称化和带阈值数值秩计算。
+// 关键原则：所有维度、容量和有限值错误均显式失败，禁止异常矩阵静默进入滤波；
+// 这里采用清晰可审查的实现，便于Windows与ARM64保持一致的错误处理行为。
 #include "core/dense_matrix.hpp"
 
 #include <algorithm>
@@ -11,6 +13,7 @@ namespace zju::coop {
 namespace {
 
 std::size_t checked_element_count(std::size_t rows, std::size_t cols) {
+  // 先用除法判断乘法溢出，不能在rows*cols已经溢出后再比较。
   if (rows != 0U && cols > std::numeric_limits<std::size_t>::max() / rows) {
     throw std::length_error("DenseMatrix element count overflows size_t");
   }
@@ -124,6 +127,7 @@ std::size_t numeric_rank(const DenseMatrix& matrix, double tolerance) {
     }
   }
 
+  // 在副本上执行带列主元的消元，调用方提供的刚度矩阵保持不变。
   DenseMatrix work = matrix;
   std::size_t pivot_row = 0U;
   for (std::size_t col = 0U;
@@ -138,6 +142,7 @@ std::size_t numeric_rank(const DenseMatrix& matrix, double tolerance) {
       }
     }
 
+    // 当前列没有高于容差的主元时，该列不增加数值秩。
     if (best_magnitude <= tolerance) {
       continue;
     }

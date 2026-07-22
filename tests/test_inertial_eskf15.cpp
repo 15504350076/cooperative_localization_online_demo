@@ -1,3 +1,5 @@
+// 模块职责：验证单节点15维惯导的首帧基准、中值传播、消息协方差和异常输入回滚。
+// 关键判据同时覆盖ENU/FLU重力方向、ROS四元数换序和固定δp/δv/δθ/δbg/δba状态顺序。
 #include "core/inertial_eskf15.hpp"
 #include "test_support.hpp"
 

@@ -1,4 +1,6 @@
-// 临时 ZJCL/UDP 演示协议定义；正式 AIBrainBox 部署优先使用 ROS 2 调用 C ABI。
+// 模块职责：定义无硬件阶段使用的临时ZJCL二进制帧和各类固定载荷。
+// 生产边界：正式AIBrainBox部署优先由上交ROS 2节点调用C ABI，本协议只用于本地UDP演示、
+// GCS联调和事件日志；所有多字节字段按小端编码，浮点按IEEE-754位模式传输。
 #pragma once
 
 #include "zju_coop/types.hpp"
@@ -57,6 +59,7 @@ enum class ProtocolError {
   kInvalidReserved,
 };
 
+/** 40字节公共帧头；CRC覆盖CRC字段清零后的帧头和完整载荷。 */
 struct FrameHeader {
   MessageType message_type{MessageType::kRange};
   std::uint16_t flags{};
@@ -73,6 +76,7 @@ struct Frame {
   std::vector<std::uint8_t> payload;
 };
 
+/** 解码不抛异常，错误枚举与detail供在线程序计数和诊断。 */
 struct FrameDecodeResult {
   ProtocolError error{ProtocolError::kNone};
   Frame value{};
@@ -94,6 +98,7 @@ struct PayloadDecodeResult {
   }
 };
 
+/** 直接平台间测距及NLOS质量字段，节点和时间位于公共帧头。 */
 struct RangePayload {
   double range_m{};
   double range_std_m{};

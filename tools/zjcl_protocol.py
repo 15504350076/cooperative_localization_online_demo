@@ -1,4 +1,8 @@
-"""临时 ZJCL/UDP 协议的严格标准库编解码器，不作为最终 ROS 2 接口。"""
+"""临时ZJCL/UDP协议的严格Python标准库编解码器。
+
+本模块与C++ wire_protocol保持相同的小端固定布局、CRC范围、枚举和数值约束，供模拟器、
+冒烟测试和演示GCS复用；它不是最终ROS 2接口，也不承担网络路由或安全认证。
+"""
 
 from dataclasses import dataclass
 import math
@@ -87,6 +91,7 @@ _FIXED_PAYLOAD_SIZES = {
     MSG_ALGORITHM_STATUS: 48,
 }
 _HEADER_PREFIX = struct.Struct("<4sBBHHHIQQHH")
+# “<”明确固定小端，不依赖运行Python的Windows/x86或RK3588/ARM64主机字节序。
 _RANGE = struct.Struct("<ddfBBBB")
 _IMU = struct.Struct("<4d9d3d9d3d9d32s4B")
 _LOCALIZATION = struct.Struct("<dddddddBBBBI")
@@ -266,6 +271,7 @@ def _scaled_product(left, right):
 
 
 def _positive_semidefinite_2x2(cov_xx, cov_xy, cov_yy):
+    """无直接乘方溢出地检查二维协方差行列式非负。"""
     if cov_xx < 0.0 or cov_yy < 0.0:
         return False
     if cov_xx == 0.0 or cov_yy == 0.0:
@@ -294,6 +300,8 @@ def _payload_limit(max_payload_size):
 
 
 def encode_frame(frame, max_payload_size=MAX_PAYLOAD_SIZE, udp=False):
+    """校验业务字段并编码公共帧；CRC覆盖36字节前缀和完整载荷。"""
+    # 阶段1：完成类型、范围、固定载荷长度和UDP上限检查后再打包。
     if not isinstance(frame, Frame):
         raise ProtocolError("frame must be a Frame")
     message_type = _uint("message_type", frame.message_type, 16)
@@ -326,11 +334,14 @@ def encode_frame(frame, max_payload_size=MAX_PAYLOAD_SIZE, udp=False):
         source_node,
         target_node,
     )
+    # CRC字段位于偏移36，计算时尚未拼入，因此与C++跳过CRC字段的规则一致。
     crc = zlib.crc32(prefix + payload) & 0xFFFFFFFF
     return prefix + struct.pack("<I", crc) + payload
 
 
 def decode_frame(data, max_payload_size=MAX_PAYLOAD_SIZE, udp=False):
+    """按长度、头部、固定载荷长度和CRC顺序严格解码一个完整帧。"""
+    # 阶段2：任何校验失败都抛ProtocolError，调用方不得使用部分解析结果。
     encoded = _bytes(data, "frame")
     if udp and len(encoded) > MAX_UDP_DATAGRAM:
         raise ProtocolError("UDP frame exceeds the datagram limit")
@@ -408,6 +419,7 @@ def _float_tuple(name, values, size):
 
 
 def encode_imu_payload(value):
+    """编码ROS 2 Imu瞬时量映射，不包含温度或调用方预积分结果。"""
     if not isinstance(value, ImuPayload):
         raise ProtocolError("IMU value has wrong type")
     orientation = _float_tuple("orientation_xyzw", value.orientation_xyzw, 4)
@@ -430,6 +442,7 @@ def encode_imu_payload(value):
         raise ProtocolError("frame_id must be UTF-8") from error
     if len(frame) >= 32 or b"\0" in frame:
         raise ProtocolError("frame_id must fit in 31 UTF-8 bytes")
+    # frame_id最多31个UTF-8字节，最后至少保留一个NUL以匹配C ABI固定数组。
     frame += b"\0" * (32 - len(frame))
     status = _enum("IMU status", value.status, RANGE_STATUS_INVALID)
     return _IMU.pack(
@@ -441,6 +454,7 @@ def encode_imu_payload(value):
 
 
 def decode_imu_payload(data):
+    """解码固定332字节IMU载荷，并复用编码器执行语义级复验。"""
     encoded = _bytes(data)
     if len(encoded) != _IMU.size:
         raise ProtocolError("IMU payload must be 332 bytes")
@@ -467,6 +481,7 @@ def decode_imu_payload(data):
 
 
 def encode_localization_payload(value):
+    """编码主参考二维相对状态及2×2协方差、有效位和能力位。"""
     if not isinstance(value, LocalizationPayload):
         raise ProtocolError("localization value has wrong type")
     cov_xx = _finite("cov_xx", value.cov_xx)
@@ -506,6 +521,7 @@ def decode_localization_payload(data):
 
 
 def encode_network_payload(value):
+    """编码动态拓扑，并交叉验证节点数、活动边、连通与可观状态。"""
     if not isinstance(value, NetworkPayload):
         raise ProtocolError("network value has wrong type")
     node_count = _uint("node_count", value.node_count, 32)
@@ -559,6 +575,7 @@ def decode_network_payload(data):
 
 
 def encode_observation_payload(value):
+    """编码单条协同边的滑窗统计、退化状态、融合动作和原因位图。"""
     if not isinstance(value, ObservationPayload):
         raise ProtocolError("observation value has wrong type")
     nlos_ratio = _unit("nlos_ratio", value.nlos_ratio)
@@ -624,6 +641,7 @@ def decode_observation_payload(data):
 
 
 def encode_alert_payload(value):
+    """编码网络状态告警；ACTIVE必须有原因，CLEARED必须清空原因。"""
     if not isinstance(value, AlertPayload):
         raise ProtocolError("alert value has wrong type")
     alert_code = _uint("alert_code", value.alert_code, 32)

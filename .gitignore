@@ -25,7 +25,10 @@ __pycache__/
 
 # IDE/系统临时文件
 .vs/
-.vscode/
+# 仅纳入可跨机器复用的工程配置；其余 VS Code 本地状态继续忽略。
+.vscode/*
+!.vscode/settings.json
+!.vscode/c_cpp_properties.json
 .idea/
 .DS_Store
 Thumbs.db

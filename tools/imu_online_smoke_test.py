@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""IMU+UWB在线进程、GCS输出和日志回放端到端烟雾测试。"""
+"""默认IMU+测距在线进程、GCS输出和日志回放的端到端冒烟测试。
+
+测试在临时目录和回环端口启动真实可执行程序，发送确定性模拟数据，再检查SUMMARY、
+输出帧与回放结果。它验证软件闭环可运行，不用于证明真实定位精度或实时性能。
+"""
 
 import argparse
 import configparser
@@ -43,6 +47,7 @@ def _counter(output, name):
 
 
 def run(args):
+    """完成临时配置、在线进程、模拟输入、日志生成和回放五阶段验证。"""
     online = Path(args.online_exe).resolve()
     replay = Path(args.replay_exe).resolve()
     source_config = Path(args.config).resolve()
@@ -50,6 +55,7 @@ def run(args):
         if not path.is_file():
             raise AssertionError(f"missing file: {path}")
 
+    # 阶段1：使用独立回环端口与临时日志，避免干扰用户正在运行的在线实例。
     with tempfile.TemporaryDirectory(prefix="zju_imu_smoke_") as directory:
         root = Path(directory)
         config_path = root / "imu_smoke.ini"
@@ -68,6 +74,7 @@ def run(args):
         with config_path.open("w", encoding="utf-8", newline="\n") as stream:
             parser.write(stream)
 
+        # 阶段2：启动真实在线程序，并向其输入标准IMU和三边测距。
         process = _process((online, "--config", config_path,
                             "--duration-ms", "1800"))
         simulator = imu_uwb_simulator.ImuUwbSimulator()
@@ -104,6 +111,7 @@ def run(args):
                     pass
             output, _ = process.communicate(timeout=4.0)
 
+        # 阶段3：同时检查进程退出、输入计数、算法模式和三个节点定位输出。
         if process.returncode != 0 or "SUMMARY status=OK" not in output:
             raise AssertionError(f"online failed:\n{output}")
         if _counter(output, "imu") == 0 or _counter(output, "propagated_imu") == 0:
@@ -117,6 +125,7 @@ def run(args):
         if not log_path.is_file() or log_path.stat().st_size <= 8:
             raise AssertionError("IMU+UWB event log is empty")
 
+        # 阶段4：回放刚生成的日志，确认IMU和测距输入都可重复消费。
         replay_process = _process((replay, "--config", config_path,
                                    "--log", log_path, "--speed", "0",
                                    "--output-mode", "final"))

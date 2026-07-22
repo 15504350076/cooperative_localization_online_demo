@@ -1,4 +1,6 @@
-// 在线与回放程序共用的 C ABI 会话、输出发布和告警生命周期适配。
+// 模块职责：封装在线/回放程序共用的C ABI会话，并把算法快照转换为临时演示遥测。
+// AlgorithmSession管理句柄生命周期，TelemetryEncoder维护告警激活/恢复状态；
+// 本层不实现滤波算法，也不把临时ZJCL协议带入核心库。
 #pragma once
 
 #include "config/ini_config.hpp"
@@ -11,12 +13,14 @@
 
 namespace zju::coop::apps {
 
+/** 一次C ABI step返回的定位、观测和网络原子快照。 */
 struct StepSnapshot {
   std::vector<zju_coop_localization_t> localizations;
   std::vector<zju_coop_observation_t> observations;
   zju_coop_network_t network{};
 };
 
+/** RAII算法会话：配置、输入、step和销毁严格按C ABI生命周期执行。 */
 class AlgorithmSession {
  public:
   explicit AlgorithmSession(const config::DemoConfig& config);
@@ -49,6 +53,7 @@ struct TelemetryCounters {
   std::uint64_t protocol_errors{};
 };
 
+/** 把网络状态和运行计数编码为状态/告警帧，并维护告警生命周期。 */
 class TelemetryEncoder {
  public:
   [[nodiscard]] std::vector<EncodedOutput> encode(

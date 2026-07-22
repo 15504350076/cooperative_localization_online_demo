@@ -40,6 +40,14 @@ ctest --test-dir build-arm64 --output-on-failure
 cmake --install build-arm64 --prefix install-arm64
 ```
 
+在启动 ROS 2 wrapper 或连接真实传感器之前，先运行不占用端口和硬件的独立自检：
+
+```bash
+./build-arm64/zju_coop_self_check
+```
+
+只有看到 `SELF_CHECK PASS` 且退出码为 0，才进入 wrapper 字段映射和在线联调；失败时应保存完整输出、编译器版本和盒端架构信息。该结果验证软件最小闭环，不代表实车精度和时间同步已经验收。
+
 安装后从任意工作目录启动时必须显式传入配置；默认 `config/demo.ini` 只适用于工程根目录运行：
 
 ```bash
@@ -55,6 +63,7 @@ cmake --install build-arm64 --prefix install-arm64
 install-arm64/
 ├── bin/zju_coop_online
 ├── bin/zju_coop_replay
+├── bin/zju_coop_self_check
 ├── include/zju_coop/c_api.h
 ├── include/zju_coop/export.h
 ├── lib/libzju_coop.so

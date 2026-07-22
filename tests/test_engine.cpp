@@ -1,3 +1,4 @@
+// 模块职责：验证Engine从输入检查、重复/时间拒绝、质量动作、滤波到动态图快照的编排闭环。
 #include "core/engine.hpp"
 #include "test_support.hpp"
 

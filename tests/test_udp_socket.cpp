@@ -1,3 +1,4 @@
+// 模块职责：用本机回环验证跨平台UDP绑定、超时、数据报边界、发送和移动所有权。
 #include "net/udp_socket.hpp"
 #include "test_support.hpp"
 

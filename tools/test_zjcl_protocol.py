@@ -1,3 +1,8 @@
+"""Python ZJCL编解码器的固定长度、黄金字节、CRC和异常字段回归测试。
+
+黄金向量与C++测试共享协议口径，用于发现两种实现间的字节级不一致。
+"""
+
 import math
 import struct
 import unittest
@@ -6,6 +11,7 @@ import zjcl_protocol as zjcl
 
 
 class ZjclProtocolTests(unittest.TestCase):
+    """覆盖公共帧、全部固定载荷以及数值/枚举/保留字段边界。"""
     def test_imu_payload_is_332_bytes_and_round_trips(self):
         value = zjcl.ImuPayload(
             (0.0, 0.0, 0.0, 1.0), (0.0,) * 9,

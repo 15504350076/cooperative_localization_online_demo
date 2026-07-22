@@ -1,3 +1,4 @@
+// 模块职责：验证15N联合协方差传播、平台间测距更新、交叉相关和主参考相对输出。
 #include "core/cooperative_inertial_ekf.hpp"
 #include "test_support.hpp"
 

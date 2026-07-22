@@ -1,3 +1,4 @@
+// 模块职责：验证UTF-8严格INI的成功加载、未知键、重复项、行号和跨字段资源约束。
 #include "config/ini_config.hpp"
 #include "test_support.hpp"
 

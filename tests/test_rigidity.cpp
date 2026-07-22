@@ -1,3 +1,4 @@
+// 模块职责：验证动态图去重、主参考可达性、二维刚度秩和共线/断边退化判定。
 #include "test_support.hpp"
 
 #include "core/dense_matrix.hpp"

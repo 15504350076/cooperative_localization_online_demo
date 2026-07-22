@@ -1,4 +1,6 @@
-// 缺少 IMU 时使用的二维仅测距兼容滤波器；不是当前交付默认路径。
+// 模块职责：提供缺少IMU时的二维恒速+平台间测距兼容滤波路径。
+// 当前交付默认使用IMU+测距的15维联合滤波；本模块保留用于故障回退、历史数据
+// 回归和无IMU环境演示，Engine保证两种预测模型不会同时推进同一状态。
 #pragma once
 
 #include "core/dense_matrix.hpp"
@@ -11,6 +13,7 @@
 
 namespace zju::coop {
 
+/** 仅测距兼容滤波器的平面位置、速度及初始标准差。 */
 struct NodeInitialization {
   std::uint32_t node_id{};
   double x{};
@@ -21,6 +24,7 @@ struct NodeInitialization {
   double velocity_std_mps{};
 };
 
+/** 恒速过程模型、NIS门限和数值稳定参数。 */
 struct FilterConfig {
   std::uint32_t reference_node_id{};
   double process_accel_std_mps2{};
@@ -55,6 +59,7 @@ enum class UpdateDisposition {
   NumericalFailure,
 };
 
+/** 单次测距更新诊断；即使拒绝量测也保留创新、方差和NIS便于告警分析。 */
 struct UpdateResult {
   UpdateDisposition disposition{UpdateDisposition::InvalidPacket};
   double innovation_m{};

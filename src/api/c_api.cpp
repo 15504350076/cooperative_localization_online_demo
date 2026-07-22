@@ -1,4 +1,6 @@
-// 将稳定 C ABI 转换到 C++ Engine，并集中完成版本、步长、布尔值和数值合法性校验。
+// 模块实现：把稳定C ABI结构转换为C++ Engine输入，并将原子快照转换回调用方缓冲区。
+// 关键原则：所有版本、结构大小、数组步长、对齐、保留字段和有限值在边界集中校验；
+// C++异常不得穿越C ABI，输出缓冲区在完整转换成功前不得出现部分写入。
 #include "zju_coop/c_api.h"
 
 #include "core/engine.hpp"
@@ -15,6 +17,7 @@
 #include <utility>
 #include <vector>
 
+// 每个句柄拥有一个独立算法会话；C ABI本身不加锁，由ROS 2适配层保证串行调用。
 struct zju_coop_handle {
   zju_coop_handle(zju::coop::EngineConfig config,
                   std::uint32_t configured_node_count,
@@ -40,6 +43,7 @@ constexpr std::uint32_t kMaximumTrackedEdges = 1'000'000U;
 
 template <typename Structure>
 zju_coop_error_code_t validate_header(const Structure* value) {
+  // struct_size允许未来版本尾部扩展，abi_version防止旧调用方误解现有字段。
   if (value == nullptr) {
     return ZJU_COOP_INVALID_ARGUMENT;
   }
@@ -72,6 +76,7 @@ bool nul_terminated_nonempty(const char* value, std::size_t capacity) {
 template <typename Structure>
 bool valid_array_span(const void* base, std::uint32_t count,
                       std::uint32_t stride) {
+  // 在做指针运算前验证步长、对齐和地址溢出，避免跨语言数组导致越界访问。
   if (count == 0U) {
     return true;
   }
@@ -134,6 +139,7 @@ bool finite_config(const zju_coop_config_t& config) {
 
 zju_coop_error_code_t convert_config(const zju_coop_config_t& input,
                                      zju::coop::EngineConfig& output) {
+  // 阶段1：先检查资源上限与数组跨度，再逐节点深拷贝，库不保存调用方内存指针。
   if (!finite_config(input) || input.node_count == 0U ||
       input.nodes == nullptr || input.node_count > kMaximumNodes ||
       input.max_nodes == 0U || input.max_nodes > kMaximumNodes ||
@@ -208,6 +214,7 @@ zju_coop_error_code_t convert_inertial_config(
     const zju_coop_inertial_config_t& input,
     zju::coop::InertialConfig& inertial,
     std::vector<zju::coop::InertialNodeInitialization>& nodes) {
+  // 惯性配置与节点初值同样执行深拷贝；frame_id必须在固定容量内以NUL结束。
   if (input.node_count == 0U || input.nodes == nullptr ||
       input.max_inertial_state_dimension == 0U ||
       !valid_array_span<zju_coop_inertial_node_initialization_t>(
@@ -751,6 +758,7 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_imu_processing_result_init(
 
 zju_coop_error_code_t ZJU_COOP_CALL zju_coop_create(
     const zju_coop_config_t* config, zju_coop_handle_t** out_handle) {
+  // 创建失败时先把输出置空，调用方可无歧义判断句柄所有权是否建立。
   if (out_handle == nullptr) {
     return ZJU_COOP_INVALID_ARGUMENT;
   }
@@ -800,6 +808,7 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_configure_inertial(
   if (header_status != ZJU_COOP_OK) {
     return header_status;
   }
+  // 15N状态维度只能在首个输入前设置一次，运行中重配会破坏已有协方差。
   if (handle->processing_started || handle->inertial_configured) {
     return ZJU_COOP_INVALID_ARGUMENT;
   }
@@ -824,6 +833,7 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_configure_inertial(
 zju_coop_error_code_t ZJU_COOP_CALL zju_coop_push_imu(
     zju_coop_handle_t* handle, const zju_coop_imu_packet_t* packet,
     zju_coop_imu_processing_result_t* result) {
+  // 阶段1：验证调用方结构和保留字段，再转换到不含ROS类型的内部ImuPacket。
   if (handle == nullptr) {
     return ZJU_COOP_INVALID_ARGUMENT;
   }
@@ -884,6 +894,7 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_push_imu(
     converted.valid = packet->valid == ZJU_COOP_TRUE;
     converted.status = packet->status;
 
+    // 阶段2：算法处理完成后先构造局部结果，最后一次性覆盖调用方输出结构。
     const auto processed = handle->engine->push_imu(converted);
     zju_coop_imu_processing_result_t output{};
     output.struct_size = sizeof(output);
@@ -905,6 +916,7 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_push_imu(
 zju_coop_error_code_t ZJU_COOP_CALL zju_coop_push_range(
     zju_coop_handle_t* handle, const zju_coop_range_packet_t* packet,
     zju_coop_range_processing_result_t* result) {
+  // 测距入口沿用“边界校验→普通结构转换→Engine处理→诊断结果转换”的固定顺序。
   if (handle == nullptr) {
     return ZJU_COOP_INVALID_ARGUMENT;
   }
@@ -985,6 +997,7 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_step(
   }
 
   try {
+    // 阶段1：支持NULL/0容量查询所需数量；查询本身不能推进算法时间。
     const auto required_localizations = handle->localization_count;
     const auto required_observations = handle->observation_count;
 
@@ -1026,6 +1039,7 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_step(
       return network_status;
     }
 
+    // 阶段2：在Engine副本和临时输出数组上完成step与全部转换，保证失败可回滚。
     std::vector<zju_coop_localization_t> localization_values(
         required_localizations);
     std::vector<zju_coop_observation_t> observation_values(
@@ -1047,6 +1061,7 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_step(
     }
     const auto network_value = network_output(snapshot.network);
 
+    // 阶段3：全部成功后先提交Engine，再整体写入调用方缓冲区，避免半快照。
     handle->engine.swap(candidate);
     handle->processing_started = true;
     for (std::uint32_t index = 0U; index < required_localizations; ++index) {

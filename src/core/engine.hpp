@@ -1,4 +1,6 @@
-// 协同定位总引擎：统一输入校验、质量监测、动态拓扑、滤波和输出快照。
+// 模块职责：编排标准化输入、时间/重复检查、质量监测、滤波更新、动态拓扑与输出快照。
+// Engine是算法核心的系统边界，但不解析ROS 2消息、不收发无线链路、不输出控制指令；
+// 上交适配层通过C ABI串行调用本引擎，GCS只消费它生成的定位/网络/观测/告警结果。
 #pragma once
 
 #include "core/cooperative_inertial_ekf.hpp"
@@ -14,6 +16,7 @@
 
 namespace zju::coop {
 
+/** 组合滤波、退化监测、时间检查和资源上限的运行配置。 */
 struct EngineConfig {
   FilterConfig filter{};
   std::vector<NodeInitialization> nodes;
@@ -47,6 +50,7 @@ struct LocalizationSnapshot {
   LocalizationState state{LocalizationState::kUninitialized};
 };
 
+/** 当前主参考下的协同网络可达性、可观性和综合原因位图。 */
 struct NetworkSnapshot {
   std::uint64_t timestamp_ns{};
   std::size_t node_count{};
@@ -58,6 +62,7 @@ struct NetworkSnapshot {
   LocalizationState state{LocalizationState::kUninitialized};
 };
 
+/** 单一时刻的原子输出快照，保证定位、网络和观测状态彼此一致。 */
 struct EngineSnapshot {
   std::uint64_t timestamp_ns{};
   std::vector<LocalizationSnapshot> localizations;

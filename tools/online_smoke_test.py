@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""仅测距兼容模式的临时 UDP 在线、日志和回放端到端测试。"""
+"""仅测距兼容模式的临时UDP在线、日志和回放端到端测试。
+
+本模块通过真实进程和回环UDP收集可审计证据：三节点定位、三条观测边、连通可观网络、
+周期状态、输入停止后的链路超时告警以及日志回放遥测，防止仅凭进程退出码假通过。
+"""
 
 import argparse
 import configparser
@@ -26,6 +30,7 @@ EXPECTED_EDGES = {(1, 2), (1, 3), (2, 3)}
 
 
 class OutputEvidence:
+    """聚合输出帧证据；只有几何、状态和告警条件全部满足才判定通过。"""
     def __init__(self):
         self.localization_nodes = set()
         self.observation_edges = set()
@@ -42,6 +47,7 @@ class OutputEvidence:
         self.inputs_stopped = True
 
     def ingest(self, datagram):
+        """按消息类型提取关键证据，任何协议错误直接传播为测试失败。"""
         frame = zjcl.decode_frame(datagram, udp=True)
         self.frame_count += 1
         if frame.message_type == zjcl.MSG_LOCALIZATION:
@@ -119,6 +125,7 @@ class OutputEvidence:
 
 
 def write_temporary_config(source, target, input_port, output_port, log_path):
+    """复制配置并只替换端口/日志路径，算法参数保持与被测配置一致。"""
     source = Path(source)
     target = Path(target)
     log_path = Path(log_path)
@@ -217,6 +224,7 @@ def _drain_output(receiver, evidence):
 
 
 def _exercise_online(process, receiver, target, send_duration, evidence):
+    """发送确定性三边测距，随后停止输入以触发链路超时告警。"""
     simulator = uwb_simulator.UwbSimulator(
         seed=2026,
         noise_std_m=0.0,
@@ -238,6 +246,7 @@ def _exercise_online(process, receiver, target, send_duration, evidence):
                 break
             time.sleep(0.002)
 
+    # 输入停止后继续接收，使Engine.step有机会发布链路超时和告警激活帧。
     evidence.mark_inputs_stopped()
     # The demo edge timeout is 0.5 s. Stop normal ranges, then continue
     # receiving for longer than that so the smoke test proves the timeout
@@ -252,6 +261,7 @@ def _exercise_online(process, receiver, target, send_duration, evidence):
 
 
 def run_smoke(args):
+    """编排在线启动、证据检查、日志检查和回放四个阶段。"""
     online_exe = Path(args.online_exe).resolve()
     replay_exe = Path(args.replay_exe).resolve()
     config_path = Path(args.config).resolve()

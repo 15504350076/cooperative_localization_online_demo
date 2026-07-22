@@ -1,3 +1,5 @@
+# 模块职责：定义算法核心、稳定C ABI、在线/回放/自检程序、测试和安装导出的唯一构建入口。
+# 所有目标统一使用C++17；Windows生成DLL/EXE，Ubuntu与RK3588生成.so和ELF可执行程序。
 cmake_minimum_required(VERSION 3.16)
 
 project(zju_coop VERSION 0.1.0 LANGUAGES C CXX)
@@ -5,6 +7,7 @@ project(zju_coop VERSION 0.1.0 LANGUAGES C CXX)
 include(CTest)
 include(GNUInstallDirs)
 
+# 算法核心不包含ROS 2和平台网络类型，便于独立静态链接到C ABI动态库。
 set(ZJU_COOP_CORE_SOURCES
     src/config/ini_config.cpp
     src/core/cooperative_inertial_ekf.cpp
@@ -31,6 +34,7 @@ configure_file(
     COPYONLY
 )
 
+# 第一层：内部静态核心隐藏全部C++符号，只作为工程内实现依赖。
 add_library(zju_coop_core STATIC ${ZJU_COOP_CORE_SOURCES})
 target_compile_features(zju_coop_core PUBLIC cxx_std_17)
 target_include_directories(zju_coop_core
@@ -45,6 +49,7 @@ set_target_properties(zju_coop_core PROPERTIES
     VISIBILITY_INLINES_HIDDEN YES
 )
 
+# 第二层：对外交付动态库只导出include/zju_coop/c_api.h声明的稳定C符号。
 add_library(zju_coop SHARED src/api/c_api.cpp)
 target_compile_features(zju_coop PRIVATE cxx_std_17)
 target_include_directories(zju_coop
@@ -81,6 +86,7 @@ zju_coop_verify_hidden_visibility(zju_coop_core)
 zju_coop_verify_hidden_visibility(zju_coop)
 
 if(UNIX AND NOT APPLE)
+  # Linux/ARM64构建后检查动态符号，防止C++实现细节意外成为上交依赖。
   if(NOT CMAKE_NM)
     message(FATAL_ERROR "CMAKE_NM is required for ELF export validation")
   endif()
@@ -115,6 +121,7 @@ set(ZJU_COOP_DEMO_SUPPORT_SOURCES
     src/net/udp_socket.cpp
 )
 
+# 第三层：临时UDP在线/回放程序用于无ROS 2阶段验证，不属于算法库ABI。
 add_executable(zju_coop_online
     src/apps/online_main.cpp
     ${ZJU_COOP_DEMO_SUPPORT_SOURCES}
@@ -145,7 +152,25 @@ target_compile_features(zju_coop_sdk_consumer PRIVATE cxx_std_17)
 target_link_libraries(zju_coop_sdk_consumer PRIVATE zju_coop)
 zju_coop_enable_warnings(zju_coop_sdk_consumer)
 
+# 独立自检只调用公开C ABI，不启动在线网络和ROS 2，适合交付前快速验收。
+add_executable(zju_coop_self_check
+    src/apps/self_check_main.cpp
+    src/self_check/self_check.cpp
+)
+target_compile_features(zju_coop_self_check PRIVATE cxx_std_17)
+target_include_directories(zju_coop_self_check PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_link_libraries(zju_coop_self_check PRIVATE zju_coop)
+zju_coop_enable_warnings(zju_coop_self_check)
+if(UNIX AND NOT APPLE)
+  set_target_properties(zju_coop_self_check PROPERTIES
+      INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}"
+  )
+endif()
+
 if(BUILD_TESTING)
+  # 单元测试、C头文件冒烟、SDK示例、自检和Python端到端测试统一纳入CTest。
   add_executable(zju_coop_tests
       tests/test_main.cpp
       tests/test_c_api.cpp
@@ -160,8 +185,10 @@ if(BUILD_TESTING)
       tests/test_quaternion.cpp
       tests/test_range_ekf.cpp
       tests/test_rigidity.cpp
+      tests/test_self_check.cpp
       tests/test_types.cpp
       tests/test_udp_socket.cpp
+      src/self_check/self_check.cpp
       src/net/udp_socket.cpp
       src/apps/app_support.cpp
   )
@@ -183,9 +210,11 @@ if(BUILD_TESTING)
   add_test(NAME zju_coop_tests COMMAND zju_coop_tests)
   add_test(NAME c_header_smoke COMMAND c_header_smoke)
   add_test(NAME zju_coop_sdk_consumer COMMAND zju_coop_sdk_consumer)
+  add_test(NAME zju_coop_self_check COMMAND zju_coop_self_check)
 
   find_package(Python3 QUIET COMPONENTS Interpreter)
   if(Python3_Interpreter_FOUND)
+    # Python仅用于模拟数据、协议交叉验证和进程级冒烟，不是RK3588算法运行依赖。
     add_test(NAME zju_coop_python_tests
         COMMAND ${Python3_EXECUTABLE} -B -m unittest discover
             -s ${CMAKE_CURRENT_SOURCE_DIR}/tools -p test_*.py
@@ -214,7 +243,7 @@ install(TARGETS zju_coop
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
-install(TARGETS zju_coop_online zju_coop_replay
+install(TARGETS zju_coop_online zju_coop_replay zju_coop_self_check
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 install(FILES

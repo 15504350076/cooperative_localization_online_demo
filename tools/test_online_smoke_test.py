@@ -1,3 +1,5 @@
+"""在线冒烟测试辅助函数、输出证据聚合和临时配置生成的单元测试。"""
+
 import configparser
 from pathlib import Path
 import sys
@@ -10,6 +12,7 @@ import zjcl_protocol as zjcl
 
 
 class OnlineSmokeHelpersTests(unittest.TestCase):
+    """验证冒烟测试不会因计数误匹配或证据不足而产生假通过。"""
     def test_range_only_smoke_uses_explicit_fallback_config_by_default(self):
         args = online_smoke_test.build_argument_parser().parse_args(
             ["--online-exe", "online", "--replay-exe", "replay"]

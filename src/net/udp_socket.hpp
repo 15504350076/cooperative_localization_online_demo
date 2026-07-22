@@ -1,4 +1,5 @@
-// Windows 与 Linux 共用的最小 UDP 封装，只服务于临时在线演示，不承担无线通信协议。
+// 模块职责：封装Windows Winsock与Linux BSD Socket差异，为临时在线演示提供最小UDP收发。
+// 模块边界：不实现无线转发、路由、重传或链路维护；这些仍由上交通信模块负责。
 #pragma once
 
 #include <chrono>
@@ -14,6 +15,7 @@ enum class ReceiveStatus {
   kTimeout,
 };
 
+/** 一次完整UDP数据报及发送端地址；UDP边界必须原样保留。 */
 struct Datagram {
   std::vector<std::uint8_t> bytes;
   std::string source_address;
@@ -25,6 +27,7 @@ struct ReceiveResult {
   Datagram datagram;
 };
 
+/** RAII UDP套接字，支持移动但禁止复制，析构时回收平台网络资源。 */
 class UdpSocket {
  public:
   static constexpr std::size_t kMaximumDatagramSize = 65'507U;

@@ -1,4 +1,5 @@
-// 任务后回放入口：只重放历史输入，并用当前算法重新生成定位、状态和告警。
+// 模块职责：顺序读取ZJLG历史输入，用当前算法重新生成定位、网络、观测状态和告警。
+// 原日志中的输出记录只用于审计并跳过，避免旧结果再次作为输入；可按原速、倍速或最快速度回放。
 #include "apps/app_support.hpp"
 #include "config/ini_config.hpp"
 #include "net/udp_socket.hpp"
@@ -143,6 +144,7 @@ void emit_snapshot(zju::coop::apps::AlgorithmSession& algorithm,
                    std::uint64_t uptime_ns,
                    std::uint64_t& next_sequence,
                    Statistics& stats) {
+  // 算法快照和状态/告警从同一时间生成，保持与在线入口一致的输出口径。
   const auto snapshot = algorithm.step(timestamp_ns);
   const auto frames = zju::coop::apps::encode_snapshot(
       snapshot, config.engine.filter.reference_node_id, next_sequence,
@@ -172,6 +174,7 @@ void emit_snapshot(zju::coop::apps::AlgorithmSession& algorithm,
 
 int run(const Arguments& arguments) {
   using namespace zju::coop;
+  // 阶段1：使用同一INI重新创建算法会话，参数变化可通过回放复现实验。
   const auto demo_config = config::load_ini_config(arguments.config_path);
   apps::AlgorithmSession algorithm(demo_config);
   protocol::EventLogReader reader(
@@ -192,6 +195,7 @@ int run(const Arguments& arguments) {
       period_as_double < 1.0 ? 1.0 : period_as_double);
 
   while (true) {
+    // 阶段2：严格顺序读取日志，回放节奏只由本机接收时间控制。
     const auto read = reader.next();
     if (read.status == protocol::EventLogReadStatus::kEnd) {
       break;
@@ -207,6 +211,7 @@ int run(const Arguments& arguments) {
     if (record.receive_timestamp_ns > last_record_timestamp_ns) {
       last_record_timestamp_ns = record.receive_timestamp_ns;
     }
+    // 只重放Input记录；历史Output不能反馈进入新算法形成闭环污染。
     if (record.direction == protocol::EventLogDirection::Output) {
       ++stats.output_records_skipped;
     } else {
@@ -250,6 +255,7 @@ int run(const Arguments& arguments) {
       }
     }
 
+    // 阶段3：stream按配置频率连续输出，final只在全部输入处理完后输出一次。
     if (arguments.output_mode == OutputMode::kStream) {
       if (record.receive_timestamp_ns >= next_stream_output_ns) {
         emit_snapshot(

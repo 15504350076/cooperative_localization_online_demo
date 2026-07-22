@@ -1,3 +1,4 @@
+// 模块职责：验证无IMU二维兼容滤波的恒速预测、NIS拒绝、Joseph更新和数值极限保护。
 #include "core/range_ekf.hpp"
 #include "test_support.hpp"
 

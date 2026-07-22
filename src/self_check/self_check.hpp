@@ -1,0 +1,26 @@
+// 模块职责：声明不依赖ROS 2、网络、配置文件和真实传感器的公开C ABI确定性自检。
+// 自检只验证软件闭环与接口契约，不替代实机传感器精度、时钟同步或性能验收。
+#pragma once
+
+#include <cstdint>
+#include <string>
+
+namespace zju::coop::self_check {
+
+/**
+ * 独立自检结果。
+ *
+ * 自检只通过公开 C ABI 驱动算法，不访问 ROS 2、网络、传感器或配置文件，
+ * 因而可在开发机和 AIBrainBox 上重复运行而不干扰在线进程。
+ */
+struct SelfCheckResult {
+  bool passed{};
+  std::uint32_t passed_checks{};
+  std::uint32_t failed_checks{};
+  std::string report;
+};
+
+/** 运行三车 IMU+测距确定性闭环自检；任何异常均转换为失败结果。 */
+[[nodiscard]] SelfCheckResult run_self_check() noexcept;
+
+}  // namespace zju::coop::self_check

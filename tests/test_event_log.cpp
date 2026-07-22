@@ -1,3 +1,4 @@
+// 模块职责：验证ZJLG输入/输出记录往返、边界EOF、截断、超长记录和内部帧损坏检测。
 #include "protocol/event_log.hpp"
 #include "protocol/wire_protocol.hpp"
 #include "test_support.hpp"

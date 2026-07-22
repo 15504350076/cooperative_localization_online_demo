@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""三车静止IMU＋3-4-5 UWB临时UDP数据源，用于硬件到位前联调。"""
+"""三车静止IMU加3-4-5平台间测距的临时UDP数据源。
+
+IMU保持标准ROS 2 Imu瞬时量语义：零角速度、ENU/FLU静止比力+g、不提供温度；
+测距复用确定性三边发生器。该工具只用于硬件到位前联调，不模拟真实器件误差模型。
+"""
 
 import argparse
 import math
@@ -22,7 +26,9 @@ class ImuUwbSimulator:
         self.imu_sequence = {1: 0, 2: 0, 3: 0}
 
     def generate_imu_tick(self, timestamp_ns):
+        """为三个节点生成同一统一时间戳的瞬时IMU数据报。"""
         frames = []
+        # 每个节点维护独立序号；节点号和时间写入ZJCL公共帧头。
         for node_id in (1, 2, 3):
             self.imu_sequence[node_id] += 1
             payload = zjcl.encode_imu_payload(
@@ -52,6 +58,7 @@ def _positive(text):
 
 
 def run(args):
+    """按IMU高频、测距低频两个独立周期向在线程序发送数据。"""
     if args.port < 1 or args.port > 65535:
         raise ValueError("port must be in [1,65535]")
     simulator = ImuUwbSimulator(args.seed)
@@ -62,6 +69,7 @@ def run(args):
     uwb_period = 1.0 / args.uwb_rate_hz
     imu_sent = 0
     uwb_sent = 0
+    # 使用单调时钟调度，帧内时间戳仍采用系统纳秒时间轴。
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
         while args.duration == 0.0 or time.monotonic() - start < args.duration:
             now = time.monotonic()

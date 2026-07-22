@@ -1,9 +1,11 @@
+// 模块职责：聚合全部C++测试模块并输出逐项结果与最终失败计数。
 #include "test_support.hpp"
 
 #include <exception>
 #include <iostream>
 
 int main() {
+  // 每个register_*函数对应一个独立模块，新增测试文件必须在此显式注册。
   unsigned int failures = 0U;
 
   for (const auto& test_case : zju::coop::test::registry()) {

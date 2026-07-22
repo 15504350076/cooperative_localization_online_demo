@@ -1,8 +1,10 @@
-// 单节点 15 维误差状态惯导，误差顺序为位置、速度、姿态、陀螺零偏、加计零偏。
+// 模块职责：定义单节点15维误差状态惯导的配置、名义状态和IMU传播接口。
+// 状态顺序固定为δp/δv/δθ/δbg/δba，每项3维；本模块只传播名义状态并返回
+// Phi/Qd，完整15N联合协方差由CooperativeInertialEkf统一维护。
 #pragma once
 
-#include "core/dense_matrix.hpp"
-#include "core/quaternion.hpp"
+#include "dense_matrix.hpp"
+#include "quaternion.hpp"
 #include "zju_coop/types.hpp"
 
 #include <array>
@@ -12,7 +14,7 @@
 
 namespace zju::coop {
 
-inline constexpr std::size_t kInertialErrorStateSize = 15U;
+inline constexpr auto kInertialErrorStateSize = 15U;
 
 /** 单节点15维惯性预测所需的运行参数，全部由配置文件或C ABI提供。 */
 struct InertialConfig {
@@ -86,6 +88,10 @@ class InertialEskf15 {
   InertialEskf15(InertialNodeInitialization initialization,
                  InertialConfig config);
 
+  /**
+   * 输入一帧瞬时角速度和比力；首帧只建立时间基准，后续帧采用前后帧中值传播。
+   * 返回值明确区分重复、乱序、间隔过大、坐标系不匹配和数值失败。
+   */
   [[nodiscard]] ImuProcessingResult push_imu(const ImuPacket& packet);
   [[nodiscard]] const InertialNominalState& state() const noexcept;
   [[nodiscard]] const InertialNodeInitialization& initialization() const

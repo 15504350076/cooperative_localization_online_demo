@@ -1,4 +1,6 @@
-// 观测质量滑窗与状态机接口：正常、降权、暂缓、剔除及试探恢复。
+// 模块职责：按协同边维护观测质量滑窗，并把NLOS、有效率、频率、残差等证据
+// 转换为正常、降权、暂缓、剔除和试探恢复状态；该模块只决定融合动作，
+// 不直接修改滤波状态，也不承担无线链路维护。
 #pragma once
 
 #include "zju_coop/types.hpp"
@@ -10,6 +12,7 @@
 
 namespace zju::coop {
 
+/** 无向协同边键；构造时规范化节点顺序，使1-2与2-1共享质量状态。 */
 struct EdgeKey {
   std::uint32_t first{};
   std::uint32_t second{};
@@ -58,6 +61,7 @@ constexpr ReasonMask& operator|=(ReasonMask& left, ReasonMask right) noexcept {
              static_cast<std::uint32_t>(reason);
 }
 
+/** 退化判据、状态保持时间和资源上限，全部由配置文件提供。 */
 struct DegradationConfig {
   std::uint64_t window_ns{2'000'000'000ULL};
   double nominal_rate_hz{20.0};
@@ -72,6 +76,7 @@ struct DegradationConfig {
   std::size_t max_tracked_edges{2016U};
 };
 
+/** 当前滑窗的可审计统计快照，也是GCS观测状态输出的数据来源。 */
 struct ObservationQuality {
   EdgeKey edge{};
   std::uint64_t window_start_ns{};

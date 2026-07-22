@@ -1,4 +1,6 @@
-// 在线演示入口：接收 IMU/测距帧、调用算法、发布结果并记录事件日志。
+// 模块职责：运行临时UDP在线闭环，接收IMU/测距帧、调用算法、发布GCS结果并记录事件日志。
+// 模块边界：仅用于无ROS 2阶段和联调冒烟测试；AIBrainBox正式部署由上交ROS 2适配节点
+// 直接调用C ABI，通信路由和时间同步仍由上交负责。
 #include "apps/app_support.hpp"
 #include "config/ini_config.hpp"
 #include "net/udp_socket.hpp"
@@ -137,6 +139,7 @@ void count_output(zju::coop::protocol::MessageType type, Statistics& stats) {
 
 int run(const Arguments& arguments) {
   using namespace zju::coop;
+  // 阶段1：先加载并完整验证配置，再创建算法、输入套接字、输出套接字和可选日志。
   const auto demo_config = config::load_ini_config(arguments.config_path);
   apps::AlgorithmSession algorithm(demo_config);
   net::UdpSocket input;
@@ -173,6 +176,7 @@ int run(const Arguments& arguments) {
   auto next_output = start;
 
   while (stop_requested == 0 && std::chrono::steady_clock::now() < deadline) {
+    // 阶段2：按数据报边界解码，只把通过协议和载荷校验的输入送入C ABI。
     const auto received = input.receive();
     if (received.status == net::ReceiveStatus::kData) {
       ++stats.received;
@@ -227,6 +231,7 @@ int run(const Arguments& arguments) {
       }
     }
 
+    // 阶段3：输入接收与固定频率输出解耦，无输入时仍可发布超时和拓扑告警。
     const auto now = std::chrono::steady_clock::now();
     if (now >= next_output) {
       const std::uint64_t step_time_ns = apps::system_time_ns();
@@ -249,6 +254,7 @@ int run(const Arguments& arguments) {
               ? protocol::AlgorithmMode::kImuUwb15State
               : protocol::AlgorithmMode::kUwbOnlyPlanar);
       const std::uint64_t output_time_ns = apps::system_time_ns();
+      // 算法快照和遥测使用同一输出时刻，并同时写入UDP与任务日志。
       for (const auto& frame : frames) {
         output.send_to(demo_config.online.output_address,
                        demo_config.online.output_port, frame.bytes);
@@ -273,6 +279,7 @@ int run(const Arguments& arguments) {
     }
   }
 
+  // 阶段4：正常退出前刷新日志并输出机器可解析SUMMARY，供自动测试核验计数。
   if (event_log) {
     event_log->flush();
   }

@@ -1,4 +1,6 @@
-// 封装 Winsock/BSD Socket 差异，对算法核心隐藏平台网络 API。
+// 模块实现：封装Winsock/BSD Socket创建、绑定、超时接收、整报发送和资源释放差异。
+// 关键原则：算法核心只处理字节帧，不依赖平台网络API；UDP超时是正常状态，
+// 其他系统错误转为异常交给应用入口记录并退出，禁止静默吞掉网络故障。
 #include "net/udp_socket.hpp"
 
 #include <cerrno>
@@ -83,6 +85,7 @@ std::uintptr_t UdpSocket::invalid_socket() noexcept {
 }
 
 UdpSocket::UdpSocket() : socket_(invalid_socket()) {
+  // Windows需要初始化Winsock运行时；Linux构造路径直接创建BSD套接字。
 #if defined(_WIN32)
   WSADATA data{};
   const int startup = WSAStartup(MAKEWORD(2, 2), &data);
@@ -126,6 +129,7 @@ UdpSocket& UdpSocket::operator=(UdpSocket&& other) noexcept {
 }
 
 void UdpSocket::close() noexcept {
+  // 析构路径不得抛异常；关闭句柄后再按平台释放网络运行时资源。
   if (socket_ != invalid_socket()) {
 #if defined(_WIN32)
     closesocket(native_socket(socket_));
@@ -177,6 +181,7 @@ void UdpSocket::set_receive_timeout(std::chrono::milliseconds timeout) {
 }
 
 ReceiveResult UdpSocket::receive() {
+  // UDP一次recvfrom对应一个完整数据报；固定65507字节上限避免无界分配。
   std::vector<std::uint8_t> buffer(kMaximumDatagramSize);
   sockaddr_in source{};
 #if defined(_WIN32)
@@ -216,6 +221,7 @@ ReceiveResult UdpSocket::receive() {
 
 void UdpSocket::send_to(const std::string& ipv4_address, std::uint16_t port,
                         const std::vector<std::uint8_t>& bytes) {
+  // UDP不存在继续发送剩余字节的可靠语义，部分发送直接视为系统错误。
   if (bytes.size() > kMaximumDatagramSize) {
     throw std::invalid_argument("UDP datagram exceeds 65507 bytes");
   }

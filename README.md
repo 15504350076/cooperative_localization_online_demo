@@ -66,6 +66,8 @@
 | `tests`、`tools/test_*.py` | C/C++ 与 Python 自动测试 |
 | `临时UDP演示协议_v1.md` | 当前联调帧、状态、告警和日志格式 |
 
+建议第一次使用或接手开发时先阅读 [`docs/12_工程使用学习与编写思路.md`](docs/12_工程使用学习与编写思路.md)。该文档按“最小自检→完整在线演示→代码学习路线→二次开发原则”组织，并说明Windows、Ubuntu 22.04和RK3588的使用差异。
+
 ## 三车演示数据
 
 `config/demo.ini` 的初始相对坐标为：节点 1 `(0,0,0)`、节点 2 `(3,0,0)`、节点 3 `(0,4,0)`。默认模拟器发送三车 100 Hz 静止 IMU 和 20 Hz 的 3-4-5 m 测距；节点 1 是主参考节点，算法按有效观测动态激活边。
@@ -100,6 +102,22 @@ ctest --test-dir build -C Release --output-on-failure
 ```
 
 本机已实际使用 Visual Studio 17 2022、CMake 和 Python 3.11.9 完成 Release 编译；UWB-only与IMU＋UWB两条真实 UDP 在线/日志/回放进程链均通过。最终数量以本次交付记录和实际测试输出为准。
+
+### 独立自动自检
+
+只需验证算法动态库和最小三车 IMU＋测距闭环时，可运行独立入口。它不启动 UDP、ROS 2、GCS 或硬件驱动，也不读取或修改实车配置：
+
+```powershell
+build\Release\zju_coop_self_check.exe
+```
+
+Linux/RK3588 单配置构建对应为：
+
+```bash
+./build/zju_coop_self_check
+```
+
+全部检查通过时输出 `SELF_CHECK PASS` 并返回退出码 0。详细验证项、安装树命令和适用边界见 `docs/11_独立自检程序说明.md`；自检不能替代真实传感器、ROS 2 和定位精度验收。
 
 ### AIBrainBox Ubuntu 22.04 / ARM64
 

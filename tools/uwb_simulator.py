@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""确定性的三车测距数据源，用于验证仅测距兼容模式。
+"""确定性的三车平台间测距数据源，用于验证仅测距兼容模式。
 
-The temporary integration transport is UDP/ZJCL.  The production AIBrainBox
-adapter remains an SJTU ROS 2 responsibility; this utility only makes the
-algorithm library and GCS path independently testable before hardware arrives.
+临时联调传输使用UDP/ZJCL；正式AIBrainBox适配仍由上交ROS 2负责。本工具在硬件到位前
+提供可复现的3-4-5几何、噪声、NLOS偏置和丢包序列，不属于生产传感器驱动。
 """
 
 import argparse
@@ -38,7 +37,7 @@ def _probability(name, value):
 
 
 class UwbSimulator:
-    """Generate one ZJCL range datagram per non-dropped cooperative edge."""
+    """每个采样时刻为未丢弃的协同边生成一个ZJCL测距数据报。"""
 
     def __init__(
         self,
@@ -67,12 +66,14 @@ class UwbSimulator:
         }
 
     def generate_tick(self, timestamp_ns):
+        """使用同一时间戳生成当前三条边，随机序列由构造种子完全决定。"""
         if isinstance(timestamp_ns, bool) or not isinstance(timestamp_ns, int):
             raise ValueError("timestamp_ns must be an integer")
         if timestamp_ns < 0 or timestamp_ns > (1 << 64) - 1:
             raise ValueError("timestamp_ns is outside uint64")
 
         datagrams = []
+        # 每条边独立决定丢包、NLOS和高斯噪声，公共时间戳保持同一采样批次。
         for source, target, true_range_m in DEFAULT_EDGES:
             edge = (source, target)
             self.sequence_by_edge[edge] += 1
@@ -169,6 +170,7 @@ def build_argument_parser():
 
 
 def run(args):
+    """按标称频率发送测距数据报，并输出发送、丢包和NLOS统计。"""
     if args.port < 1 or args.port > 65535:
         raise ValueError("port must be in [1, 65535]")
     simulator = UwbSimulator(
@@ -186,6 +188,7 @@ def run(args):
     tick_count = 0
     sent_count = 0
 
+    # 单调时钟负责发送周期，系统纳秒时钟写入协议测量时间戳。
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as output_socket:
         try:
             while args.duration == 0.0 or time.monotonic() - start < args.duration:

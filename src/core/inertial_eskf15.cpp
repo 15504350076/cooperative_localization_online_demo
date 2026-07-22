@@ -1,5 +1,7 @@
-// 使用 ROS 2 Imu 的瞬时角速度和线加速度做中值积分；导航系 ENU、车体系 FLU。
-#include "core/inertial_eskf15.hpp"
+// 模块实现：使用ROS 2 Imu可提供的瞬时角速度和线加速度完成单节点15维ESKF名义传播。
+// 关键约定：导航系ENU、车体系FLU、加速度按比力解释；采用相邻两帧中值积分而非调用方预积分，
+// 同时生成15维误差转移Phi和离散噪声Qd，供多平台联合协方差传播。
+#include "inertial_eskf15.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -169,6 +171,7 @@ InertialEskf15::InertialEskf15(InertialNodeInitialization initialization,
                                InertialConfig config)
     : initialization_(std::move(initialization)),
       config_(std::move(config)) {
+  // 构造阶段一次性拒绝不完整参数，运行线程不再回退到隐藏默认值。
   if (!positive_finite(config_.gravity_mps2) ||
       !positive_finite(config_.min_imu_dt_s) ||
       !positive_finite(config_.max_imu_dt_s) ||
@@ -217,6 +220,7 @@ bool InertialEskf15::frame_matches(const ImuPacket& packet) const {
 ImuProcessingResult InertialEskf15::push_imu(const ImuPacket& packet) {
   ImuProcessingResult result{};
   result.phi = DenseMatrix::identity(kInertialErrorStateSize);
+  // 阶段1：先做节点、结构、坐标系、序号和时间检查，失败时不污染上一帧基准。
   if (packet.node_id != initialization_.node_id) {
     result.disposition = ImuDisposition::kUnknownNode;
     return result;
@@ -239,6 +243,7 @@ ImuProcessingResult InertialEskf15::push_imu(const ImuPacket& packet) {
     return result;
   }
   if (!has_previous_) {
+    // 阶段2：首帧没有积分区间，只建立时间基准；可选姿态仅用于首次对准。
     if (config_.use_orientation_for_initialization &&
         packet.orientation_valid && finite_array(packet.orientation_xyzw) &&
         valid_covariance(packet.orientation_covariance, config_)) {
@@ -260,6 +265,7 @@ ImuProcessingResult InertialEskf15::push_imu(const ImuPacket& packet) {
     return result;
   }
 
+  // 阶段3：统一时间轴差值转换为秒，并把过长空洞作为新的基准而不是盲目外推。
   const double dt = static_cast<double>(packet.timestamp_ns -
                                         previous_.timestamp_ns) *
                     1.0e-9;
@@ -277,6 +283,7 @@ ImuProcessingResult InertialEskf15::push_imu(const ImuPacket& packet) {
   DenseMatrix phi_total = DenseMatrix::identity(kInertialErrorStateSize);
   DenseMatrix q_total(kInertialErrorStateSize, kInertialErrorStateSize);
 
+  // 阶段4：相邻两帧瞬时量分别扣除当前零偏，再取中值作为区间输入。
   const Vec3 omega_previous =
       to_vec3(previous_.angular_velocity_rad_s) - state_.gyro_bias_rad_s;
   const Vec3 omega_current =
@@ -288,6 +295,7 @@ ImuProcessingResult InertialEskf15::push_imu(const ImuPacket& packet) {
   const Vec3 omega_mid = 0.5 * (omega_previous + omega_current);
   const Vec3 force_mid = 0.5 * (force_previous + force_current);
 
+  // 阶段5：合法IMU区间按最大传播步长细分，降低一阶离散化误差。
   const double raw_steps =
       std::ceil(dt / config_.max_propagation_substep_s);
   if (!std::isfinite(raw_steps) || raw_steps < 1.0 ||
@@ -314,6 +322,7 @@ ImuProcessingResult InertialEskf15::push_imu(const ImuPacket& packet) {
 
   for (std::uint32_t step = 0U; step < steps; ++step) {
     const Vec3 delta_theta = omega_mid * step_dt;
+    // 用中点姿态把车体系比力旋转到ENU，可减少姿态变化对速度积分的偏差。
     Quaternion half_rotation = Quaternion::exp(delta_theta * 0.5);
     Quaternion mid_orientation = state_.orientation_b_to_n * half_rotation;
     if (!mid_orientation.normalize()) {
@@ -322,6 +331,7 @@ ImuProcessingResult InertialEskf15::push_imu(const ImuPacket& packet) {
       result.disposition = ImuDisposition::kNumericalFailure;
       return result;
     }
+    // IMU输出的是比力，导航系真实加速度等于R_nb*f_b加重力向量。
     const Vec3 acceleration_n =
         mid_orientation.rotate(force_mid) + Vec3{0.0, 0.0, -config_.gravity_mps2};
     state_.position_n_m = state_.position_n_m +
@@ -347,6 +357,7 @@ ImuProcessingResult InertialEskf15::push_imu(const ImuPacket& packet) {
     add_block(f, kAttitude, kAttitude, skew(omega_mid), -1.0);
     add_identity_block(f, kAttitude, kGyroBias, -1.0);
 
+    // 阶段6：一阶离散化连续误差动力学，并累计整个IMU区间的Phi/Qd。
     DenseMatrix phi_step = DenseMatrix::identity(kInertialErrorStateSize);
     for (std::size_t row = 0U; row < kInertialErrorStateSize; ++row) {
       for (std::size_t col = 0U; col < kInertialErrorStateSize; ++col) {
@@ -399,6 +410,7 @@ ImuProcessingResult InertialEskf15::push_imu(const ImuPacket& packet) {
     return result;
   }
 
+  // 阶段7：名义状态、Phi和Qd全部通过有限值检查后才提交新的时间基准。
   previous_ = packet;
   result.disposition = ImuDisposition::kPropagated;
   result.propagated = true;
@@ -428,6 +440,7 @@ std::uint64_t InertialEskf15::timestamp_ns() const noexcept {
 
 bool InertialEskf15::inject_error(
     const std::array<double, kInertialErrorStateSize>& error) noexcept {
+  // 测距更新得到误差状态：平移/速度/零偏直接相加，姿态用小角度右乘注入。
   if (!std::all_of(error.begin(), error.end(),
                    [](double value) { return std::isfinite(value); })) {
     return false;

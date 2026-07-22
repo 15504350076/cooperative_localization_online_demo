@@ -1,3 +1,8 @@
+"""GCS面板状态、UDP接收、HTTP快照和命令行启动的自动回归测试。
+
+测试只使用回环网络和内存构造帧，不依赖浏览器人工操作或真实车辆。
+"""
+
 import json
 import socket
 import subprocess
@@ -14,6 +19,7 @@ from gcs_dashboard import DashboardState, UdpReceiver, create_http_server
 
 
 def _frame(message_type, payload, source=1, target=0, sequence=7):
+    """构造通过CRC校验的固定时间帧，供各类面板状态测试复用。"""
     return protocol.encode_frame(
         protocol.Frame(
             message_type=message_type,
@@ -142,6 +148,7 @@ def _alert(lifecycle=protocol.ALERT_LIFECYCLE_ACTIVE, reason_mask=1 << 5):
 
 
 class DashboardStateTests(unittest.TestCase):
+    """验证各类算法输出如何原子更新面板快照及陈旧状态。"""
     def test_supported_frames_update_public_state_without_out_of_scope_axes(self):
         state = DashboardState()
 
@@ -247,6 +254,7 @@ class DashboardStateTests(unittest.TestCase):
 
 
 class DashboardTransportTests(unittest.TestCase):
+    """验证UDP线程、HTTP JSON接口和进程级启动/停止边界。"""
     def test_udp_receiver_ingests_a_real_datagram_and_stops(self):
         state = DashboardState()
         receiver = UdpReceiver(state, "127.0.0.1", 0)

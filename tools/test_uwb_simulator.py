@@ -1,3 +1,5 @@
+"""三车测距模拟器的几何、随机种子、NLOS、噪声和丢包确定性测试。"""
+
 import unittest
 
 import zjcl_protocol as zjcl
@@ -5,6 +7,7 @@ import uwb_simulator
 
 
 class UwbSimulatorTests(unittest.TestCase):
+    """确认生成器既能给出无噪声黄金数据，也能复现随机故障序列。"""
     def test_nominal_tick_emits_three_edges_with_one_timestamp(self):
         simulator = uwb_simulator.UwbSimulator(
             seed=7,

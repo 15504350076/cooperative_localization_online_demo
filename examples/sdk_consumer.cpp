@@ -1,4 +1,6 @@
-// 上交集成参考：演示不依赖 ROS 2 类型的 C ABI 初始化、输入、查询输出和销毁顺序。
+// 模块职责：给上交集成人员演示不依赖ROS 2类型的C ABI最小生命周期。
+// 示例刻意只展示结构初始化、会话创建、测距输入、两阶段step和销毁；正式默认IMU+测距
+// 还须在首个输入前调用zju_coop_configure_inertial并持续输入各节点瞬时IMU。
 #include "zju_coop/c_api.h"
 
 #include <array>
@@ -19,6 +21,7 @@ bool check(zju_coop_error_code_t code, const char* operation) {
 }  // namespace
 
 int main() {
+  // 阶段1：每个版本化结构先调用init，再填写业务字段，禁止直接依赖默认内存布局。
   std::array<zju_coop_node_initialization_t, 3U> nodes{};
   for (auto& node : nodes) {
     if (!check(zju_coop_node_initialization_init(&node), "init node")) {
@@ -43,11 +46,13 @@ int main() {
   config.node_stride = sizeof(zju_coop_node_initialization_t);
   config.nis_gate = 1.0e9;
 
+  // 阶段2：create深拷贝节点数组，成功后句柄所有权归调用方。
   zju_coop_handle_t* handle{};
   if (!check(zju_coop_create(&config, &handle), "create")) {
     return 1;
   }
 
+  // 阶段3：输入三车3-4-5三角形的直接测距，形成完整平面约束。
   constexpr std::array<std::uint16_t, 3U> from{1U, 1U, 2U};
   constexpr std::array<std::uint16_t, 3U> to{2U, 3U, 3U};
   constexpr std::array<double, 3U> ranges{3.0, 4.0, 5.0};
@@ -70,6 +75,7 @@ int main() {
     }
   }
 
+  // 阶段4：先用空缓冲查询输出数量，再初始化数组并执行真正的step。
   std::uint32_t localization_count{};
   std::uint32_t observation_count{};
   const auto query = zju_coop_step(
@@ -114,5 +120,6 @@ int main() {
             << " observable=" << static_cast<unsigned int>(network.observable)
             << " active_edges=" << network.active_edge_count << '\n';
 
+  // 阶段5：会话必须显式销毁；销毁后不得继续使用handle。
   return check(zju_coop_destroy(handle), "destroy") ? 0 : 1;
 }

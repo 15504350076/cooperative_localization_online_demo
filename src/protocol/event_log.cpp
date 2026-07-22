@@ -1,4 +1,6 @@
-// 严格校验日志文件头、记录方向、长度、时间和内部 ZJCL 帧。
+// 模块实现：ZJLG日志文件头、记录元数据和内部ZJCL帧的严格顺序读写。
+// 关键原则：写入前验证、读取后复验，截断或损坏文件显式失败；接收时间只控制回放节奏，
+// 算法仍使用内部帧的统一测量时间戳，保证在线与回放处理语义一致。
 #include "protocol/event_log.hpp"
 
 #include <array>
@@ -92,6 +94,7 @@ EventLogWriter::EventLogWriter(const std::filesystem::path& path,
 }
 
 void EventLogWriter::append(const EventLogRecord& log_record) {
+  // 先校验方向、接收时刻、记录长度和内部帧CRC，再写入任何记录字节。
   if (!is_valid_direction(log_record.direction)) {
     throw EventLogException(EventLogError::kInvalidDirection,
                             "event log record direction is invalid");
@@ -183,6 +186,7 @@ EventLogReader::EventLogReader(const std::filesystem::path& path,
 }
 
 EventLogReadResult EventLogReader::next() {
+  // 阶段1：EOF只能出现在记录边界；记录中途EOF均属于文件截断。
   if (ended_) {
     return {};
   }
@@ -241,6 +245,7 @@ EventLogReadResult EventLogReader::next() {
         input_, EventLogError::kTruncatedRecord,
         "event log record is truncated");
   }
+  // 阶段2：完整读取后重新校验内部ZJCL帧，损坏记录不能进入回放算法。
   const FrameDecodeResult decoded = decode_frame(frame, max_payload_size_);
   if (!decoded.ok()) {
     throw EventLogException(EventLogError::kInvalidFrame,

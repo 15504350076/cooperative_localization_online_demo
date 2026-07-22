@@ -1,4 +1,6 @@
-// 编排 IMU 预测与测距更新；惯性模式下禁止再叠加旧恒速预测，避免重复传播。
+// 模块实现：把IMU/测距输入校验、质量监测、15维联合滤波、动态拓扑和输出状态串成闭环。
+// 关键原则：惯性模式只由真实IMU推进，测距仅做观测更新；所有时间、重复包和质量结论
+// 在进入滤波器前确定，step只生成一致快照，不承担无线协议或车辆控制。
 #include "core/engine.hpp"
 
 #include "core/rigidity.hpp"
@@ -21,6 +23,7 @@ constexpr std::size_t kMaximumTrackedEdges = 1'000'000U;
 }  // namespace
 
 EngineConfig Engine::validate_config(EngineConfig config) {
+  // 阶段1：在任何矩阵和边表分配前验证时间参数及节点、边、状态资源上限。
   if (config.edge_timeout_ns == 0U || config.max_future_skew_ns == 0U ||
       config.max_receive_delay_ns == 0U ||
       config.duplicate_cache_per_link == 0U ||
@@ -82,6 +85,7 @@ Engine::Engine(EngineConfig config)
     : config_(validate_config(std::move(config))),
       filter_(config_.filter, config_.nodes),
       monitor_(config_.degradation) {
+  // 阶段2：固定节点集合并预注册全部可能无向边，运行中只改变边的有效状态。
   node_ids_.reserve(config_.nodes.size());
   known_nodes_.reserve(config_.nodes.size());
   for (const auto& node : config_.nodes) {
@@ -101,6 +105,7 @@ void Engine::configure_inertial(
     InertialConfig inertial_config,
     std::vector<InertialNodeInitialization> initializations,
     std::size_t max_inertial_state_dimension) {
+  // 惯性状态只能在首个输入前配置，防止运行中改变状态维度破坏历史协方差。
   if (processing_started_ || inertial_filter_.has_value()) {
     throw std::logic_error(
         "inertial mode must be configured once before processing starts");
@@ -127,6 +132,7 @@ void Engine::configure_inertial(
 
 ImuProcessingResult Engine::push_imu(const ImuPacket& packet) {
   processing_started_ = true;
+  // IMU入口只做模式和统一时间检查，15维传播及细分错误由惯性滤波器分类。
   if (!inertial_filter_) {
     ImuProcessingResult result{};
     result.disposition = ImuDisposition::kUnknownNode;
@@ -175,6 +181,7 @@ std::size_t Engine::DirectedLinkHash::operator()(
 }
 
 bool Engine::duplicate_and_remember(const RangePacket& packet) {
+  // 重复判定按有向链路保存(sequence,timestamp)，反向合法测距不会互相覆盖。
   auto& cache = duplicate_cache_[{packet.from_node, packet.to_node}];
   const auto duplicate = std::find_if(
       cache.begin(), cache.end(), [&packet](const DuplicateKey& existing) {
@@ -193,6 +200,7 @@ bool Engine::duplicate_and_remember(const RangePacket& packet) {
 
 RangeProcessingResult Engine::push_range(const RangePacket& packet) {
   processing_started_ = true;
+  // 阶段1：结构、节点、时间和重复包检查必须先于质量统计与滤波更新。
   RangeProcessingResult result{};
   result.edge = EdgeKey(packet.from_node, packet.to_node);
   if (packet.from_node == packet.to_node ||
@@ -230,6 +238,7 @@ RangeProcessingResult Engine::push_range(const RangePacket& packet) {
   }
   time_sync_faults_.erase(result.edge);
 
+  // 阶段2：所有到达量测都进入质量窗口，包括无效/NLOS数据，避免只统计好数据。
   const bool valid_for_filter = structurally_valid(packet);
   monitor_.record(result.edge, packet.timestamp_ns, valid_for_filter,
                   packet.nlos_flag, packet.has_nlos_probability,
@@ -251,6 +260,7 @@ RangeProcessingResult Engine::push_range(const RangePacket& packet) {
     last_valid->second = std::max(last_valid->second, packet.timestamp_ns);
   }
 
+  // 阶段3：质量状态决定正常、降权、暂缓、剔除或试探恢复的融合动作。
   if (result.action == FusionAction::kHold ||
       result.action == FusionAction::kReject) {
     result.disposition = result.action == FusionAction::kHold
@@ -263,6 +273,7 @@ RangeProcessingResult Engine::push_range(const RangePacket& packet) {
                             result.action == FusionAction::kTrialRecovery;
   const double covariance_scale =
       downweighted ? config_.degradation.nlos_covariance_scale : 1.0;
+  // 阶段4：默认惯性路径与兼容仅测距路径二选一，绝不同时更新两套在线状态。
   result.update = inertial_filter_
                       ? inertial_filter_->update_range(packet,
                                                        covariance_scale)
@@ -286,6 +297,7 @@ EngineSnapshot Engine::step(std::uint64_t now_ns) {
   if (!inertial_filter_) {
     filter_.predict_to(effective_now);
   }
+  // 阶段1：把质量窗口推进到统一输出时刻，再选择仍处于有效期的协同边。
   monitor_.advance(effective_now);
   latest_timestamp_ns_ = effective_now;
   has_latest_timestamp_ = true;
@@ -329,6 +341,7 @@ EngineSnapshot Engine::step(std::uint64_t now_ns) {
   for (const auto& estimate : estimates) {
     positions.push_back({estimate.x, estimate.y});
   }
+  // 阶段2：基于当前活动边实时分析主参考可达性和几何可观性。
   const RigidityResult rigidity = analyze_rigidity(
       node_ids_, positions, active_edges, config_.filter.reference_node_id,
       config_.rigidity_tolerance);
@@ -360,6 +373,7 @@ EngineSnapshot Engine::step(std::uint64_t now_ns) {
     snapshot.network.state = LocalizationState::kNormal;
   }
 
+  // 阶段3：定位、网络和观测状态来自同一时刻，整体作为原子快照返回。
   snapshot.localizations.reserve(estimates.size());
   for (const auto& estimate : estimates) {
     LocalizationSnapshot localization{};

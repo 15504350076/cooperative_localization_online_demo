@@ -1,4 +1,6 @@
-// 把配置转换为 C ABI 初始化结构，并将算法输出转换为临时演示协议帧。
+// 模块实现：把强类型INI配置转换为C ABI初始化结构，并将算法输出编码为临时遥测帧。
+// 关键原则：会话创建失败立即释放资源；step先查询数组容量再填充；告警按激活/恢复成对输出，
+// 使在线运行与日志回放复用完全相同的算法调用和GCS输出口径。
 #include "apps/app_support.hpp"
 
 #include "zju_coop/types.hpp"
@@ -65,6 +67,7 @@ protocol::Frame output_frame(protocol::MessageType type,
 }  // namespace
 
 AlgorithmSession::AlgorithmSession(const config::DemoConfig& demo_config) {
+  // 阶段1：构造基础节点配置并创建句柄，C API在调用期间深拷贝临时数组。
   std::vector<zju_coop_node_initialization_t> nodes(
       demo_config.engine.nodes.size());
   for (std::size_t index = 0U; index < nodes.size(); ++index) {
@@ -125,6 +128,7 @@ AlgorithmSession::AlgorithmSession(const config::DemoConfig& demo_config) {
   config.rigidity_tolerance = demo_config.engine.rigidity_tolerance;
   require_ok(zju_coop_create(&config, &handle_), "create algorithm session");
 
+  // 阶段2：默认配置存在[inertial]时，在首个输入前一次性启用15维联合滤波。
   if (demo_config.inertial) {
     std::vector<zju_coop_inertial_node_initialization_t> inertial_nodes(
         demo_config.inertial->nodes.size());
@@ -230,6 +234,7 @@ AlgorithmSession::~AlgorithmSession() {
 zju_coop_range_processing_result_t AlgorithmSession::push_range(
     const protocol::Frame& frame, const protocol::RangePayload& payload,
     std::uint64_t receive_timestamp_ns) {
+  // 帧头提供节点、序号和测量时间，接收时间由本机在线/回放入口补充。
   zju_coop_range_packet_t packet{};
   zju_coop_range_processing_result_t result{};
   require_ok(zju_coop_range_packet_init(&packet), "initialize range packet");
@@ -255,6 +260,7 @@ zju_coop_range_processing_result_t AlgorithmSession::push_range(
 zju_coop_imu_processing_result_t AlgorithmSession::push_imu(
     const protocol::Frame& frame, const protocol::ImuPayload& payload,
     std::uint64_t receive_timestamp_ns) {
+  // 保持ROS 2 Imu瞬时量与协方差语义，不在适配层预积分或添加温度字段。
   zju_coop_imu_packet_t packet{};
   zju_coop_imu_processing_result_t result{};
   require_ok(zju_coop_imu_packet_init(&packet), "initialize IMU packet");
@@ -291,6 +297,7 @@ zju_coop_imu_processing_result_t AlgorithmSession::push_imu(
 }
 
 StepSnapshot AlgorithmSession::step(std::uint64_t now_ns) {
+  // 阶段1：先用NULL缓冲查询固定输出数量，查询不会推进Engine时间。
   std::uint32_t localization_count = 0U;
   std::uint32_t observation_count = 0U;
   const auto query = zju_coop_step(
@@ -301,6 +308,7 @@ StepSnapshot AlgorithmSession::step(std::uint64_t now_ns) {
     throw std::runtime_error("algorithm size query returned no sizes");
   }
 
+  // 阶段2：按查询数量初始化每个版本化结构，再执行真正的原子step。
   StepSnapshot snapshot{};
   snapshot.localizations.resize(localization_count);
   snapshot.observations.resize(observation_count);
@@ -333,6 +341,7 @@ StepSnapshot AlgorithmSession::step(std::uint64_t now_ns) {
 std::vector<EncodedOutput> encode_snapshot(
     const StepSnapshot& snapshot, std::uint32_t reference_node_id,
     std::uint64_t& next_sequence, std::size_t max_payload_size) {
+  // 每个定位节点和观测边独立成帧，网络状态每个快照只发送一帧。
   std::vector<EncodedOutput> result;
   result.reserve(snapshot.localizations.size() + snapshot.observations.size() +
                  1U);
@@ -417,6 +426,7 @@ std::vector<EncodedOutput> TelemetryEncoder::encode(
     const TelemetryCounters& counters, std::uint64_t uptime_ns,
     std::uint32_t reference_node_id, std::uint64_t& next_sequence,
     std::size_t max_payload_size, protocol::AlgorithmMode mode) {
+  // 先发布周期算法状态，再根据原因位图变化发布告警激活或恢复事件。
   std::vector<EncodedOutput> result;
   result.reserve(2U);
 

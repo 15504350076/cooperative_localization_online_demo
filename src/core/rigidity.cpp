@@ -1,4 +1,5 @@
-// 由当前有效边构造刚度矩阵，禁止把三车三边写成固定拓扑假设。
+// 模块实现：由运行时有效边构造二维刚度矩阵，同时计算主参考可达节点集合。
+// 重复边、自环和未知节点不会被当作额外约束；禁止把三车三边写成固定拓扑假设。
 #include "core/rigidity.hpp"
 
 #include "core/dense_matrix.hpp"
@@ -43,6 +44,7 @@ RigidityResult analyze_rigidity(const std::vector<std::uint32_t>& node_ids,
     throw std::invalid_argument("reference node is not present");
   }
 
+  // 阶段1：把有向输入规范化为唯一无向边，重复方向不会增加约束数量。
   std::set<std::pair<std::uint32_t, std::uint32_t>> unique_edges;
   for (const Edge& edge : edges) {
     if (edge.from_node == edge.to_node ||
@@ -54,6 +56,7 @@ RigidityResult analyze_rigidity(const std::vector<std::uint32_t>& node_ids,
                          std::max(edge.from_node, edge.to_node));
   }
 
+  // 阶段2：同一组有效边用于图遍历和刚度矩阵，保证连通/可观口径一致。
   std::vector<std::vector<std::size_t>> adjacency(node_ids.size());
   DenseMatrix rigidity(unique_edges.size(), node_ids.size() * 2U);
   std::size_t edge_row = 0U;
@@ -75,6 +78,7 @@ RigidityResult analyze_rigidity(const std::vector<std::uint32_t>& node_ids,
     ++edge_row;
   }
 
+  // 阶段3：从主参考做BFS，只统计主参考相对坐标系实际可达的平台。
   std::vector<bool> visited(node_ids.size(), false);
   std::queue<std::size_t> pending;
   pending.push(reference->second);
@@ -92,6 +96,7 @@ RigidityResult analyze_rigidity(const std::vector<std::uint32_t>& node_ids,
     }
   }
 
+  // 平面相对框架存在2个平移和1个整体旋转自由度，完整目标秩为2N-3。
   const std::size_t target_rank =
       node_ids.size() >= 2U ? 2U * node_ids.size() - 3U : 0U;
   const std::size_t rank = numeric_rank(rigidity, tolerance);

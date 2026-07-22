@@ -1,3 +1,4 @@
+// 模块职责：验证观测质量滑窗、NLOS/频率/有效率证据和降权—暂缓—剔除—恢复状态机。
 #include "core/degradation_monitor.hpp"
 #include "test_support.hpp"
 

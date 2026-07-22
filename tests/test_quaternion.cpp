@@ -1,3 +1,4 @@
+// 模块职责：验证四元数归一化、旋转、指数映射和小角度数值稳定性。
 #include "core/quaternion.hpp"
 #include "test_support.hpp"
 

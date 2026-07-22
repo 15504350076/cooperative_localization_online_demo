@@ -1,3 +1,4 @@
+// 模块职责：验证ZJCL帧及全部固定载荷的小端字节布局、CRC黄金向量和严格错误分类。
 #include "protocol/crc32.hpp"
 #include "protocol/wire_protocol.hpp"
 #include "test_support.hpp"

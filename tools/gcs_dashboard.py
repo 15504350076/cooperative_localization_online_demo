@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""ZJCL 协同定位结果的零依赖二维在线演示面板。"""
+"""ZJCL协同定位结果的零第三方依赖二维在线演示面板。
+
+模块接收临时UDP输出，在锁保护下维护最新定位、网络、观测、状态和告警快照，
+再通过本机HTTP页面展示。它用于当前GCS联调，不是交大最终GCS实现或算法输入端。
+"""
 
 import argparse
 import copy
@@ -93,6 +97,7 @@ def _reason_texts(mask):
 
 
 class DashboardState:
+    """线程安全的遥测状态仓库；一次数据报只更新其对应的业务对象。"""
     """Thread-safe latest-value store for GCS-facing ZJCL output frames."""
 
     def __init__(self):
@@ -164,6 +169,8 @@ class DashboardState:
             self._stats["last_receive_time_ns"] = time.time_ns()
 
     def ingest_datagram(self, data):
+        """严格解码一帧；坏帧只增加错误计数，不覆盖最后有效值。"""
+        # 阶段1：公共帧CRC/长度通过后，再按消息类型解析固定载荷。
         """Decode and store one supported UDP frame; return True if accepted."""
         try:
             frame = protocol.decode_frame(data, udp=True)
@@ -313,6 +320,7 @@ class DashboardState:
         return True
 
     def snapshot(self):
+        """返回深拷贝JSON快照，避免HTTP线程观察到UDP线程的半更新状态。"""
         with self._lock:
             return {
                 "nodes": copy.deepcopy(self._nodes),
@@ -325,6 +333,7 @@ class DashboardState:
 
 
 class UdpReceiver(threading.Thread):
+    """后台UDP接收线程；短超时用于及时响应停止事件。"""
     """Bounded-blocking UDP receiver that can be stopped from another thread."""
 
     def __init__(self, state, bind_address, port):
@@ -341,6 +350,7 @@ class UdpReceiver(threading.Thread):
         self.port = self._socket.getsockname()[1]
 
     def run(self):
+        # 阶段2：保持数据报边界，把协议语义交给DashboardState集中处理。
         while not self._stop_event.is_set():
             try:
                 data, _ = self._socket.recvfrom(protocol.MAX_UDP_DATAGRAM + 1)
@@ -534,6 +544,7 @@ class _DashboardHttpServer(ThreadingHTTPServer):
 
 
 def create_http_server(bind_address, port, state):
+    """创建只读HTTP服务；动态JSON来自state，静态页面内嵌在本模块。"""
     """Create, but do not start, the dashboard HTTP server."""
 
     class Handler(BaseHTTPRequestHandler):
@@ -602,6 +613,8 @@ def _arguments(argv):
 
 
 def main(argv=None):
+    """启动UDP、HTTP和可选浏览器，并在信号到达时有序停止。"""
+    # 阶段3：先绑定全部端口再启动线程，避免页面可见但数据端口尚不可用。
     args = _arguments(argv)
     state = DashboardState()
     receiver = None

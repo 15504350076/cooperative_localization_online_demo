@@ -1,6 +1,8 @@
+/* 模块职责：用纯C编译器验证公开头文件、结构初始化器和基础句柄生命周期不依赖C++。 */
 #include "zju_coop/c_api.h"
 
 int main(void) {
+  /* 关键检查：C调用方必须先init版本化结构，再创建并销毁不透明句柄。 */
   zju_coop_config_t config;
   zju_coop_node_initialization_t node;
   zju_coop_range_packet_t packet;

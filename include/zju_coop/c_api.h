@@ -1,15 +1,12 @@
 /*
- * 浙大协同定位算法稳定 C ABI。
- * 上交 ROS 2 适配层只依赖本头文件，不把 ROS 消息类型传入算法核心。
+ * 模块职责：声明浙大协同定位算法库的稳定C ABI，是上交ROS 2适配层唯一必须依赖的接口。
+ * 设计边界：ROS消息、通信路由和车辆控制不得进入本头文件；Windows DLL与RK3588 .so
+ * 通过相同结构布局和版本检查调用。所有时间为统一时间轴纳秒，物理量采用SI单位。
  */
 #ifndef ZJU_COOP_C_API_H
 #define ZJU_COOP_C_API_H
 
-/*
- * 浙大协同定位算法库稳定C ABI。
- * 设计目标是让上交ROS 2适配节点在不依赖C++类布局的情况下调用.so/.dll。
- * 所有版本化结构必须先调用对应init函数；同一handle的调用由调用方串行化。
- */
+/* 所有版本化结构必须先调用对应init函数；同一handle的调用由调用方串行化。 */
 
 #include "zju_coop/export.h"
 
@@ -21,6 +18,7 @@ extern "C" {
 
 #define ZJU_COOP_ABI_VERSION_V1 UINT32_C(0x00010000)
 
+/* ABI级错误只描述调用是否成功；量测是否被融合由各processing result另行返回。 */
 typedef int32_t zju_coop_error_code_t;
 #define ZJU_COOP_OK ((zju_coop_error_code_t)0)
 #define ZJU_COOP_INVALID_ARGUMENT ((zju_coop_error_code_t)1)
@@ -117,6 +115,7 @@ typedef uint32_t zju_coop_reason_mask_t;
 #define ZJU_COOP_REASON_INPUT_OVERFLOW \
   ((zju_coop_reason_mask_t)(UINT32_C(1) << 9U))
 
+/* 不透明会话句柄隐藏C++对象布局，调用方只能通过本文件声明的函数访问。 */
 typedef struct zju_coop_handle zju_coop_handle_t;
 
 /* 仅测距兼容状态的二维初值；位置单位m，速度单位m/s。 */
@@ -349,6 +348,7 @@ ZJU_COOP_API const char* ZJU_COOP_CALL zju_coop_version_string(void);
 ZJU_COOP_API const char* ZJU_COOP_CALL
 zju_coop_error_string(zju_coop_error_code_t code);
 
+/* 初始化函数清零保留字段并写入struct_size/abi_version，禁止调用方自行猜测布局。 */
 ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 zju_coop_node_initialization_init(zju_coop_node_initialization_t* value);
 ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL

@@ -1,4 +1,6 @@
-// 根据 NLOS、有效率、输入频率和残差统计判断测距边是否退化。
+// 模块实现：按无向协同边维护定长时间滑窗，并运行带保持时间的观测退化状态机。
+// 输入证据包括NLOS、有效率、实际频率、残差拒绝和缓存溢出；输出动作只影响量测
+// 协方差或是否融合，不修改底层通信链路状态。
 #include "core/degradation_monitor.hpp"
 
 #include <algorithm>
@@ -60,6 +62,7 @@ DegradationMonitor::DegradationMonitor(DegradationConfig config)
       config_.reject_duration_ns < config_.suspend_duration_ns) {
     throw std::invalid_argument("invalid degradation configuration");
   }
+  // 根据窗口长度和标称频率推导期望样本数，并预留抖动余量限制内存。
   const long double raw_expected =
       static_cast<long double>(config_.nominal_rate_hz) *
       static_cast<long double>(config_.window_ns) / 1.0e9L;
@@ -115,6 +118,7 @@ void DegradationMonitor::record(EdgeKey edge, std::uint64_t timestamp_ns,
                                 bool valid, bool nlos_flag,
                                 bool has_nlos_probability,
                                 double nlos_probability) {
+  // 记录阶段只追加质量证据；状态转换集中在evaluate，避免不同入口采用不同口径。
   if (edges_.find(edge) == edges_.end() &&
       edges_.size() >= config_.max_tracked_edges) {
     throw std::invalid_argument("too many tracked degradation edges");
@@ -220,6 +224,7 @@ FusionAction DegradationMonitor::action_for(
 
 void DegradationMonitor::evaluate(EdgeRecord& record,
                                   std::uint64_t now_ns) {
+  // 阶段1：移除窗口外样本，再由剩余证据计算计数、比例和实际到达频率。
   const std::uint64_t window_start =
       now_ns >= config_.window_ns ? now_ns - config_.window_ns : 0U;
   const bool full_window = now_ns >= config_.window_ns;
@@ -266,6 +271,7 @@ void DegradationMonitor::evaluate(EdgeRecord& record,
     return;
   }
 
+  // 阶段2：多个退化原因通过位图并存，GCS可同时展示全部触发依据。
   if (next.nlos_ratio >= config_.nlos_ratio_threshold) {
     next.reason_mask |= ReasonMask::NLOS_RATIO_HIGH;
   }
@@ -285,6 +291,7 @@ void DegradationMonitor::evaluate(EdgeRecord& record,
   }
   const bool bad = next.reason_mask != ReasonMask::NONE;
 
+  // 阶段3：保持时间抑制状态抖动；坏数据持续越久，状态逐级升级到暂缓和剔除。
   if (bad) {
     record.has_good_since = false;
     if (!record.has_bad_since) {
@@ -301,6 +308,7 @@ void DegradationMonitor::evaluate(EdgeRecord& record,
     }
   } else {
     record.has_bad_since = false;
+    // 剔除或降级后的好数据必须经过试探恢复期，不能一帧即恢复正常融合。
     if (record.quality.state == ObservationState::kUnknown ||
         record.quality.state == ObservationState::kNormal) {
       next.state = ObservationState::kNormal;

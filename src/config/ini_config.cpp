@@ -1,4 +1,6 @@
-// 严格解析配置并检查跨字段约束，配置错误必须在算法启动前被拒绝。
+// 模块实现：以UTF-8读取严格INI，检查节名/键名/重复项/类型范围和跨字段约束。
+// 关键原则：未知键与非法编码直接失败，配置错误在算法、网络和日志资源创建前暴露；
+// 解析器不静默采用拼写相近的键，也不把缺失参数替换成源码中的调试值。
 #include "config/ini_config.hpp"
 
 #include <algorithm>
@@ -63,6 +65,7 @@ bool continuation(unsigned char byte) {
 }
 
 std::size_t invalid_utf8_line(const std::string& text) {
+  // 逐字节校验UTF-8并返回首个错误行，避免中文配置在不同平台被错误解码。
   std::size_t line = 1U;
   std::size_t index = 0U;
   while (index < text.size()) {
@@ -225,6 +228,7 @@ bool allowed_key(const Section& section, const std::string& key) {
 }
 
 ParsedIni parse_sections(const std::string& source) {
+  // 阶段1：处理UTF-8/BOM并逐行识别节和键值，同时保留行号用于错误报告。
   const std::size_t invalid_line = invalid_utf8_line(source);
   if (invalid_line != 0U) {
     fail(IniError::kInvalidUtf8, invalid_line,
@@ -315,6 +319,7 @@ ParsedIni parse_sections(const std::string& source) {
       fail(IniError::kSyntax, line_number,
            "configuration key must be lowercase ASCII");
     }
+    // 白名单拒绝未知键，防止拼写错误导致参数看似生效、实际使用默认值。
     if (!allowed_key(*current, key)) {
       fail(IniError::kUnknownKey, line_number,
            "key '" + key + "' is unknown in section '" +
@@ -564,6 +569,7 @@ IniError IniConfigError::code() const noexcept { return code_; }
 std::size_t IniConfigError::line() const noexcept { return line_; }
 
 DemoConfig parse_ini_config(const std::string& text) {
+  // 阶段2：按功能节把字符串转换为强类型配置，缺失或越界值立即抛出。
   const ParsedIni parsed = parse_sections(text);
   const Section& engine_section = require_section(parsed, "engine");
   const Section& filter_section = require_section(parsed, "filter");
@@ -812,6 +818,7 @@ DemoConfig parse_ini_config(const std::string& text) {
     }
   }
 
+  // 阶段3：单字段解析后再检查节点、边、状态维数和时间门限的组合约束。
   validate_engine_config(config, engine_section, filter_section,
                          degradation_section, online_section,
                          node_entry_lines);
@@ -819,6 +826,7 @@ DemoConfig parse_ini_config(const std::string& text) {
 }
 
 DemoConfig load_ini_config(const std::filesystem::path& path) {
+  // 文件按二进制读取，编码、换行和BOM统一交给parse_ini_config处理。
   std::ifstream input(path, std::ios::binary);
   if (!input.is_open()) {
     fail(IniError::kIoFailure, 1U,

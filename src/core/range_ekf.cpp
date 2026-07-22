@@ -1,4 +1,6 @@
-// 二维恒速预测和平台间距离更新实现，用于回退运行与历史回归验证。
+// 模块实现：二维恒速状态传播与平台间欧氏距离EKF更新，用于无IMU兼容模式。
+// 关键原则：长时间隔按等效分段过程噪声计算，协方差采用Joseph形式并做正定稳定化；
+// 该路径不与15维惯性路径同时运行，不能作为当前默认IMU+测距实现的替代说明。
 #include "core/range_ekf.hpp"
 
 #include <algorithm>
@@ -95,6 +97,7 @@ bool has_strict_cholesky_factor(const DenseMatrix& matrix,
 
 bool stabilize_positive_definite(DenseMatrix& covariance,
                                  double minimum_diagonal) {
+  // 先恢复有限对角线和对称性，再逐级增加极小抖动直到Cholesky检查通过。
   double scale = minimum_diagonal;
   for (std::size_t row = 0U; row < covariance.rows(); ++row) {
     for (std::size_t col = 0U; col < covariance.cols(); ++col) {
@@ -138,6 +141,7 @@ bool stabilize_positive_definite(DenseMatrix& covariance,
 RangeEkf::RangeEkf(FilterConfig config,
                    std::vector<NodeInitialization> initializations)
     : config_(config), covariance_(0U, 0U) {
+  // 构造时锁定节点顺序、参考节点和状态维度，运行中不动态增加平台。
   if (!finite(config_.process_accel_std_mps2) ||
       config_.process_accel_std_mps2 <= 0.0 || !finite(config_.nis_gate) ||
       config_.nis_gate < 0.0 || !finite(config_.max_prediction_step_s) ||
@@ -242,6 +246,7 @@ void RangeEkf::predict_to(std::uint64_t timestamp_ns) {
     return;
   }
 
+  // 统一纳秒时间轴转换为秒，并按最大预测步长推导等效分段数。
   const double total_seconds =
       static_cast<double>(timestamp_ns - last_timestamp_ns_) /
       kNanosecondsPerSecond;
@@ -274,6 +279,7 @@ void RangeEkf::predict_interval(double total_seconds,
     throw std::overflow_error("prediction interval is not representable");
   }
 
+  // 使用long double分解计算dt高次项，避免长时间间隔的过程噪声中间量溢出。
   const long double duration = static_cast<long double>(total_seconds);
   const long double q =
       static_cast<long double>(config_.process_accel_std_mps2) *
@@ -344,6 +350,7 @@ void RangeEkf::predict_interval(double total_seconds,
 
 UpdateResult RangeEkf::update(const RangePacket& packet,
                               double covariance_scale) {
+  // 阶段1：先推进到量测时刻并检查输入，失败时返回明确诊断而非静默丢弃。
   if (has_timebase_ && packet.timestamp_ns < last_timestamp_ns_) {
     return result(UpdateDisposition::OutOfOrder, covariance_scale);
   }
@@ -386,6 +393,7 @@ UpdateResult RangeEkf::update(const RangePacket& packet,
     return result(UpdateDisposition::NumericalFailure, covariance_scale);
   }
 
+  // 阶段2：距离雅可比只作用于两节点的x/y位置分量，参考节点保持零状态。
   std::vector<double> jacobian(state_.size(), 0.0);
   const double unit_x = delta_x / expected_range;
   const double unit_y = delta_y / expected_range;
@@ -444,6 +452,7 @@ UpdateResult RangeEkf::update(const RangePacket& packet,
       !finite(standardized_residual) || standardized_residual > maximum_root
           ? std::numeric_limits<double>::max()
           : standardized_residual * standardized_residual;
+  // 阶段3：NIS门限在更新前隔离几何异常量测，拒绝时不修改状态和协方差。
   if (standardized_residual > std::sqrt(config_.nis_gate)) {
     update_result.disposition = UpdateDisposition::NisRejected;
     return update_result;
@@ -464,6 +473,7 @@ UpdateResult RangeEkf::update(const RangePacket& packet,
           gain[row] * jacobian[col];
     }
   }
+  // 阶段4：在候选副本上用Joseph形式更新，有限值和正定性通过后才提交。
   DenseMatrix candidate_covariance =
       identity_minus_gain_jacobian * covariance_ *
       identity_minus_gain_jacobian.transpose();

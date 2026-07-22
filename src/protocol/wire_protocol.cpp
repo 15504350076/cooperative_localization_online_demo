@@ -1,4 +1,6 @@
-// ZJCL 各固定载荷的大小端编解码与严格字段校验实现。
+// 模块实现：ZJCL公共帧头和各固定载荷的小端编解码、CRC校验与字段语义校验。
+// 关键原则：编码端拒绝不可表示数据，解码端按“长度→头部→CRC→载荷语义”顺序失败；
+// C++与Python实现共享固定字节布局，任何新增字段必须升级协议版本或使用新消息类型。
 #include "protocol/wire_protocol.hpp"
 
 #include "protocol/crc32.hpp"
@@ -26,6 +28,7 @@ static_assert(std::numeric_limits<double>::is_iec559,
               "wire protocol requires IEEE-754 double");
 
 void append_u16(std::vector<std::uint8_t>& output, std::uint16_t value) {
+  // 协议固定为小端，不能直接复制主机端整数布局，否则跨架构结果不可控。
   output.push_back(static_cast<std::uint8_t>(value & 0xFFU));
   output.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
 }
@@ -109,6 +112,7 @@ void write_u32(std::vector<std::uint8_t>& output, std::size_t offset,
 
 std::vector<std::uint8_t> crc_input(
     const std::vector<std::uint8_t>& frame_bytes) {
+  // CRC输入跳过帧头中的CRC字段，再拼接载荷；编码和解码必须使用同一规则。
   std::vector<std::uint8_t> input;
   input.reserve(kCrcOffset + frame_bytes.size() - kWireHeaderSize);
   input.insert(input.end(), frame_bytes.begin(),
@@ -453,6 +457,7 @@ bool is_known_message_type(MessageType type) noexcept {
 
 std::vector<std::uint8_t> encode_frame(const Frame& frame,
                                        std::size_t max_payload_size) {
+  // 阶段1：先验证消息类型、固定载荷长度和资源上限，再分配最终帧缓冲区。
   if (max_payload_size > kDefaultMaxPayloadSize) {
     throw std::invalid_argument(
         "wire payload limit exceeds the protocol hard limit");
@@ -490,12 +495,14 @@ std::vector<std::uint8_t> encode_frame(const Frame& frame,
   append_u32(output, 0U);
   output.insert(output.end(), frame.payload.begin(), frame.payload.end());
 
+  // 阶段2：头部和载荷完成后计算CRC，并回填固定偏移位置。
   write_u32(output, kCrcOffset, crc32_ieee(crc_input(output)));
   return output;
 }
 
 FrameDecodeResult decode_frame(const std::vector<std::uint8_t>& bytes,
                                std::size_t max_payload_size) {
+  // 阶段1：先做总长度和魔数/版本检查，尚未证明安全前不读取载荷字段。
   if (max_payload_size > kDefaultMaxPayloadSize) {
     return failure(ProtocolError::kPayloadTooLarge,
                    "wire payload limit exceeds the protocol hard limit");
@@ -545,6 +552,7 @@ FrameDecodeResult decode_frame(const std::vector<std::uint8_t>& bytes,
                    "wire frame has trailing bytes");
   }
 
+  // 阶段2：CRC通过后才构造Frame；损坏数据不会进入具体载荷解码器。
   const std::uint32_t encoded_crc = read_u32(bytes, kCrcOffset);
   if (crc32_ieee(crc_input(bytes)) != encoded_crc) {
     return failure(ProtocolError::kCrcMismatch,
@@ -568,6 +576,7 @@ FrameDecodeResult decode_frame(const std::vector<std::uint8_t>& bytes,
 
 std::vector<std::uint8_t> encode_range_payload(
     const RangePayload& payload) {
+  // 测距固定载荷同时携带标准差和NLOS证据，质量字段不能在传输层丢弃。
   require_range_values(payload);
   std::vector<std::uint8_t> output;
   output.reserve(kRangePayloadSize);
@@ -619,6 +628,7 @@ PayloadDecodeResult<RangePayload> decode_range_payload(
 }
 
 std::vector<std::uint8_t> encode_imu_payload(const ImuPayload& payload) {
+  // IMU载荷保持ROS 2 Imu瞬时量语义；frame_id固定32字节且必须NUL结束。
   if (!valid_imu_payload(payload)) {
     throw std::invalid_argument("IMU payload contains invalid data");
   }
@@ -701,6 +711,7 @@ PayloadDecodeResult<ImuPayload> decode_imu_payload(
 
 std::vector<std::uint8_t> encode_localization_payload(
     const LocalizationPayload& payload) {
+  // 定位输出同时编码有效位与能力位，未实现yaw/z时必须明确标记无效。
   require_localization_values(payload);
   std::vector<std::uint8_t> output;
   output.reserve(kLocalizationPayloadSize);
@@ -822,6 +833,7 @@ PayloadDecodeResult<NetworkPayload> decode_network_payload(
 
 std::vector<std::uint8_t> encode_observation_payload(
     const ObservationPayload& payload) {
+  // 保留滑窗计数、原因位图和实际融合动作，便于GCS审计退化判定。
   require_observation_values(payload);
   std::vector<std::uint8_t> output;
   output.reserve(kObservationPayloadSize);
@@ -910,6 +922,7 @@ PayloadDecodeResult<ObservationPayload> decode_observation_payload(
 
 std::vector<std::uint8_t> encode_alert_payload(
     const AlertPayload& payload) {
+  // 告警使用稳定code/lifecycle/reason_mask，文本解释由GCS按版本映射。
   require_alert_values(payload);
   std::vector<std::uint8_t> output;
   output.reserve(kAlertPayloadSize);

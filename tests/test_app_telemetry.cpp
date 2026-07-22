@@ -1,3 +1,4 @@
+// 模块职责：验证应用适配层把算法快照编码为GCS帧，并正确维护告警激活/恢复生命周期。
 #include "apps/app_support.hpp"
 #include "protocol/wire_protocol.hpp"
 #include "test_support.hpp"

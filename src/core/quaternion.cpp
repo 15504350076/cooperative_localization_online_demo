@@ -1,4 +1,5 @@
-// 四元数归一化、指数映射和坐标旋转实现，遇到非有限值时拒绝继续传播。
+// 模块实现：惯导使用的向量代数、单位四元数归一化、复合、旋转和指数映射。
+// 关键原则：遇到零范数或非有限值立即返回失败，避免错误姿态继续污染速度、位置和协方差。
 #include "core/quaternion.hpp"
 
 #include <cmath>
@@ -65,6 +66,7 @@ double Quaternion::norm() const noexcept {
 
 bool Quaternion::normalize() noexcept {
   const double magnitude = norm();
+  // 接近零或非有限范数没有可定义的旋转方向，不能用任意单位姿态替代。
   if (!finite() || !std::isfinite(magnitude) ||
       magnitude <= std::numeric_limits<double>::min()) {
     return false;
@@ -81,6 +83,7 @@ Quaternion Quaternion::conjugate() const noexcept {
 }
 
 Quaternion Quaternion::operator*(const Quaternion& right) const noexcept {
+  // Hamilton积的左右顺序决定旋转复合方向，惯导传播使用当前姿态右乘增量姿态。
   return {w * right.w - x * right.x - y * right.y - z * right.z,
           w * right.x + x * right.w + y * right.z - z * right.y,
           w * right.y - x * right.z + y * right.w + z * right.x,
@@ -95,6 +98,7 @@ Vec3 Quaternion::rotate(const Vec3& value) const noexcept {
 }
 
 Quaternion Quaternion::exp(const Vec3& rotation_vector) noexcept {
+  // 旋转向量模长是总转角；四元数标量部和向量部均使用半角关系。
   const double angle = zju::coop::norm(rotation_vector);
   if (!std::isfinite(angle) || !zju::coop::finite(rotation_vector)) {
     const double invalid = std::numeric_limits<double>::quiet_NaN();

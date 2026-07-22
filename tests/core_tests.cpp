@@ -1,3 +1,4 @@
+// 模块职责：早期核心接口回归入口，覆盖三车节点初始化、测距输入和主参考输出。
 #include "zju_coop/engine.hpp"
 
 #include <cmath>

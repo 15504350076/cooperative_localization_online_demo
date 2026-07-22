@@ -1,3 +1,4 @@
+// 模块职责：验证公共枚举位图、默认值和能力/原因组合的基础类型语义。
 #include "test_support.hpp"
 #include "zju_coop/types.hpp"
 

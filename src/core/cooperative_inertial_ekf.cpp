@@ -1,4 +1,6 @@
-// 维护各节点名义状态和完整交叉协方差，使一次测距更新可修正所有相关节点。
+// 模块实现：维护多节点名义惯性状态和完整15N联合协方差，融合平台间三维距离观测。
+// 关键原则：IMU只传播所属节点的状态块和相关交叉块；测距更新作用于完整联合状态，
+// 误差注入或协方差数值检查失败时整次更新回滚，不留下半更新状态。
 #include "core/cooperative_inertial_ekf.hpp"
 
 #include <algorithm>
@@ -44,6 +46,7 @@ CooperativeInertialEkf::CooperativeInertialEkf(
               kInertialErrorStateSize) {
     throw std::invalid_argument("invalid cooperative inertial configuration");
   }
+  // 初始化阶段固定节点到15维块的映射，并在分配矩阵前检查状态资源上限。
   const std::size_t dimension =
       initializations.size() * kInertialErrorStateSize;
   if (dimension > config_.max_inertial_state_dimension) {
@@ -84,6 +87,7 @@ CooperativeInertialEkf::CooperativeInertialEkf(
     throw std::invalid_argument("reference inertial node is missing");
   }
 
+  // 初始节点互不相关，只填充各自15×15对角块；后续协同量测会建立交叉相关。
   covariance_ = DenseMatrix(dimension, dimension);
   for (std::size_t index = 0U; index < initializations.size(); ++index) {
     const std::size_t offset = index * kInertialErrorStateSize;
@@ -103,6 +107,7 @@ CooperativeInertialEkf::CooperativeInertialEkf(
 
 ImuProcessingResult CooperativeInertialEkf::push_imu(
     const ImuPacket& packet) {
+  // 阶段1：用固定节点映射定位传播器，未知节点不能在运行中扩大状态维度。
   const auto found = node_lookup_.find(packet.node_id);
   if (found == node_lookup_.end()) {
     ImuProcessingResult result{};
@@ -122,6 +127,7 @@ ImuProcessingResult CooperativeInertialEkf::push_imu(
     return result;
   }
 
+  // 阶段2：在协方差副本上更新目标块及全部交叉块，保证数值失败时可回滚。
   DenseMatrix candidate_covariance = covariance_;
   const std::size_t node_offset =
       found->second * kInertialErrorStateSize;
@@ -183,6 +189,7 @@ ImuProcessingResult CooperativeInertialEkf::push_imu(
 UpdateResult CooperativeInertialEkf::update_range(const RangePacket& packet,
                                                    double covariance_scale) {
   UpdateResult result{};
+  // 阶段1：结构、节点和时间检查先于几何线性化，拒绝结果不修改滤波状态。
   result.covariance_scale = covariance_scale;
   if (!packet.valid || packet.receive_timestamp_ns == 0U ||
       packet.status > 2U || !std::isfinite(packet.range_m) ||
@@ -209,6 +216,7 @@ UpdateResult CooperativeInertialEkf::update_range(const RangePacket& packet,
     return result;
   }
 
+  // 阶段2：以两节点当前三维位置构造预测距离和单位方向；零基线不可线性化。
   const Vec3 difference = filters_[to->second].state().position_n_m -
                           filters_[from->second].state().position_n_m;
   const double predicted_range = norm(difference);
@@ -218,6 +226,7 @@ UpdateResult CooperativeInertialEkf::update_range(const RangePacket& packet,
   }
   const Vec3 direction = (1.0 / predicted_range) * difference;
   const std::size_t dimension = covariance_.rows();
+  // H只在两个节点的位置块非零，但P*H^T会把约束传播到全部相关状态块。
   std::vector<double> jacobian(dimension, 0.0);
   const std::size_t from_offset = from->second * kInertialErrorStateSize;
   const std::size_t to_offset = to->second * kInertialErrorStateSize;
@@ -247,6 +256,7 @@ UpdateResult CooperativeInertialEkf::update_range(const RangePacket& packet,
   }
   result.innovation_m = innovation;
   result.innovation_variance = innovation_variance;
+  // 阶段3：用NIS在状态更新前隔离异常量测，同时保留创新诊断供质量监测使用。
   result.nis = innovation * innovation / innovation_variance;
   if (!std::isfinite(result.nis)) {
     result.disposition = UpdateDisposition::NumericalFailure;
@@ -260,6 +270,7 @@ UpdateResult CooperativeInertialEkf::update_range(const RangePacket& packet,
     return result;
   }
 
+  // 阶段4：计算联合Kalman增益和完整15N误差向量。
   std::vector<double> gain(dimension, 0.0);
   std::vector<double> error(dimension, 0.0);
   for (std::size_t index = 0U; index < dimension; ++index) {
@@ -289,6 +300,7 @@ UpdateResult CooperativeInertialEkf::update_range(const RangePacket& packet,
                  config_.min_covariance_diagonal);
   }
 
+  // 阶段5：先向所有传播器副本注入对应15维误差，全部成功后再原子提交。
   std::vector<InertialEskf15> candidate_filters = filters_;
   for (std::size_t node = 0U; node < candidate_filters.size(); ++node) {
     std::array<double, kInertialErrorStateSize> node_error{};
@@ -320,6 +332,7 @@ NodeEstimate CooperativeInertialEkf::estimate(std::uint32_t node_id) const {
   if (found == node_lookup_.end() || reference == node_lookup_.end()) {
     throw std::out_of_range("unknown inertial node id");
   }
+  // 输出采用相对主参考状态，不把任一节点本地ENU初值误当成GCS绝对坐标。
   const auto& node_state = filters_[found->second].state();
   const auto& reference_state = filters_[reference->second].state();
   const Vec3 relative_position =

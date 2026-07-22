@@ -1,4 +1,6 @@
-// 算法核心公共 C++ 数据类型；时间单位均为纳秒，距离采用米制 SI 单位。
+// 模块职责：定义算法核心使用的普通C++数据结构，不依赖ROS 2消息类型。
+// 统一约定：时间戳为上交同步后的纳秒时间轴，距离/速度/加速度采用SI单位；
+// 所有跨进程或跨语言数据应先由适配层转换到这些结构，再进入算法核心。
 #pragma once
 
 #include <array>
@@ -6,6 +8,7 @@
 
 namespace zju::coop {
 
+/** 输出能力位图；能力存在不等于当前帧有效，仍须同时检查valid和状态字段。 */
 enum class Capability : std::uint32_t {
   kNone = 0U,
   kUwbRange = 1U << 0U,
@@ -26,6 +29,7 @@ constexpr bool has_capability(Capability mask, Capability value) noexcept {
              static_cast<std::uint32_t>(value);
 }
 
+/** 单条相对观测边的质量状态，由退化监测状态机产生。 */
 enum class ObservationState : std::uint8_t {
   kUnknown,
   kNormal,
@@ -35,6 +39,7 @@ enum class ObservationState : std::uint8_t {
   kRecovering,
 };
 
+/** 质量状态映射到滤波器后的实际处理动作。 */
 enum class FusionAction : std::uint8_t {
   kUseNormal,
   kUseDownweighted,
@@ -43,6 +48,7 @@ enum class FusionAction : std::uint8_t {
   kTrialRecovery,
 };
 
+/** 面向GCS的综合定位状态，不能仅由单次量测是否成功判断。 */
 enum class LocalizationState : std::uint8_t {
   kUninitialized,
   kNormal,
@@ -51,6 +57,11 @@ enum class LocalizationState : std::uint8_t {
   kStale,
 };
 
+/**
+ * 平台间直接测距观测。
+ * from/to表示有向数据来源，但拓扑质量按无向协同边统计；receive_timestamp_ns
+ * 仅用于时延检查，滤波更新使用timestamp_ns对应的统一测量时刻。
+ */
 struct RangePacket {
   std::uint16_t from_node{};
   std::uint16_t to_node{};

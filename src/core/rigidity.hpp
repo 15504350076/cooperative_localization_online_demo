@@ -1,4 +1,6 @@
-// 动态协同图的连通性、主参考可达性和二维几何可观性分析接口。
+// 模块职责：依据当前有效协同边分析主参考可达性、图连通性和二维几何可观性。
+// 拓扑由运行时观测质量动态生成，不假定三车、固定边数或固定约束路径；
+// observable表示刚度矩阵达到目标数值秩，不等价于绝对坐标已知。
 #pragma once
 
 #include <cstddef>
@@ -17,6 +19,7 @@ struct Edge {
   std::uint32_t to_node{0U};
 };
 
+/** 一次拓扑分析结果，供Engine生成网络状态和不可观告警。 */
 struct RigidityResult {
   std::size_t rank{0U};
   std::size_t target_rank{0U};
