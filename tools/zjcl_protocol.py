@@ -107,6 +107,7 @@ class ProtocolError(ValueError):
 
 @dataclass(frozen=True)
 class Frame:
+    """一份完整ZJCL业务帧；payload不含40字节公共头，节点语义随消息类型解释。"""
     message_type: int
     flags: int
     sequence: int
@@ -118,6 +119,7 @@ class Frame:
 
 @dataclass(frozen=True)
 class RangePayload:
+    """测距值/标准差单位m；NLOS概率只有has_nlos_probability为真时才有业务含义。"""
     range_m: float
     range_std_m: float
     nlos_probability: float
@@ -129,7 +131,7 @@ class RangePayload:
 
 @dataclass(frozen=True)
 class ImuPayload:
-    """ROS 2 Imu瞬时量的临时UDP表示；不包含温度。"""
+    """ROS 2 Imu瞬时量的临时UDP表示；数组按行主序，不包含温度或预积分量。"""
     orientation_xyzw: tuple
     orientation_covariance: tuple
     angular_velocity_rad_s: tuple
@@ -144,6 +146,7 @@ class ImuPayload:
 
 @dataclass(frozen=True)
 class LocalizationPayload:
+    """主参考平面相对状态；能力位与valid/yaw_valid/z_valid必须联合判断。"""
     x: float
     y: float
     vx: float
@@ -160,6 +163,7 @@ class LocalizationPayload:
 
 @dataclass(frozen=True)
 class NetworkPayload:
+    """同一快照下的活动边、主参考可达性、几何可观性和可组合原因位。"""
     node_count: int
     reachable_node_count: int
     active_edge_count: int
@@ -171,6 +175,7 @@ class NetworkPayload:
 
 @dataclass(frozen=True)
 class ObservationPayload:
+    """一条无向协同边的滑窗计数、质量状态和实际融合动作。"""
     window_start_ns: int
     window_end_ns: int
     expected_count: int
@@ -191,6 +196,7 @@ class ObservationPayload:
 
 @dataclass(frozen=True)
 class AlertPayload:
+    """演示层告警生命周期；first保持首次激活时刻，last随活动/清除事件更新。"""
     alert_code: int
     level: int
     lifecycle: int
@@ -205,6 +211,7 @@ class AlertPayload:
 
 @dataclass(frozen=True)
 class AlgorithmStatusPayload:
+    """演示进程模式和累计计数；进程重启后计数可以从零开始。"""
     abi_version: int
     software_version_packed: int
     mode: int
@@ -300,7 +307,7 @@ def _payload_limit(max_payload_size):
 
 
 def encode_frame(frame, max_payload_size=MAX_PAYLOAD_SIZE, udp=False):
-    """校验业务字段并编码公共帧；CRC覆盖36字节前缀和完整载荷。"""
+    """校验业务字段并编码公共帧；CRC输入是头部[0,36)紧接完整载荷。"""
     # 阶段1：完成类型、范围、固定载荷长度和UDP上限检查后再打包。
     if not isinstance(frame, Frame):
         raise ProtocolError("frame must be a Frame")
@@ -334,7 +341,7 @@ def encode_frame(frame, max_payload_size=MAX_PAYLOAD_SIZE, udp=False):
         source_node,
         target_node,
     )
-    # CRC字段位于偏移36，计算时尚未拼入，因此与C++跳过CRC字段的规则一致。
+    # CRC字段位于偏移36；计算时完全排除这4字节，而不是把它们作为零值参与。
     crc = zlib.crc32(prefix + payload) & 0xFFFFFFFF
     return prefix + struct.pack("<I", crc) + payload
 

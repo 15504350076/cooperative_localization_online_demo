@@ -13,7 +13,10 @@
 
 namespace zju::coop::apps {
 
-/** 一次C ABI step返回的定位、观测和网络原子快照。 */
+/**
+ * 一次C ABI step返回的定位、观测和网络原子快照。
+ * vector内存由本适配层管理；结构中的struct_size仍保留调用方容量握手值。
+ */
 struct StepSnapshot {
   std::vector<zju_coop_localization_t> localizations;
   std::vector<zju_coop_observation_t> observations;
@@ -29,6 +32,7 @@ class AlgorithmSession {
   AlgorithmSession(const AlgorithmSession&) = delete;
   AlgorithmSession& operator=(const AlgorithmSession&) = delete;
 
+  /** 把ZJCL公共头和测距载荷合成C ABI输入，receive_timestamp由本机收包时刻提供。 */
   [[nodiscard]] zju_coop_range_processing_result_t push_range(
       const protocol::Frame& frame,
       const protocol::RangePayload& payload,
@@ -53,7 +57,11 @@ struct TelemetryCounters {
   std::uint64_t protocol_errors{};
 };
 
-/** 把网络状态和运行计数编码为状态/告警帧，并维护告警生命周期。 */
+/**
+ * 把网络状态和运行计数编码为状态/告警帧，并维护告警生命周期。
+ * 首次非正常网络发Active，恢复正常只发一次Cleared；持续同一故障不重复制造
+ * 新告警生命周期。该逻辑是演示适配语义，当前不属于C ABI v1输出。
+ */
 class TelemetryEncoder {
  public:
   [[nodiscard]] std::vector<EncodedOutput> encode(

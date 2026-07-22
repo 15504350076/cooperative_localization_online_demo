@@ -203,6 +203,7 @@ double minimum_symmetric_eigenvalue(DenseMatrix matrix) {
 
 }  // namespace
 
+// 构造组：冻结主参考相对化、稀疏节点编号、初始方差和资源/溢出拒绝语义。
 TEST_CASE(range_ekf_translates_all_initial_positions_to_reference_origin) {
   RangeEkf filter(config(), triangle_nodes());
 
@@ -296,6 +297,7 @@ TEST_CASE(range_ekf_rejects_process_variance_underflow) {
   EXPECT_TRUE(rejected);
 }
 
+// 预测组：比较闭式分段过程噪声与显式多子步，并覆盖极端步数和失败事务回滚。
 TEST_CASE(range_ekf_tiny_prediction_step_still_advances_full_duration) {
   FilterConfig tiny_step = config();
   tiny_step.max_prediction_step_s = 1.0e-20;
@@ -472,6 +474,7 @@ TEST_CASE(equal_absolute_velocities_produce_zero_relative_velocity) {
   EXPECT_TRUE(near(distance(reference, b), initial_range, 1.0e-8));
 }
 
+// 更新组：两端距离雅可比建立交叉协方差，后续边可把修正传播到相关第三节点。
 TEST_CASE(reference_ranges_correct_only_the_observed_nonreference_node) {
   RangeEkf filter(config(), triangle_nodes());
   const NodeEstimate c_before = filter.estimate(7U);
@@ -564,6 +567,7 @@ TEST_CASE(subnormal_measurement_variance_avoids_intermediate_underflow) {
   EXPECT_TRUE(result.innovation_variance < 2.5e-300);
 }
 
+// 拒绝/数值组：区分输入类别、NIS边界、乱序、零基线和近奇异协方差稳定化。
 TEST_CASE(range_ekf_reports_invalid_packet_categories_without_correction) {
   RangeEkf filter(config(), triangle_nodes());
 
@@ -758,6 +762,7 @@ TEST_CASE(prediction_stabilizes_near_singular_full_covariance) {
   EXPECT_TRUE(has_strict_cholesky_factor(rounding_edge.covariance()));
 }
 
+// 集成组：三条一致测距应形成稳定非共线相对几何，而不宣称绝对位置或航向。
 TEST_CASE(three_consistent_ranges_converge_to_stable_triangle_geometry) {
   FilterConfig loose = config();
   loose.nis_gate = 1.0e9;

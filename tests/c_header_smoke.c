@@ -24,6 +24,7 @@ int main(void) {
       zju_coop_observation_init(&observation) != ZJU_COOP_OK) {
     return 1;
   }
+  /* 惯性扩展结构仍由纯C翻译单元编译，防止公开头无意引入C++语法或依赖。 */
   if (zju_coop_inertial_node_initialization_init(&inertial_node) !=
           ZJU_COOP_OK ||
       zju_coop_inertial_config_init(&inertial_config) != ZJU_COOP_OK ||

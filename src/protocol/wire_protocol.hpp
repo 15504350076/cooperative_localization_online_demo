@@ -59,7 +59,11 @@ enum class ProtocolError {
   kInvalidReserved,
 };
 
-/** 40字节公共帧头；CRC覆盖CRC字段清零后的帧头和完整载荷。 */
+/**
+ * 40字节公共帧头；CRC输入为头部[0,36)字节紧接完整载荷，明确排除CRC字段。
+ * sequence由消息生产者按数据流递增，timestamp_ns表示内容对应的测量/输出时刻；
+ * source/target的具体含义由消息类型定义，广播输出可使用target=0。
+ */
 struct FrameHeader {
   MessageType message_type{MessageType::kRange};
   std::uint16_t flags{};
@@ -76,7 +80,11 @@ struct Frame {
   std::vector<std::uint8_t> payload;
 };
 
-/** 解码不抛异常，错误枚举与detail供在线程序计数和诊断。 */
+/**
+ * 解码不抛异常，错误枚举与detail供在线程序计数和诊断。
+ * 解码顺序固定为外层长度→魔数/版本/类型→固定载荷长度→CRC→字段语义，
+ * 任何一步失败都不得向算法返回部分Frame。
+ */
 struct FrameDecodeResult {
   ProtocolError error{ProtocolError::kNone};
   Frame value{};
@@ -125,6 +133,7 @@ struct ImuPayload {
 };
 
 struct LocalizationPayload {
+  // 当前只承诺平面相对位置/速度；capability与三个valid位共同约束消费者显示。
   double x{};
   double y{};
   double vx{};
@@ -184,6 +193,7 @@ enum class AlgorithmRunState : std::uint8_t {
 };
 
 struct AlgorithmStatusPayload {
+  // 运行计数是进程级累计诊断，不是滤波状态的一部分，重启后允许从零开始。
   std::uint32_t abi_version{kAlgorithmStatusAbiVersion};
   std::uint32_t software_version_packed{kSoftwareVersionPacked};
   AlgorithmMode mode{AlgorithmMode::kUwbOnlyPlanar};
@@ -234,10 +244,12 @@ struct AlertPayload {
 
 [[nodiscard]] bool is_known_message_type(MessageType type) noexcept;
 
+/** 编码失败抛invalid_argument；成功结果恰好是一帧，不含UDP或日志外层长度。 */
 [[nodiscard]] std::vector<std::uint8_t> encode_frame(
     const Frame& frame,
     std::size_t max_payload_size = kDefaultMaxPayloadSize);
 
+/** 严格要求输入恰好一帧，尾随字节也视为协议错误。 */
 [[nodiscard]] FrameDecodeResult decode_frame(
     const std::vector<std::uint8_t>& bytes,
     std::size_t max_payload_size = kDefaultMaxPayloadSize);

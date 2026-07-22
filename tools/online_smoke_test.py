@@ -96,6 +96,7 @@ class OutputEvidence:
                     self.link_timeout_alert_after_stop = True
 
     def assert_complete(self):
+        """要求正常网络和停输后的LINK_TIMEOUT都出现，排除只看到启动告警的假通过。"""
         missing_nodes = EXPECTED_NODES - self.localization_nodes
         missing_edges = EXPECTED_EDGES - self.observation_edges
         if missing_nodes:
@@ -176,6 +177,7 @@ def _start_process(arguments):
 
 
 def _finish_process(process, timeout_s):
+    """在限时内收集输出；超时先terminate再kill，确保失败测试不遗留后台进程。"""
     try:
         output, _ = process.communicate(timeout=timeout_s)
         return process.returncode, output
@@ -248,9 +250,8 @@ def _exercise_online(process, receiver, target, send_duration, evidence):
 
     # 输入停止后继续接收，使Engine.step有机会发布链路超时和告警激活帧。
     evidence.mark_inputs_stopped()
-    # The demo edge timeout is 0.5 s. Stop normal ranges, then continue
-    # receiving for longer than that so the smoke test proves the timeout
-    # transition instead of accepting only a startup alert.
+    # 默认边超时为0.5 s，继续监听0.85 s可证明“正常→停输→LINK_TIMEOUT”转换，
+    # 不能用进程启动阶段原本就可能存在的不可观告警冒充停输告警。
     drain_deadline = time.monotonic() + 0.85
     while time.monotonic() < drain_deadline:
         _drain_output(receiver, evidence)
@@ -336,6 +337,7 @@ def run_smoke(args):
         ):
             if _summary_counter(online_output, name) == 0:
                 raise AssertionError(f"online SUMMARY reports zero {name}")
+        # 同时使用SUMMARY计数和真实UDP帧证据，避免被测程序只打印成功文本。
         evidence.assert_complete()
         if not event_log.is_file() or event_log.stat().st_size <= 8:
             raise AssertionError("online event log is missing or empty")

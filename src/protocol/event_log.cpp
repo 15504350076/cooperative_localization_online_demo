@@ -118,6 +118,8 @@ void EventLogWriter::append(const EventLogRecord& log_record) {
 
   std::vector<std::uint8_t> record;
   record.reserve(4U + kRecordMetadataSize + log_record.frame.size());
+  // length只计内部ZJCL帧字节；固定12字节方向/接收时间元数据由ZJLG格式隐含，
+  // 因而读取器可以在分配frame前先独立检查记录上限。
   const std::uint32_t length =
       static_cast<std::uint32_t>(log_record.frame.size());
   for (unsigned int shift = 0U; shift < 32U; shift += 8U) {
@@ -218,6 +220,7 @@ EventLogReadResult EventLogReader::next() {
         input_, EventLogError::kTruncatedRecordMetadata,
         "event log record metadata is truncated");
   }
+  // 元数据先验证方向和保留位，再解析接收时间；未来版本若复用保留位必须升级格式。
   const EventLogDirection direction =
       static_cast<EventLogDirection>(metadata[0U]);
   if (!is_valid_direction(direction)) {

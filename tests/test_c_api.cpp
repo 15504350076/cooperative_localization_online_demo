@@ -106,6 +106,7 @@ void initialize_outputs(std::vector<zju_coop_localization_t>& localizations,
 
 }  // namespace
 
+// 契约组锁定版本、结构默认值和公开原因位，避免跨语言调用方读取漂移枚举。
 TEST_CASE(c_api_exposes_stable_version_defaults_and_error_strings) {
   EXPECT_EQ(zju_coop_abi_version(), ZJU_COOP_ABI_VERSION_V1);
   EXPECT_TRUE(zju_coop_version_string() != nullptr);
@@ -141,6 +142,7 @@ TEST_CASE(c_api_reason_mask_bits_are_public_and_stable) {
   EXPECT_EQ(ZJU_COOP_REASON_INPUT_OVERFLOW, UINT32_C(1) << 9U);
 }
 
+// 创建/跨度组故意提供空指针、坏版本、未对齐stride和溢出地址，校验前不得解引用。
 TEST_CASE(c_api_create_rejects_null_bad_size_and_bad_version) {
   zju_coop_handle_t* handle = reinterpret_cast<zju_coop_handle_t*>(1U);
   EXPECT_EQ(zju_coop_create(nullptr, &handle), ZJU_COOP_INVALID_ARGUMENT);
@@ -407,6 +409,7 @@ TEST_CASE(c_api_validates_range_headers_flags_status_and_finite_values) {
             ZJU_COOP_ABI_MISMATCH);
 }
 
+// 输出事务组验证容量查询不推进时间，坏缓冲不部分写入，Engine失败也不提交候选状态。
 TEST_CASE(c_api_step_never_partially_writes_when_capacity_or_headers_fail) {
   TestEngine engine;
   std::vector<zju_coop_localization_t> localizations(2U);
@@ -552,6 +555,7 @@ TEST_CASE(c_api_buffer_query_does_not_advance_engine_timebase) {
   EXPECT_EQ(result.disposition, ZJU_COOP_PROCESSING_PROCESSED);
 }
 
+// 惯性集成组证明标准ROS字段可映射为普通C结构，核心库本身不链接ROS 2。
 TEST_CASE(c_api_configures_and_pushes_standard_imu_without_ros_dependency) {
   TestEngine engine;
   std::array<zju_coop_inertial_node_initialization_t, 3U> nodes{};

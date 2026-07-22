@@ -8,6 +8,7 @@
 using zju::coop::Quaternion;
 using zju::coop::Vec3;
 
+// 大角度方向、小角度展开、无效归一化和右手叉积共同锁定ENU/FLU姿态约定。
 TEST_CASE(quaternion_exponential_rotates_positive_x_to_positive_y) {
   const double half_pi = std::acos(-1.0) / 2.0;
   const Quaternion rotation = Quaternion::exp({0.0, 0.0, half_pi});

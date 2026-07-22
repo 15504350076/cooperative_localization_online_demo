@@ -20,12 +20,14 @@ import zjcl_protocol as zjcl
 
 
 def _port():
+    """向系统申请临时回环端口；仅供随后短生命周期测试进程使用。"""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
 
 
 def _process(args):
+    """启动真实子进程；Windows隐藏控制台但仍完整捕获合并后的UTF-8输出。"""
     options = {}
     if os.name == "nt":
         startup = subprocess.STARTUPINFO()
@@ -111,7 +113,8 @@ def run(args):
                     pass
             output, _ = process.communicate(timeout=4.0)
 
-        # 阶段3：同时检查进程退出、输入计数、算法模式和三个节点定位输出。
+        # 阶段3：退出码本身不足以证明闭环；同时检查IMU确实传播、测距被消费、
+        # 状态帧报告15维模式、三个节点均发布有效定位且日志含实际记录。
         if process.returncode != 0 or "SUMMARY status=OK" not in output:
             raise AssertionError(f"online failed:\n{output}")
         if _counter(output, "imu") == 0 or _counter(output, "propagated_imu") == 0:
@@ -125,7 +128,8 @@ def run(args):
         if not log_path.is_file() or log_path.stat().st_size <= 8:
             raise AssertionError("IMU+UWB event log is empty")
 
-        # 阶段4：回放刚生成的日志，确认IMU和测距输入都可重复消费。
+        # 阶段4：speed=0快速回放刚生成的日志，确认IMU和测距Input均被重新消费；
+        # 历史Output不会被计入input_imus/input_ranges。
         replay_process = _process((replay, "--config", config_path,
                                    "--log", log_path, "--speed", "0",
                                    "--output-mode", "final"))

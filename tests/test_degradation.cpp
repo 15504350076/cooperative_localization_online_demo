@@ -64,6 +64,7 @@ bool throws_invalid_config(const DegradationConfig& value) {
 
 }  // namespace
 
+// 边键/配置组保证反向量测共享同一质量窗口，同时保留稀疏uint32节点编号。
 TEST_CASE(edge_key_is_undirected_and_supports_sparse_uint32_ids) {
   const EdgeKey forward(4'000'000'000U, 17U);
   const EdgeKey reverse(17U, 4'000'000'000U);
@@ -112,6 +113,7 @@ TEST_CASE(degradation_config_defaults_and_invalid_ranges_are_checked) {
   EXPECT_TRUE(throws_invalid_config(invalid));
 }
 
+// 窗口组冻结左右边界、成熟前Unknown、NLOS/有效率/频率和残差计数口径。
 TEST_CASE(window_warmup_is_unknown_and_uses_normal_covariance) {
   DegradationMonitor monitor(config());
   for (unsigned int index = 0U; index < 20U; ++index) {
@@ -162,6 +164,7 @@ TEST_CASE(nlos_probability_at_configured_boundary_counts_as_nlos) {
   EXPECT_EQ(monitor.quality(EdgeKey(3U, 70U)).nlos_count, 1U);
 }
 
+// 状态机组用绝对时间验证降权→暂缓→剔除及试探恢复，调用次数不能替代持续时间。
 TEST_CASE(bad_and_good_durations_use_absolute_time_not_call_count) {
   DegradationMonitor monitor(config());
   fill_window(monitor, 12U);
@@ -240,6 +243,7 @@ TEST_CASE(mature_window_excludes_left_boundary_and_includes_right_boundary) {
   EXPECT_EQ(quality.actual_rate_hz, 20.0);
 }
 
+// 资源组确认样本缓存有界、溢出原因可见且离开窗口后能够恢复。
 TEST_CASE(sample_capacity_overflow_is_bounded_and_reported) {
   DegradationMonitor monitor(config());
   monitor.track(EdgeKey(3U, 70U));

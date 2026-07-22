@@ -64,6 +64,7 @@ double vector_norm(const Vec3& value) {
 
 }  // namespace
 
+// 时间/运动组：首帧不积分，静止比力抵消重力，恒加速度和恒角速率符合解析结果。
 TEST_CASE(inertial_eskf_first_sample_only_establishes_timebase) {
   InertialEskf15 filter(make_initialization(), make_config());
 
@@ -146,6 +147,7 @@ TEST_CASE(inertial_eskf_compensates_configured_gyro_and_accel_bias) {
   EXPECT_TRUE(std::abs(filter.state().orientation_b_to_n.w - 1.0) < 1.0e-12);
 }
 
+// 边界组：乱序、frame_id、非有限值和姿态有效条件失败时不能污染上一时间基准。
 TEST_CASE(inertial_eskf_rejects_invalid_order_frame_and_nonfinite_data) {
   InertialEskf15 filter(make_initialization(), make_config());
   const ImuPacket baseline =
@@ -232,6 +234,7 @@ TEST_CASE(inertial_eskf_ignores_unavailable_orientation_covariance) {
   EXPECT_TRUE(std::abs(filter.state().orientation_b_to_n.w - 1.0) < 1.0e-12);
 }
 
+// 噪声组：只有通过ROS协方差可用性/对称性检查时，消息协方差才替代配置噪声。
 TEST_CASE(inertial_eskf_message_covariance_changes_discrete_process_noise) {
   auto configured_only = make_config();
   auto message_driven = make_config();

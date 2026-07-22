@@ -40,12 +40,17 @@ struct Quaternion {
 
   [[nodiscard]] bool finite() const noexcept;
   [[nodiscard]] double norm() const noexcept;
+  /** 零范数或非有限输入返回false，调用方据此拒绝整次状态提交。 */
   [[nodiscard]] bool normalize() noexcept;
   [[nodiscard]] Quaternion conjugate() const noexcept;
   [[nodiscard]] Quaternion operator*(const Quaternion& right) const noexcept;
+  /** 主动旋转：把车体系向量映射到导航系，不改变向量所代表的物理量。 */
   [[nodiscard]] Vec3 rotate(const Vec3& value) const noexcept;
 
-  /** 将旋转向量（方向为转轴、模长为弧度）映射为单位四元数。 */
+  /**
+   * 将旋转向量（方向为转轴、模长为弧度）映射为单位四元数。
+   * 小角度分支使用一阶近似，避免sin(theta/2)/theta在零附近失去数值精度。
+   */
   [[nodiscard]] static Quaternion exp(const Vec3& rotation_vector) noexcept;
 };
 

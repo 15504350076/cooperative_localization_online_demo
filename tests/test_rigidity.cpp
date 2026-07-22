@@ -36,6 +36,7 @@ bool throws_length_error(void (*action)()) {
 
 }  // namespace
 
+// 第一组保护滤波和刚度共用的最小线性代数：维度、有限值、对称化和数值秩。
 TEST_CASE(dense_matrix_supports_required_linear_algebra_operations) {
   DenseMatrix left(2U, 2U);
   left(0U, 0U) = 1.0;
@@ -123,6 +124,7 @@ TEST_CASE(dense_matrix_rejects_element_count_overflow) {
   }));
 }
 
+// 第二组区分“图连通”和“几何可观”：非共线三角形达到2N-3秩，共线或缺边不达到。
 TEST_CASE(non_collinear_triangle_is_observable) {
   const auto result = zju::coop::analyze_rigidity(
       std::vector<std::uint32_t>{10U, 30U, 20U},
@@ -161,6 +163,7 @@ TEST_CASE(triangle_missing_one_edge_is_not_observable) {
   EXPECT_FALSE(result.observable);
 }
 
+// 第三组验证可达性严格从主参考出发，未知边、自环和重复方向不会虚增约束。
 TEST_CASE(disconnected_nodes_are_counted_from_reference) {
   const auto result = zju::coop::analyze_rigidity(
       std::vector<std::uint32_t>{10U, 20U, 30U, 40U},

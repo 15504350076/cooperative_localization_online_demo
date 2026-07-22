@@ -147,6 +147,8 @@ ImuProcessingResult Engine::push_imu(const ImuPacket& packet) {
       packet.receive_timestamp_ns > packet.timestamp_ns &&
       packet.receive_timestamp_ns - packet.timestamp_ns >
           config_.max_receive_delay_ns;
+  // 测量与接收时间必须来自同一时基：前者不能明显“来自未来”，后者也不能
+  // 晚到超过允许链路延迟。这里不尝试自行校时，校时职责属于上交平台。
   if (packet.receive_timestamp_ns == 0U || too_far_future || too_delayed) {
     ImuProcessingResult result{};
     result.disposition = ImuDisposition::kInvalidPacket;
@@ -192,6 +194,7 @@ bool Engine::duplicate_and_remember(const RangePacket& packet) {
     return true;
   }
   cache.push_back({packet.sequence, packet.timestamp_ns});
+  // 有界FIFO只用于近期重传诊断，不承担无限历史去重或无线链路可靠传输。
   if (cache.size() > config_.duplicate_cache_per_link) {
     cache.pop_front();
   }
@@ -321,6 +324,8 @@ EngineSnapshot Engine::step(std::uint64_t now_ns) {
     if (last_valid == last_valid_ns_.end()) {
       continue;
     }
+    // 活动边必须同时满足“近期有结构有效量测”和“质量状态允许使用”；
+    // 仅在质量窗口中出现过并不代表此刻仍能承担拓扑约束。
     const bool expired = effective_now - last_valid->second >
                          config_.edge_timeout_ns;
     if (expired) {
@@ -362,6 +367,7 @@ EngineSnapshot Engine::step(std::uint64_t now_ns) {
   if (!rigidity.connected) {
     snapshot.network.reason_mask |= ReasonMask::NODE_UNREACHABLE;
   }
+  // 状态优先级：几何不可观最高，其次是质量/同步退化；只有两者都正常才Normal。
   if (!rigidity.observable) {
     snapshot.network.reason_mask |= ReasonMask::GRAPH_GEOMETRY_DEGENERATE;
   }

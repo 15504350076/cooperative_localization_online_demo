@@ -71,6 +71,8 @@ RigidityResult analyze_rigidity(const std::vector<std::uint32_t>& node_ids,
     if (!std::isfinite(dx) || !std::isfinite(dy)) {
       throw std::invalid_argument("coordinate differences must be finite");
     }
+    // 距离平方的一阶约束在两端节点列上符号相反；每行只含四个非零项。
+    // 统一比例不影响秩，因此无需除以实际距离。
     rigidity(edge_row, 2U * from) = dx;
     rigidity(edge_row, 2U * from + 1U) = dy;
     rigidity(edge_row, 2U * to) = -dx;
@@ -97,6 +99,7 @@ RigidityResult analyze_rigidity(const std::vector<std::uint32_t>& node_ids,
   }
 
   // 平面相对框架存在2个平移和1个整体旋转自由度，完整目标秩为2N-3。
+  // 连通只说明有路径，若节点共线等几何退化使rank不足，observable仍为false。
   const std::size_t target_rank =
       node_ids.size() >= 2U ? 2U * node_ids.size() - 3U : 0U;
   const std::size_t rank = numeric_rank(rigidity, tolerance);

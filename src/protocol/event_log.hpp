@@ -55,6 +55,7 @@ enum class EventLogReadStatus {
 };
 
 enum class EventLogDirection : std::uint8_t {
+  // Input会在回放时重新送入算法；Output只用于审计，不再次作为算法输入。
   Input = 1U,
   Output = 2U,
 };
@@ -71,7 +72,11 @@ struct EventLogReadResult {
   EventLogRecord record;
 };
 
-/** 追加式日志写入器；每条记录写入前验证内部帧。 */
+/**
+ * 追加式日志写入器；每条记录写入前验证内部帧。
+ * “追加”指顺序写记录而非打开旧文件续写：构造时创建/截断目标文件并写ZJLG头，
+ * 上层负责选择不会误覆盖的任务日志路径。
+ */
 class EventLogWriter {
  public:
   explicit EventLogWriter(
@@ -91,7 +96,10 @@ class EventLogWriter {
   std::size_t max_payload_size_{};
 };
 
-/** 严格顺序读取器；截断、超长、保留字段异常和CRC错误均显式失败。 */
+/**
+ * 严格顺序读取器；只有在记录边界处遇到EOF才返回kEnd，文件头、元数据或
+ * 帧体中途EOF均报告截断，不能把损坏尾部当成正常回放完成。
+ */
 class EventLogReader {
  public:
   explicit EventLogReader(

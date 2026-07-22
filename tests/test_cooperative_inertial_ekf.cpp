@@ -74,6 +74,7 @@ RangePacket range(std::uint16_t from, std::uint16_t to, double range_m,
 
 }  // namespace
 
+// 布局/传播组锁定稀疏节点到15维块的映射，以及单节点IMU对边缘块和交叉块的影响。
 TEST_CASE(cooperative_inertial_ekf_uses_stable_sparse_node_layout) {
   CooperativeInertialEkf filter(cooperative_config(), inertial_config(),
                                 nodes());
@@ -115,6 +116,7 @@ TEST_CASE(cooperative_inertial_ekf_rejects_unknown_imu_without_state_change) {
   EXPECT_EQ(filter.covariance()(0U, 0U), covariance_before(0U, 0U));
 }
 
+// 测距组验证H虽只落在两端位置块，完整K仍建立跨节点相关并降低距离残差。
 TEST_CASE(cooperative_inertial_ekf_range_update_reduces_residual_and_couples_nodes) {
   auto initializations = nodes();
   initializations[0].position_std_m = {2.0, 2.0, 2.0};
@@ -148,6 +150,7 @@ TEST_CASE(cooperative_inertial_ekf_nis_rejection_does_not_inject_state) {
   EXPECT_EQ(filter.state(42U).position_n_m.x, before.position_n_m.x);
 }
 
+// 输出组单独检查Pii+Prr-Pir-Pri，防止把两个边缘方差简单相加。
 TEST_CASE(cooperative_inertial_ekf_outputs_reference_relative_state_and_covariance) {
   auto initializations = nodes();
   for (auto& node : initializations) {

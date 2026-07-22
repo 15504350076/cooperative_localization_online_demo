@@ -140,6 +140,7 @@ bool finite_config(const zju_coop_config_t& config) {
 zju_coop_error_code_t convert_config(const zju_coop_config_t& input,
                                      zju::coop::EngineConfig& output) {
   // 阶段1：先检查资源上限与数组跨度，再逐节点深拷贝，库不保存调用方内存指针。
+  // 只有完整转换成功才覆盖output，避免异常调用方留下半构造EngineConfig。
   if (!finite_config(input) || input.node_count == 0U ||
       input.nodes == nullptr || input.node_count > kMaximumNodes ||
       input.max_nodes == 0U || input.max_nodes > kMaximumNodes ||
@@ -214,7 +215,9 @@ zju_coop_error_code_t convert_inertial_config(
     const zju_coop_inertial_config_t& input,
     zju::coop::InertialConfig& inertial,
     std::vector<zju::coop::InertialNodeInitialization>& nodes) {
-  // 惯性配置与节点初值同样执行深拷贝；frame_id必须在固定容量内以NUL结束。
+  // 惯性配置同时冻结15N状态维度、节点顺序和坐标约定；全部节点初值、
+  // 四元数、标准差、帧名及连续时间噪声参数必须在首个输入前一次性通过。
+  // 节点数组执行深拷贝，frame_id必须在固定容量内以NUL结束。
   if (input.node_count == 0U || input.nodes == nullptr ||
       input.max_inertial_state_dimension == 0U ||
       !valid_array_span<zju_coop_inertial_node_initialization_t>(
@@ -528,6 +531,8 @@ bool counts_fit_v1(const zju::coop::EngineSnapshot& snapshot) {
 }
 
 zju_coop_error_code_t exception_code() {
+  // ABI只暴露稳定错误码：内存耗尽和参数错误单独报告，其余C++异常折叠为
+  // 内部错误，防止异常对象、RTTI或编译器运行库穿越MSVC/GCC及语言边界。
   try {
     throw;
   } catch (const std::bad_alloc&) {

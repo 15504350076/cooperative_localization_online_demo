@@ -61,7 +61,11 @@ constexpr ReasonMask& operator|=(ReasonMask& left, ReasonMask right) noexcept {
              static_cast<std::uint32_t>(reason);
 }
 
-/** 退化判据、状态保持时间和资源上限，全部由配置文件提供。 */
+/**
+ * 退化判据、状态保持时间和资源上限，全部由配置文件提供。
+ * 比率阈值取[0,1]；三个duration是“坏/好证据持续多久才换状态”，
+ * window_ns则决定统计样本范围，两类时间不能互相替代。
+ */
 struct DegradationConfig {
   std::uint64_t window_ns{2'000'000'000ULL};
   double nominal_rate_hz{20.0};
@@ -101,13 +105,17 @@ class DegradationMonitor {
  public:
   explicit DegradationMonitor(DegradationConfig config = {});
 
+  /** 预注册可能出现的无向边；超过资源上限时抛错而不是静默丢弃。 */
   void track(EdgeKey edge);
+  /** 记录原始量测质量证据；无效包也必须进入窗口，避免只统计成功量测。 */
   void record(const RangePacket& packet);
   void record(EdgeKey edge, std::uint64_t timestamp_ns, bool valid,
               bool nlos_flag = false, bool has_nlos_probability = false,
               double nlos_probability = 0.0);
+  /** 把同一时刻的NIS拒绝回写到已有样本，形成残差退化证据。 */
   void record_residual_rejection(EdgeKey edge,
                                  std::uint64_t timestamp_ns);
+  /** 推进所有边的时间窗口和状态机；now_ns只允许单调取最大值。 */
   void advance(std::uint64_t now_ns);
 
   [[nodiscard]] ObservationQuality quality(EdgeKey edge) const;
@@ -115,6 +123,7 @@ class DegradationMonitor {
 
  private:
   struct Sample {
+    // 样本只保存重算滑窗统计所需的最小证据，避免长期保存完整测距包。
     std::uint64_t timestamp_ns{};
     bool valid{};
     bool nlos{};
@@ -126,6 +135,7 @@ class DegradationMonitor {
     ObservationQuality quality{};
     std::uint64_t start_timestamp_ns{};
     std::uint64_t latest_processed_timestamp_ns{};
+    // bad/good_since分别实现恶化和恢复保持时间，二者不会同时有效。
     std::uint64_t bad_since_ns{};
     std::uint64_t good_since_ns{};
     bool started{};

@@ -2,6 +2,7 @@
 #include "test_support.hpp"
 #include "zju_coop/types.hpp"
 
+// 能力位必须支持组合且不能把kNone误判为存在，否则GCS会显示未实现的状态维度。
 TEST_CASE(capability_mask_reports_present_and_absent_bits) {
   const auto mask = zju::coop::Capability::kUwbRange |
                     zju::coop::Capability::kPlanarPosition;
@@ -20,6 +21,7 @@ TEST_CASE(capability_mask_reports_present_and_absent_bits) {
       zju::coop::has_capability(mask, zju::coop::Capability::kNone));
 }
 
+// 默认构造包保持invalid，要求适配层显式填写有效性和时间，而不是零值误入滤波器。
 TEST_CASE(range_packet_defaults_are_invalid) {
   const zju::coop::RangePacket packet{};
 

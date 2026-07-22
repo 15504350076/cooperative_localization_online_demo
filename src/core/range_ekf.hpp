@@ -33,8 +33,11 @@ struct FilterConfig {
   double min_covariance_diagonal{};
 };
 
-/** UWB-only兼容路径的主参考二维相对状态。 */
-
+/**
+ * UWB-only兼容路径的主参考二维相对状态。
+ * valid只表示该节点存在于已初始化状态，三边测距仍不能给出全球平移、
+ * 旋转、镜像和绝对航向；这些自由度由参考节点和初始几何固定。
+ */
 struct NodeEstimate {
   std::uint32_t node_id{};
   std::uint64_t timestamp_ns{};
@@ -48,6 +51,7 @@ struct NodeEstimate {
   bool valid{};
 };
 
+/** 拒绝原因保持互斥，便于区分输入问题、统计门限和矩阵数值失败。 */
 enum class UpdateDisposition {
   Accepted,
   InvalidPacket,
@@ -77,6 +81,7 @@ class RangeEkf {
   RangeEkf(FilterConfig config,
            std::vector<NodeInitialization> initializations);
 
+  /** 以分段恒速模型预测到目标时刻；时间不前进时保持原状态。 */
   void predict_to(std::uint64_t timestamp_ns);
   [[nodiscard]] UpdateResult update(const RangePacket& packet,
                                     double covariance_scale = 1.0);

@@ -263,6 +263,8 @@ UpdateResult CooperativeInertialEkf::update_range(const RangePacket& packet,
     return result;
   }
   if (result.nis > config_.nis_gate) {
+    // 统计拒绝仍消费该测距时间：否则后续更早的包可能被错误地当成新量测。
+    // 这里只推进测距时间基准，不改变名义状态或联合协方差。
     has_range_timebase_ = true;
     last_range_timestamp_ns_ =
         std::max(last_range_timestamp_ns_, packet.timestamp_ns);
@@ -278,7 +280,8 @@ UpdateResult CooperativeInertialEkf::update_range(const RangePacket& packet,
     error[index] = gain[index] * innovation;
   }
 
-  // Joseph形式避免有限精度下协方差失去对称性或正定性。
+  // Joseph形式P+=(I-KH)P(I-KH)^T+KRK^T；相比简式(I-KH)P，
+  // 在15N大矩阵和弱几何条件下更能保持对称性与半正定性。
   DenseMatrix identity_minus_gain_h = DenseMatrix::identity(dimension);
   for (std::size_t row = 0U; row < dimension; ++row) {
     for (std::size_t col = 0U; col < dimension; ++col) {
@@ -351,7 +354,8 @@ NodeEstimate CooperativeInertialEkf::estimate(std::uint32_t node_id) const {
   output.y = relative_position.y;
   output.vx = relative_velocity.x;
   output.vy = relative_velocity.y;
-  // Cov(p_i-p_r)=P_ii+P_rr-P_ir-P_ri。
+  // Cov(p_i-p_r)=P_ii+P_rr-P_ir-P_ri。两个交叉项来自协同量测建立的
+  // 节点相关性，忽略它们会系统性高估或低估相对位置不确定度。
   output.cov_xx = covariance_(node_offset, node_offset) +
                   covariance_(reference_offset, reference_offset) -
                   covariance_(node_offset, reference_offset) -

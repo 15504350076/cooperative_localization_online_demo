@@ -1,5 +1,5 @@
 // 模块职责：提供全部C++单元测试共享的注册、断言、异常检查和浮点比较工具。
-// 测试宏只记录失败并继续运行其他用例，最终由test_main统一返回非零退出码。
+// 断言失败会抛出异常并终止当前用例；test_main捕获后继续运行其余用例并最终返回非零退出码。
 #pragma once
 
 #include <exception>
@@ -18,6 +18,7 @@ struct TestCase {
 };
 
 inline std::vector<TestCase>& registry() {
+  // 函数内静态对象规避跨测试翻译单元的初始化顺序问题；Registrar构造时统一写入该表。
   static std::vector<TestCase> cases;
   return cases;
 }
@@ -30,6 +31,7 @@ class Registrar {
 };
 
 inline void fail(const char* expression, const char* file, int line) {
+  // 保留表达式和源位置，使CTest日志无需调试器即可定位首个失败断言。
   std::ostringstream message;
   message << file << ':' << line << ": expectation failed: " << expression;
   throw std::runtime_error(message.str());

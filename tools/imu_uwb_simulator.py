@@ -26,11 +26,13 @@ class ImuUwbSimulator:
         self.imu_sequence = {1: 0, 2: 0, 3: 0}
 
     def generate_imu_tick(self, timestamp_ns):
-        """为三个节点生成同一统一时间戳的瞬时IMU数据报。"""
+        """为三个节点生成同一统一时间戳的瞬时IMU；每个节点仍有独立序号。"""
         frames = []
         # 每个节点维护独立序号；节点号和时间写入ZJCL公共帧头。
         for node_id in (1, 2, 3):
             self.imu_sequence[node_id] += 1
+            # 单位姿态仅占位且orientation_valid=false；静止FLU传感器测得+g比力，
+            # 让惯导内部R_nb*f_b+[0,0,-g]得到零导航系加速度。
             payload = zjcl.encode_imu_payload(
                 zjcl.ImuPayload(
                     (0.0, 0.0, 0.0, 1.0), (0.0,) * 9,
@@ -69,7 +71,8 @@ def run(args):
     uwb_period = 1.0 / args.uwb_rate_hz
     imu_sent = 0
     uwb_sent = 0
-    # 使用单调时钟调度，帧内时间戳仍采用系统纳秒时间轴。
+    # 使用单调时钟调度，帧内时间戳仍采用系统纳秒时间轴；两个频率互不整除时，
+    # 每次循环只发送各自到期的数据，不用低频测距阻塞高频IMU。
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
         while args.duration == 0.0 or time.monotonic() - start < args.duration:
             now = time.monotonic()

@@ -142,6 +142,7 @@ const NodeInitialization& node(const DemoConfig& config,
 
 }  // namespace
 
+// 成功路径先锁定每个配置节的强类型映射和默认/回退示例文件的实际语义。
 TEST_CASE(ini_config_maps_all_engine_filter_degradation_online_and_node_values) {
   const DemoConfig config = parse_ini_config(valid_ini());
 
@@ -205,6 +206,7 @@ TEST_CASE(range_only_demo_ini_keeps_measurement_only_fallback) {
   EXPECT_EQ(config.online.input_rate_hz, 20.0);
 }
 
+// 失败路径按错误类别和原始行号验证，防止拼写/重复项被默认值静默掩盖。
 TEST_CASE(ini_config_rejects_duplicate_sections_keys_and_nodes) {
   expect_ini_error(valid_ini() + "\n[engine]\n",
                    IniError::kDuplicateSection);

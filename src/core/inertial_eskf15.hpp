@@ -16,7 +16,11 @@ namespace zju::coop {
 
 inline constexpr auto kInertialErrorStateSize = 15U;
 
-/** 单节点15维惯性预测所需的运行参数，全部由配置文件或C ABI提供。 */
+/**
+ * 单节点15维惯性预测所需的运行参数，全部由配置文件或C ABI提供。
+ * min/max_imu_dt拒绝不可用采样间隔，max_propagation_substep只负责把一次
+ * 合法长间隔细分以改善离散化精度，不能绕过max_imu_dt的输入质量限制。
+ */
 struct InertialConfig {
   double gravity_mps2{9.80665};
   double min_imu_dt_s{1.0e-6};
@@ -34,7 +38,11 @@ struct InertialConfig {
   std::string expected_frame_id{"imu_link"};
 };
 
-/** 单节点名义状态初值及15维误差状态的初始标准差。 */
+/**
+ * 单节点名义状态初值及15维误差状态的初始标准差。
+ * 下标n表示导航ENU系，b表示车体FLU系；标准差必须非负，构造联合
+ * 协方差时按节点顺序写入各15×15对角块。
+ */
 struct InertialNodeInitialization {
   std::uint32_t node_id{};
   Vec3 position_n_m{};
@@ -58,6 +66,7 @@ struct InertialNominalState {
   Vec3 accel_bias_m_s2{};
 };
 
+/** IMU结果区分“未传播的合法首帧”和各种拒绝原因，便于上交侧诊断。 */
 enum class ImuDisposition {
   kBaselineEstablished,
   kPropagated,
@@ -100,7 +109,11 @@ class InertialEskf15 {
   [[nodiscard]] bool has_timebase() const noexcept;
   [[nodiscard]] std::uint64_t timestamp_ns() const noexcept;
 
-  /** 将15维误差状态反馈到名义状态，姿态采用小角度右乘修正。 */
+  /**
+   * 将15维误差状态反馈到名义状态，姿态采用小角度右乘修正：
+   * q_b_to_n <- q_b_to_n * Exp(δθ)。任一分量或归一化失败均返回false，
+   * 调用方必须保留注入前名义状态。
+   */
   [[nodiscard]] bool inject_error(
       const std::array<double, kInertialErrorStateSize>& error) noexcept;
 

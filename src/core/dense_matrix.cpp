@@ -87,6 +87,7 @@ DenseMatrix DenseMatrix::operator*(const DenseMatrix& right) const {
     throw std::invalid_argument("matrix dimensions are incompatible");
   }
 
+  // row-inner-col顺序复用同一个左矩阵元素，同时仍保持C_ij=ΣA_ikB_kj。
   DenseMatrix result(rows_, right.cols_);
   for (std::size_t row = 0; row < rows_; ++row) {
     for (std::size_t inner = 0; inner < cols_; ++inner) {
@@ -127,7 +128,8 @@ std::size_t numeric_rank(const DenseMatrix& matrix, double tolerance) {
     }
   }
 
-  // 在副本上执行带列主元的消元，调用方提供的刚度矩阵保持不变。
+  // 在副本上执行逐列部分选主元消元，调用方提供的刚度矩阵保持不变。
+  // pivot_row最终就是找到的独立约束行数，无需继续化成完整单位阶梯形。
   DenseMatrix work = matrix;
   std::size_t pivot_row = 0U;
   for (std::size_t col = 0U;

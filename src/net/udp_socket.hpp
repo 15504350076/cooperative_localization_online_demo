@@ -11,6 +11,7 @@
 namespace zju::coop::net {
 
 enum class ReceiveStatus {
+  // kTimeout是正常轮询结果；其他socket错误通过异常报告，二者不能混为丢包。
   kData,
   kTimeout,
 };
@@ -40,9 +41,12 @@ class UdpSocket {
   UdpSocket(UdpSocket&& other) noexcept;
   UdpSocket& operator=(UdpSocket&& other) noexcept;
 
+  /** 只接受数字IPv4地址；port=0允许系统分配临时端口，便于测试。 */
   void bind(const std::string& ipv4_address, std::uint16_t port);
   void set_receive_timeout(std::chrono::milliseconds timeout);
+  /** 一次调用返回一个完整数据报；不会把两个数据报拼接，也不做应用层重组。 */
   [[nodiscard]] ReceiveResult receive();
+  /** 超过IPv4 UDP最大载荷65507字节时在调用sendto前直接拒绝。 */
   void send_to(const std::string& ipv4_address, std::uint16_t port,
                const std::vector<std::uint8_t>& bytes);
   [[nodiscard]] std::uint16_t local_port() const;

@@ -362,6 +362,7 @@ std::uint64_t unsigned_value(const Entry& entry, std::uint64_t minimum,
     fail(IniError::kInvalidValue, entry.line,
          std::string(description) + " is empty");
   }
+  // 手工十进制累加能在乘法前检查溢出，也明确拒绝符号、空白和0x前缀。
   std::uint64_t value = 0U;
   for (const char character : entry.value) {
     if (character < '0' || character > '9') {
@@ -392,6 +393,8 @@ std::size_t size_value(const Entry& entry, std::size_t minimum,
 }
 
 double finite_value(const Entry& entry, const char* description) {
+  // 固定classic locale，保证Windows和Ubuntu都用点作小数分隔符；eof检查
+  // 拒绝“1.0abc”这类前缀可解析但尾部无效的现场配置。
   std::istringstream input(entry.value);
   input.imbue(std::locale::classic());
   double value = 0.0;
@@ -449,6 +452,8 @@ void validate_engine_config(const DemoConfig& config,
                             const std::unordered_map<std::uint32_t,
                                                      NodeEntryLines>&
                                 node_entry_lines) {
+  // 单字段范围已在解析时检查；这里验证节点/边/状态维度、保持时间和记录大小
+  // 等跨字段约束，避免每个值合法但组合后无法分配或语义矛盾。
   const std::size_t node_count = config.engine.nodes.size();
   const Entry& reference_entry =
       require_entry(filter_section, "reference_node_id");
@@ -729,6 +734,8 @@ DemoConfig parse_ini_config(const std::string& text) {
     const Section& section = inertial_section_entry->second;
     const bool enabled = boolean_value(require_entry(section, "enabled"),
                                        "inertial enabled");
+    // enabled=false等价于完全不构造惯性optional，Engine因此明确走仅测距回退；
+    // 运行过程中不能靠切换输入消息类型在两种状态模型之间动态切换。
     if (enabled) {
       InertialDemoConfig inertial{};
       inertial.max_inertial_state_dimension = size_value(

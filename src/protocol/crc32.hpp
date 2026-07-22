@@ -7,6 +7,10 @@
 
 namespace zju::coop::protocol {
 
+/**
+ * IEEE CRC-32（反射多项式0xEDB88320、初值/终值异或0xFFFFFFFF）。
+ * 调用方决定覆盖字节范围；ZJCL v1会把CRC字段从输入中排除，而不是依赖主机布局。
+ */
 [[nodiscard]] std::uint32_t crc32_ieee(
     const std::vector<std::uint8_t>& bytes) noexcept;
 

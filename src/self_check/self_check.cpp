@@ -48,6 +48,7 @@ class Recorder {
 
 class HandleGuard {
  public:
+  // 任何中途失败或异常都销毁临时会话；自检不会遗留可被在线程序复用的状态。
   ~HandleGuard() {
     if (value != nullptr) {
       static_cast<void>(zju_coop_destroy(value));
@@ -330,6 +331,7 @@ SelfCheckResult run_self_check() noexcept {
         nominal.network.observable == ZJU_COOP_TRUE;
     recorder.check(topology_ok, "network_topology");
 
+    // 数值位置正确仍不够：能力有效位是给GCS/实车消费者的安全契约，必须单独验。
     const bool output_flags_ok =
         node1 != nullptr && node2 != nullptr && node3 != nullptr &&
         node1->reference_node_id == 1U && node2->reference_node_id == 1U &&

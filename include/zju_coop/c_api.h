@@ -28,15 +28,21 @@ typedef int32_t zju_coop_error_code_t;
 #define ZJU_COOP_OUT_OF_MEMORY ((zju_coop_error_code_t)5)
 #define ZJU_COOP_INTERNAL_ERROR ((zju_coop_error_code_t)6)
 
+/* C ABI固定使用单字节0/1布尔值，禁止直接暴露编译器相关的C++ bool布局。 */
 typedef uint8_t zju_coop_bool_t;
 #define ZJU_COOP_FALSE ((zju_coop_bool_t)0)
 #define ZJU_COOP_TRUE ((zju_coop_bool_t)1)
 
+/* 设备侧测距状态：它描述输入质量，不等同于算法最终是否接受该量测。 */
 typedef uint8_t zju_coop_range_status_t;
 #define ZJU_COOP_RANGE_STATUS_OK ((zju_coop_range_status_t)0)
 #define ZJU_COOP_RANGE_STATUS_DEGRADED ((zju_coop_range_status_t)1)
 #define ZJU_COOP_RANGE_STATUS_INVALID ((zju_coop_range_status_t)2)
 
+/*
+ * 观测状态描述滑动窗口的长期质量；融合动作描述当前包如何进入滤波器。
+ * 两者分离后，恢复期可以保持RECOVERING状态，同时只对试探包执行更新。
+ */
 typedef int32_t zju_coop_observation_state_t;
 #define ZJU_COOP_OBSERVATION_UNKNOWN ((zju_coop_observation_state_t)0)
 #define ZJU_COOP_OBSERVATION_NORMAL ((zju_coop_observation_state_t)1)
@@ -59,6 +65,10 @@ typedef int32_t zju_coop_localization_state_t;
 #define ZJU_COOP_LOCALIZATION_UNOBSERVABLE ((zju_coop_localization_state_t)3)
 #define ZJU_COOP_LOCALIZATION_STALE ((zju_coop_localization_state_t)4)
 
+/*
+ * processing disposition覆盖引擎入口到质量决策的整条处理链；
+ * update disposition只描述真正调用滤波量测模型后的数值结果。
+ */
 typedef int32_t zju_coop_processing_disposition_t;
 #define ZJU_COOP_PROCESSING_PROCESSED ((zju_coop_processing_disposition_t)0)
 #define ZJU_COOP_PROCESSING_INVALID_PACKET \
@@ -92,6 +102,7 @@ typedef int32_t zju_coop_imu_disposition_t;
 #define ZJU_COOP_IMU_FRAME_MISMATCH ((zju_coop_imu_disposition_t)7)
 #define ZJU_COOP_IMU_NUMERICAL_FAILURE ((zju_coop_imu_disposition_t)8)
 
+/* 可按位组合的退化原因；消费者必须逐位判断，不能把组合值当作单一枚举。 */
 typedef uint32_t zju_coop_reason_mask_t;
 #define ZJU_COOP_REASON_NONE ((zju_coop_reason_mask_t)UINT32_C(0))
 #define ZJU_COOP_REASON_NLOS_RATIO_HIGH \
@@ -144,10 +155,12 @@ typedef struct zju_coop_config {
    * node_stride 是相邻元素的字节间隔，不得小于 v1 节点结构体大小。
    */
   const zju_coop_node_initialization_t* nodes;
+  /* 仅测距恒速回退模型参数；默认惯性路线不会用它替代IMU传播。 */
   double process_accel_std_mps2;
   double nis_gate;
   double max_prediction_step_s;
   double min_covariance_diagonal;
+  /* 以下阈值共同控制每条无向协同边的滑动质量窗口与恢复状态机。 */
   uint64_t degradation_window_ns;
   double nominal_rate_hz;
   double nlos_ratio_threshold;
@@ -158,6 +171,7 @@ typedef struct zju_coop_config {
   uint64_t suspend_duration_ns;
   uint64_t reject_duration_ns;
   uint64_t recovery_duration_ns;
+  /* 显式资源上限用于阻止异常配置导致矩阵或边缓存无限分配。 */
   uint32_t max_tracked_edges;
   uint32_t duplicate_cache_per_link;
   uint64_t edge_timeout_ns;
@@ -170,7 +184,11 @@ typedef struct zju_coop_config {
   double rigidity_tolerance;
 } zju_coop_config_t;
 
-/* 平台间测距输入；时间为上交统一时间轴纳秒，距离和标准差单位m。 */
+/*
+ * 平台间测距输入；时间为上交统一时间轴纳秒，距离和标准差单位m。
+ * sequence应在同一from/to链路上单调递增；timestamp_ns是测量时刻，
+ * receive_timestamp_ns是同一时基下的本机接收时刻，仅用于延迟校验。
+ */
 typedef struct zju_coop_range_packet {
   uint32_t struct_size;
   uint32_t abi_version;
@@ -189,7 +207,10 @@ typedef struct zju_coop_range_packet {
   zju_coop_range_status_t status;
 } zju_coop_range_packet_t;
 
-/* 单节点15维惯性状态初值；坐标为ENU，姿态为车体FLU到ENU的xyzw四元数。 */
+/*
+ * 单节点15维惯性状态初值；坐标为ENU，姿态为车体FLU到ENU的xyzw四元数。
+ * 五组标准差对应[δp,δv,δθ,δbg,δba]，算法内部再平方为协方差对角元。
+ */
 typedef struct zju_coop_inertial_node_initialization {
   uint32_t struct_size;
   uint32_t abi_version;
@@ -207,7 +228,11 @@ typedef struct zju_coop_inertial_node_initialization {
   double accel_bias_std_m_s2[3];
 } zju_coop_inertial_node_initialization_t;
 
-/* 惯性路径配置；nodes仅在configure调用期间借用，库内会深拷贝。 */
+/*
+ * 惯性路径配置；nodes仅在configure调用期间借用，库内会深拷贝。
+ * 噪声密度和随机游走均采用连续时间单位；message covariance只有在
+ * use_message_covariance为真且消息协方差通过对称/半正定检查时才生效。
+ */
 typedef struct zju_coop_inertial_config {
   uint32_t struct_size;
   uint32_t abi_version;
@@ -233,7 +258,11 @@ typedef struct zju_coop_inertial_config {
   uint8_t reserved1[6];
 } zju_coop_inertial_config_t;
 
-/* sensor_msgs/Imu到普通C结构体的无ROS映射；不含温度。 */
+/*
+ * sensor_msgs/Imu到普通C结构体的无ROS映射；不含温度。
+ * orientation_covariance[0]==-1表示姿态协方差不可用，全零表示未知；
+ * 角速度和线加速度是采样时刻的瞬时量，适配层不得提前做预积分。
+ */
 typedef struct zju_coop_imu_packet {
   uint32_t struct_size;
   uint32_t abi_version;
@@ -281,7 +310,11 @@ typedef struct zju_coop_range_processing_result {
   double covariance_scale;
 } zju_coop_range_processing_result_t;
 
-/* 主参考节点坐标系下的二维相对定位输出；当前yaw和z均明确标记无效。 */
+/*
+ * 主参考节点坐标系下的二维相对定位输出；当前yaw和z均明确标记无效。
+ * x/y/vx/vy是“节点减参考节点”的ENU平面相对量，2×2位置协方差按
+ * [cov_xx cov_xy; cov_xy cov_yy]解释，不能当作经纬度或地图绝对坐标。
+ */
 typedef struct zju_coop_localization {
   uint32_t struct_size;
   uint32_t abi_version;
@@ -374,12 +407,17 @@ zju_coop_imu_packet_init(zju_coop_imu_packet_t* value);
 ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 zju_coop_imu_processing_result_init(zju_coop_imu_processing_result_t* value);
 
-/* 创建基础实例；随后按默认融合路线在首个输入前配置惯性状态。 */
+/*
+ * 创建基础实例；成功时*out_handle归调用方并必须destroy一次。
+ * 默认融合路线要求在首个IMU或测距输入前调用configure_inertial；
+ * 若显式使用仅测距回退配置，则不配置惯性状态。
+ */
 ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 zju_coop_create(const zju_coop_config_t* config,
                 zju_coop_handle_t** out_handle);
 ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 zju_coop_destroy(zju_coop_handle_t* handle);
+/* configure成功后节点集合和状态维度被冻结，处理开始后不允许重新配置。 */
 ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 zju_coop_configure_inertial(zju_coop_handle_t* handle,
                             const zju_coop_inertial_config_t* config);

@@ -8,6 +8,8 @@ if(NOT DEFINED LIBRARY_FILE OR LIBRARY_FILE STREQUAL "" OR
   message(FATAL_ERROR "LIBRARY_FILE is missing: ${LIBRARY_FILE}")
 endif()
 
+# -D只读取运行时动态符号表，--defined-only排除本库仅引用的外部符号；
+# 因而检查目标是“调用方实际可链接到的导出”，不是ELF中的全部调试/局部符号。
 execute_process(
     COMMAND "${NM_TOOL}" -D --defined-only "${LIBRARY_FILE}"
     RESULT_VARIABLE nm_result
@@ -27,6 +29,8 @@ if(dynamic_symbols MATCHES "3zju4coop")
       "${dynamic_symbols}")
 endif()
 
+# 至少检查一个必需C ABI入口，避免可见性配置过严导致生成了没有公开入口的.so。
+# 其他zju_coop_*入口的完整性由C头文件冒烟和C ABI单元测试负责。
 if(NOT dynamic_symbols MATCHES "zju_coop_abi_version")
   message(FATAL_ERROR
       "ELF export check found no public zju_coop_ C API symbol:\n"

@@ -28,6 +28,7 @@ zju_coop_network_t network(std::uint64_t timestamp_ns,
 
 }  // namespace
 
+// 状态每周期发布，告警first时间跨活动期保持，恢复时生成Cleared生命周期。
 TEST_CASE(app_telemetry_emits_status_each_tick_and_tracks_alert_lifecycle) {
   zju::coop::apps::TelemetryEncoder telemetry;
   zju::coop::apps::TelemetryCounters counters{};

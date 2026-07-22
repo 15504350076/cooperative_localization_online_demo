@@ -8,6 +8,7 @@ TEST_CASE(self_check_validates_public_c_abi_without_external_io) {
   const zju::coop::self_check::SelfCheckResult result =
       zju::coop::self_check::run_self_check();
 
+  // 同时检查汇总位、失败计数和关键阶段名称，防止自检因漏跑阶段而出现“空报告假通过”。
   EXPECT_TRUE(result.passed);
   EXPECT_EQ(result.failed_checks, 0U);
   EXPECT_TRUE(result.passed_checks >= 11U);

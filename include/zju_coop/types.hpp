@@ -63,8 +63,10 @@ enum class LocalizationState : std::uint8_t {
  * 仅用于时延检查，滤波更新使用timestamp_ns对应的统一测量时刻。
  */
 struct RangePacket {
+  // 节点号定义一条有向数据链；EdgeKey会在质量/拓扑层规范成无向边。
   std::uint16_t from_node{};
   std::uint16_t to_node{};
+  // sequence只要求在同一有向链路内单调；时间戳使用上交统一时间轴。
   std::uint64_t sequence{};
   std::uint64_t timestamp_ns{};
   std::uint64_t receive_timestamp_ns{};
@@ -84,16 +86,19 @@ struct RangePacket {
  */
 struct ImuPacket {
   std::uint32_t node_id{};
+  // sequence用于重复诊断，真正的传播顺序由timestamp_ns严格决定。
   std::uint64_t sequence{};
   std::uint64_t timestamp_ns{};
   std::uint64_t receive_timestamp_ns{};
   std::array<double, 4> orientation_xyzw{};
+  // 三组协方差均按ROS消息的行主序3×3布局保存，不在适配层重排。
   std::array<double, 9> orientation_covariance{};
   std::array<double, 3> angular_velocity_rad_s{};
   std::array<double, 9> angular_velocity_covariance{};
   std::array<double, 3> linear_acceleration_m_s2{};
   std::array<double, 9> linear_acceleration_covariance{};
   std::array<char, 32> frame_id{};
+  // orientation_valid独立于整包valid，允许不含可信姿态的角速度/比力继续传播。
   bool orientation_valid{};
   bool valid{};
   std::uint8_t status{};

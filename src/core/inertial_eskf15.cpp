@@ -398,6 +398,8 @@ ImuProcessingResult InertialEskf15::push_imu(const ImuPacket& packet) {
     add_identity_block(q_step, kGyroBias, kGyroBias, gyro_bias_variance);
     add_identity_block(q_step, kAccelBias, kAccelBias, accel_bias_variance);
 
+    // 递推组合子步噪声：Q(0,k+1)=Phi_k*Q(0,k)*Phi_k^T+Q_k；
+    // 不能简单相加Q_k，否则早期噪声不会被后续状态转移映射。
     q_total = add(phi_step * q_total * phi_step.transpose(), q_step);
     phi_total = phi_step * phi_total;
   }
@@ -445,6 +447,7 @@ bool InertialEskf15::inject_error(
                    [](double value) { return std::isfinite(value); })) {
     return false;
   }
+  // 候选状态保证位置、姿态或零偏任一注入失败时，原名义状态完全不变。
   InertialNominalState candidate = state_;
   candidate.position_n_m =
       candidate.position_n_m + Vec3{error[0], error[1], error[2]};

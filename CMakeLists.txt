@@ -23,6 +23,8 @@ set(ZJU_COOP_CORE_SOURCES
     src/protocol/wire_protocol.cpp
 )
 
+# 把运行配置复制到构建树，使CTest和手工运行都读取本次源码对应的配置；
+# COPYONLY不会在.ini中展开${...}，避免配置内容被CMake意外改写。
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/config/demo.ini
     ${CMAKE_CURRENT_BINARY_DIR}/config/demo.ini
@@ -68,6 +70,7 @@ set_target_properties(zju_coop PROPERTIES
 )
 
 function(zju_coop_verify_hidden_visibility target_name)
+  # 配置阶段即校验符号可见性属性，避免某个新增库目标漏配后到交付审计才暴露问题。
   get_target_property(target_cxx_visibility
       ${target_name} CXX_VISIBILITY_PRESET)
   get_target_property(target_inline_visibility
@@ -148,6 +151,7 @@ foreach(demo_target IN ITEMS zju_coop_online zju_coop_replay)
 endforeach()
 
 add_executable(zju_coop_sdk_consumer examples/sdk_consumer.cpp)
+# SDK示例故意只链接公开动态库，不访问src私有头文件，用来模拟上交ROS 2适配层的依赖边界。
 target_compile_features(zju_coop_sdk_consumer PRIVATE cxx_std_17)
 target_link_libraries(zju_coop_sdk_consumer PRIVATE zju_coop)
 zju_coop_enable_warnings(zju_coop_sdk_consumer)
@@ -219,7 +223,8 @@ if(BUILD_TESTING)
         COMMAND ${Python3_EXECUTABLE} -B -m unittest discover
             -s ${CMAKE_CURRENT_SOURCE_DIR}/tools -p test_*.py
     )
-  add_test(NAME zju_coop_range_only_online_smoke
+    # 两项冒烟测试都启动真实在线/回放进程并占用回环UDP端口；超时可避免子进程异常时卡住CI。
+    add_test(NAME zju_coop_range_only_online_smoke
         COMMAND ${Python3_EXECUTABLE} -B
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/online_smoke_test.py
             --online-exe $<TARGET_FILE:zju_coop_online>
@@ -238,6 +243,8 @@ if(BUILD_TESTING)
   endif()
 endif()
 
+# 安装树分为三类：bin/lib是实机运行产物，include是ROS 2适配层编译接口，
+# share/zju_coop保存配置、协议、说明和非必需演示工具。构建目录本身不作为交付物。
 install(TARGETS zju_coop
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

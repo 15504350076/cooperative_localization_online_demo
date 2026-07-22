@@ -97,6 +97,8 @@ class ReplayPacer {
   explicit ReplayPacer(double speed) : speed_(speed) {}
 
   void wait(std::uint64_t receive_timestamp_ns) {
+    // speed=0关闭等待用于快速回归；其他值按“日志接收时间差/speed”缩放。
+    // 不使用帧内测量时间，因为回放还需要保留真实到达延迟和乱序特征。
     if (speed_ == 0.0) {
       return;
     }
@@ -264,6 +266,7 @@ int run(const Arguments& arguments) {
             apps::elapsed_ns(record.receive_timestamp_ns,
                              first_record_timestamp_ns),
             next_output_sequence, stats);
+        // 日志记录可能稀疏或跳时，越过的输出周期直接跳过而不制造重复快照。
         do {
           next_stream_output_ns += output_period_ns;
         } while (next_stream_output_ns <= record.receive_timestamp_ns);

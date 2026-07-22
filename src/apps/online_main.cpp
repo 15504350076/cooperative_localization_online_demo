@@ -192,6 +192,8 @@ int run(const Arguments& arguments) {
           ++stats.protocol_rejected;
         } else {
           if (event_log) {
+            // 在C ABI处理前记录已经通过协议校验的输入，使API拒绝、NIS拒绝和
+            // 质量状态转换都能在任务后按相同到达顺序复现。
             event_log->append({protocol::EventLogDirection::Input,
                                receive_timestamp_ns,
                                received.datagram.bytes});
@@ -232,6 +234,8 @@ int run(const Arguments& arguments) {
     }
 
     // 阶段3：输入接收与固定频率输出解耦，无输入时仍可发布超时和拓扑告警。
+    // steady_clock只负责本进程调度，system_time_ns写入接口/日志；二者不可混用，
+    // 避免系统时间校正造成输出循环倒退或忙等。
     const auto now = std::chrono::steady_clock::now();
     if (now >= next_output) {
       const std::uint64_t step_time_ns = apps::system_time_ns();
@@ -273,6 +277,7 @@ int run(const Arguments& arguments) {
         }
         count_output(frame.message_type, stats);
       }
+      // 处理过慢时跳过已经错过的周期，不突发补发多份同一状态快照。
       do {
         next_output += output_period_ticks;
       } while (next_output <= now);

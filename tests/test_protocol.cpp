@@ -103,6 +103,7 @@ void write_double_le(std::vector<std::uint8_t>& bytes,
 
 }  // namespace
 
+// 外层帧组：标准CRC向量和冻结黄金字节共同锁定小端偏移及“排除CRC字段”的口径。
 TEST_CASE(crc32_ieee_matches_standard_check_value) {
   const std::vector<std::uint8_t> bytes{
       '1', '2', '3', '4', '5', '6', '7', '8', '9'};
@@ -242,6 +243,7 @@ TEST_CASE(wire_frame_decoder_rejects_custom_limit_above_hard_limit) {
   EXPECT_EQ(decoded.error, ProtocolError::kPayloadTooLarge);
 }
 
+// 输入载荷组：测距和332字节IMU须在C++/Python间逐字节一致并严格拒绝坏布尔/数值。
 TEST_CASE(range_payload_matches_frozen_bytes_and_round_trips) {
   RangePayload payload{};
   payload.range_m = 3.0;
@@ -360,6 +362,7 @@ TEST_CASE(range_payload_rejects_status_outside_normalized_v1_enum) {
   EXPECT_EQ(decode_range_payload(bytes).error, ProtocolError::kInvalidValue);
 }
 
+// 输出载荷组：除固定大小外还验证能力位、拓扑计数、滑窗计数和告警生命周期约束。
 TEST_CASE(localization_network_and_observation_payloads_have_frozen_sizes) {
   LocalizationPayload localization{};
   localization.x = 1.0;

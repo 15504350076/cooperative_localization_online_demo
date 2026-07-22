@@ -16,7 +16,11 @@
 
 namespace zju::coop {
 
-/** 组合滤波、退化监测、时间检查和资源上限的运行配置。 */
+/**
+ * 组合滤波、退化监测、时间检查和资源上限的运行配置。
+ * future_skew比较测量时刻晚于接收时刻的异常，receive_delay比较接收晚于测量
+ * 的链路延迟；两者都要求测量与接收时间来自同一统一时间基准。
+ */
 struct EngineConfig {
   FilterConfig filter{};
   std::vector<NodeInitialization> nodes;
@@ -31,8 +35,11 @@ struct EngineConfig {
   double rigidity_tolerance{1.0e-9};
 };
 
-/** 面向GCS/ROS 2输出的二维主参考相对定位快照。 */
-
+/**
+ * 面向GCS/ROS 2输出的二维主参考相对定位快照。
+ * x/y/vx/vy均为node-reference，位置协方差是二者差值的2×2协方差；
+ * 当前yaw_valid和z_valid固定为false，消费者不得补零后标成有效。
+ */
 struct LocalizationSnapshot {
   std::uint32_t node_id{};
   std::uint32_t reference_node_id{};
@@ -70,6 +77,10 @@ struct EngineSnapshot {
   std::vector<ObservationQuality> observations;
 };
 
+/**
+ * 一包测距在引擎级的终止位置。Processed不保证滤波接受量测，还要查看
+ * RangeProcessingResult::update；Held/Rejected表示质量状态机主动阻断。
+ */
 enum class ProcessingDisposition {
   Processed,
   InvalidPacket,
@@ -84,6 +95,7 @@ struct RangeProcessingResult {
   EdgeKey edge{};
   ProcessingDisposition disposition{ProcessingDisposition::InvalidPacket};
   FusionAction action{FusionAction::kUseNormal};
+  // 指示滤波路径是否消费该量测/时间诊断；详细数值结论以update.disposition为准。
   bool filter_updated{};
   UpdateResult update{};
 };
@@ -104,8 +116,11 @@ class Engine {
       InertialConfig inertial_config,
       std::vector<InertialNodeInitialization> initializations,
       std::size_t max_inertial_state_dimension);
+  /** 校验统一时间语义后，把瞬时IMU交给所属节点15维传播器。 */
   [[nodiscard]] ImuProcessingResult push_imu(const ImuPacket& packet);
+  /** 完成时间/重复/质量检查，再选择默认惯性或显式回退测距更新路径。 */
   [[nodiscard]] RangeProcessingResult push_range(const RangePacket& packet);
+  /** 推进质量/超时逻辑并生成同一effective_now下的原子输出，不读取新传感器。 */
   [[nodiscard]] EngineSnapshot step(std::uint64_t now_ns);
 
   [[nodiscard]] const RangeEkf& filter() const noexcept;
@@ -130,6 +145,7 @@ class Engine {
   };
 
   struct DuplicateKey {
+    // sequence与timestamp成对比较，兼容设备重启后序号复位但时间仍前进的情况。
     std::uint64_t sequence{};
     std::uint64_t timestamp_ns{};
   };

@@ -97,8 +97,7 @@ def _reason_texts(mask):
 
 
 class DashboardState:
-    """线程安全的遥测状态仓库；一次数据报只更新其对应的业务对象。"""
-    """Thread-safe latest-value store for GCS-facing ZJCL output frames."""
+    """线程安全的遥测最新值仓库；一次数据报只原子更新其对应业务对象。"""
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -169,9 +168,8 @@ class DashboardState:
             self._stats["last_receive_time_ns"] = time.time_ns()
 
     def ingest_datagram(self, data):
-        """严格解码一帧；坏帧只增加错误计数，不覆盖最后有效值。"""
+        """严格解码一帧；成功返回True，坏帧或非GCS输出类型不覆盖最后有效值。"""
         # 阶段1：公共帧CRC/长度通过后，再按消息类型解析固定载荷。
-        """Decode and store one supported UDP frame; return True if accepted."""
         try:
             frame = protocol.decode_frame(data, udp=True)
         except (protocol.ProtocolError, TypeError, ValueError):
@@ -208,6 +206,7 @@ class DashboardState:
             self._count("rejected")
             return False
 
+        # 阶段2：载荷完全合法后才获取锁并替换单个最新值；解析异常不会造成半更新。
         received_at = time.time_ns()
         with self._lock:
             if update_kind == "localization":
@@ -333,8 +332,7 @@ class DashboardState:
 
 
 class UdpReceiver(threading.Thread):
-    """后台UDP接收线程；短超时用于及时响应停止事件。"""
-    """Bounded-blocking UDP receiver that can be stopped from another thread."""
+    """可由其他线程停止的后台UDP接收器；短超时限制退出等待时间。"""
 
     def __init__(self, state, bind_address, port):
         super().__init__(name="zjcl-gcs-udp", daemon=True)
@@ -363,6 +361,7 @@ class UdpReceiver(threading.Thread):
             self._state.ingest_datagram(data)
 
     def stop(self):
+        # 先设置事件再关闭socket，使正常stop与运行时OSError可以可靠区分。
         self._stop_event.set()
         try:
             self._socket.close()

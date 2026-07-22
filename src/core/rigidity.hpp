@@ -9,11 +9,13 @@
 
 namespace zju::coop {
 
+/** 主参考相对平面位置，单位m；这里只使用几何差，不解释为全球坐标。 */
 struct Point2 {
   double x{0.0};
   double y{0.0};
 };
 
+/** 当前允许进入拓扑分析的边；方向会在实现中规范化为唯一无向约束。 */
 struct Edge {
   std::uint32_t from_node{0U};
   std::uint32_t to_node{0U};
@@ -29,6 +31,10 @@ struct RigidityResult {
   bool observable{false};
 };
 
+/**
+ * 同时计算主参考可达性和二维距离约束的局部刚度。
+ * positions必须与node_ids逐项对应；未知边和自环被忽略，节点/位置配置错误抛出。
+ */
 [[nodiscard]] RigidityResult analyze_rigidity(
     const std::vector<std::uint32_t>& node_ids,
     const std::vector<Point2>& positions, const std::vector<Edge>& edges,

@@ -34,14 +34,23 @@ class CooperativeInertialEkf {
       InertialConfig inertial_config,
       std::vector<InertialNodeInitialization> initializations);
 
-  /** 输入一帧标准化IMU瞬时量；只有对应节点的协方差行列块被传播。 */
+  /**
+   * 输入一帧标准化IMU瞬时量。名义状态只传播所属节点；联合协方差执行
+   * P_ii=Phi*P_ii*Phi^T+Qd，同时用Phi更新该节点与其他节点的交叉块。
+   */
   [[nodiscard]] ImuProcessingResult push_imu(const ImuPacket& packet);
 
-  /** 使用节点间三维欧氏距离更新完整15N状态，并返回创新/NIS诊断。 */
+  /**
+   * 使用节点间三维欧氏距离更新完整15N状态，并返回创新/NIS诊断。
+   * H只在两端节点的位置误差块非零，但K=P*H^T会把约束传播到所有相关节点。
+   */
   [[nodiscard]] UpdateResult update_range(const RangePacket& packet,
                                           double covariance_scale = 1.0);
 
-  /** 输出相对主参考节点的平面位置、速度和相对位置协方差。 */
+  /**
+   * 输出相对主参考节点的平面位置、速度和相对位置协方差。
+   * 协方差使用Pii+Prr-Pir-Pri，不能简单相加两个节点的边缘方差。
+   */
   [[nodiscard]] NodeEstimate estimate(std::uint32_t node_id) const;
   [[nodiscard]] std::vector<NodeEstimate> estimates() const;
 

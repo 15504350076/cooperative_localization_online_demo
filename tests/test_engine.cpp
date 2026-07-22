@@ -118,6 +118,7 @@ ImuPacket imu_packet(std::uint32_t node_id, std::uint64_t sequence,
 
 }  // namespace
 
+// 正常拓扑组验证活动三边、主参考可达、几何秩和二维有效位来自同一快照。
 TEST_CASE(engine_complete_triangle_is_connected_and_observable) {
   Engine engine(config());
   fill_triangle(engine);
@@ -153,6 +154,7 @@ TEST_CASE(engine_missing_peer_edge_and_collinear_graph_are_unobservable) {
       ReasonMask::GRAPH_GEOMETRY_DEGENERATE));
 }
 
+// 质量/超时组确认NLOS降权、NIS残差、边超时和质量原因位会影响动作与网络状态。
 TEST_CASE(engine_times_out_previously_valid_edges) {
   Engine engine(config());
   fill_triangle(engine);
@@ -231,6 +233,7 @@ TEST_CASE(engine_tracks_dynamic_complete_graph_not_three_hardcoded_edges) {
   EXPECT_TRUE(snapshot.network.observable);
 }
 
+// 输入防御组覆盖未知节点、乱序、未来/延迟、重复包和缺失接收时间的无副作用拒绝。
 TEST_CASE(engine_invalid_and_unknown_packets_do_not_pollute_edges) {
   Engine engine(config());
   static_cast<void>(engine.push_range(packet(10U, 42U, 3.0, 1U, false)));
@@ -496,6 +499,7 @@ TEST_CASE(engine_step_failure_does_not_commit_global_timebase) {
   EXPECT_EQ(recovered_timestamp, 1U);
 }
 
+// 模式组锁定“未配置惯性=显式回退、配置惯性=只由真实IMU预测”，防止两模型叠加。
 TEST_CASE(engine_keeps_uwb_only_default_and_supports_optional_inertial_path) {
   Engine engine(config());
   EXPECT_FALSE(engine.inertial_enabled());

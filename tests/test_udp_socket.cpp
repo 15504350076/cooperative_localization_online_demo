@@ -12,6 +12,7 @@
 using zju::coop::net::ReceiveStatus;
 using zju::coop::net::UdpSocket;
 
+// 回环收发验证UDP保持数据报边界和源端点，而不是只验证能否创建socket。
 TEST_CASE(udp_socket_loopback_preserves_payload_and_sender) {
   UdpSocket receiver;
   receiver.bind("127.0.0.1", 0U);
@@ -28,6 +29,7 @@ TEST_CASE(udp_socket_loopback_preserves_payload_and_sender) {
   EXPECT_TRUE(received.datagram.source_port != 0U);
 }
 
+// 超时是在线主循环的正常轮询路径；移动测试还防止两个对象重复关闭同一原生句柄。
 TEST_CASE(udp_socket_timeout_returns_without_unbounded_blocking) {
   UdpSocket receiver;
   receiver.bind("127.0.0.1", 0U);

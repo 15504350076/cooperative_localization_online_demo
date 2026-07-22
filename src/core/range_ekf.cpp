@@ -21,6 +21,8 @@ bool finite(double value) { return std::isfinite(value); }
 
 long double scaled_positive_product(
     std::initializer_list<long double> factors) {
+  // 把每个正因子拆成尾数和二进制指数后再相乘，避免dt高次项在中间步骤
+  // 先上溢/下溢；最终结果仍必须能表示为long double和后续double。
   long double mantissa = 1.0L;
   long long exponent = 0LL;
   for (const long double factor : factors) {
@@ -280,6 +282,7 @@ void RangeEkf::predict_interval(double total_seconds,
   }
 
   // 使用long double分解计算dt高次项，避免长时间间隔的过程噪声中间量溢出。
+  // 这里直接计算n个等长恒速子步的闭式累计Q，避免真的循环极大的step_count。
   const long double duration = static_cast<long double>(total_seconds);
   const long double q =
       static_cast<long double>(config_.process_accel_std_mps2) *
@@ -429,6 +432,8 @@ UpdateResult RangeEkf::update(const RangePacket& packet,
   } catch (const std::exception&) {
     return result(UpdateDisposition::NumericalFailure, covariance_scale);
   }
+  // S=H*P*H^T+R，R=(range_std²)*covariance_scale；
+  // 质量层的降权只放大R，不直接修改几何雅可比或状态。
   const double innovation_variance =
       projected_variance + measurement_variance;
   const double innovation = packet.range_m - expected_range;
@@ -444,6 +449,7 @@ UpdateResult RangeEkf::update(const RangePacket& packet,
     return update_result;
   }
 
+  // 先算标准化残差再平方，可在innovation²本身可能溢出时保持可诊断结果。
   const double standardized_residual =
       std::abs(innovation) / std::sqrt(innovation_variance);
   const double maximum_root =

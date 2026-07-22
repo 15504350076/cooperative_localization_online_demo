@@ -495,7 +495,8 @@ std::vector<std::uint8_t> encode_frame(const Frame& frame,
   append_u32(output, 0U);
   output.insert(output.end(), frame.payload.begin(), frame.payload.end());
 
-  // 阶段2：头部和载荷完成后计算CRC，并回填固定偏移位置。
+  // 阶段2：完整帧先保留CRC占位，crc_input明确跳过[36,40)字段，
+  // 对头部[0,36)紧接载荷求CRC，再回填固定偏移；解码端使用完全相同的拼接规则。
   write_u32(output, kCrcOffset, crc32_ieee(crc_input(output)));
   return output;
 }
@@ -553,6 +554,8 @@ FrameDecodeResult decode_frame(const std::vector<std::uint8_t>& bytes,
   }
 
   // 阶段2：CRC通过后才构造Frame；损坏数据不会进入具体载荷解码器。
+  // 具体载荷的有限值、布尔和枚举校验随后由对应decode_*执行，分层区分
+  // “外层帧损坏”和“帧完整但业务字段非法”。
   const std::uint32_t encoded_crc = read_u32(bytes, kCrcOffset);
   if (crc32_ieee(crc_input(bytes)) != encoded_crc) {
     return failure(ProtocolError::kCrcMismatch,

@@ -143,6 +143,7 @@ EventLogError capture_log_error(Operation operation,
 
 }  // namespace
 
+// 正常路径冻结ZJLG头、Input/Output方向、接收时刻和内部ZJCL帧的往返结果。
 TEST_CASE(event_log_round_trips_records_with_frozen_file_header) {
   TemporaryFile file;
   const auto frame = encode_frame(alert_frame(7U, {0xAAU, 0xBBU}));
@@ -204,6 +205,7 @@ TEST_CASE(event_log_round_trips_records_with_frozen_file_header) {
   EXPECT_EQ(reader.next().status, EventLogReadStatus::kEnd);
 }
 
+// 原子写入组确认坏方向/帧不会留下半条记录，大小边界在分配和写盘前生效。
 TEST_CASE(event_log_writer_validates_before_writing_any_record_bytes) {
   TemporaryFile file;
   auto corrupted = encode_frame(alert_frame(1U, {0x11U}));
@@ -337,6 +339,7 @@ TEST_CASE(event_log_rejects_record_limit_larger_than_any_allowed_frame) {
             EventLogError::kInvalidConfiguration);
 }
 
+// 恢复组区分记录边界正常EOF与头、长度、元数据、帧体中途截断。
 TEST_CASE(event_log_rejects_bad_or_truncated_file_headers) {
   TemporaryFile truncated;
   write_all(truncated.path(), {'Z', 'J', 'L'});

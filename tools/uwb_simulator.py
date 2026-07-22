@@ -61,6 +61,7 @@ class UwbSimulator:
             raise ValueError("range_std_m must be positive")
         self.nlos_bias_m = _finite_nonnegative("nlos_bias_m", nlos_bias_m)
         self._random = random.Random(seed)
+        # 每条有向边独立维护序号，模拟上交侧每个测距数据流的递增sequence。
         self.sequence_by_edge = {
             (source, target): 0 for source, target, _ in DEFAULT_EDGES
         }
@@ -79,9 +80,12 @@ class UwbSimulator:
             self.sequence_by_edge[edge] += 1
             sequence = self.sequence_by_edge[edge]
 
+            # 序号在丢包判定前递增，因此接收端能从序号缺口观察到模拟丢失，
+            # 而不是把下一包错误地伪装成连续采样。
             if self._random.random() < self.drop_probability:
                 continue
 
+            # NLOS为正偏置而非对称噪声；flag给出本次真值，probability保留配置置信度。
             nlos_flag = self._random.random() < self.nlos_probability
             noise_m = self._random.gauss(0.0, self.noise_std_m)
             measured_range_m = (
@@ -203,6 +207,7 @@ def run(args):
                 if delay_s > 0.0:
                     time.sleep(delay_s)
                 elif delay_s < -period_s:
+                    # 落后超过一整个周期时重置调度基准，避免突发补发大量过期tick。
                     next_tick = time.monotonic()
         except KeyboardInterrupt:
             pass

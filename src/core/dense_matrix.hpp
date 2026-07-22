@@ -8,7 +8,11 @@
 
 namespace zju::coop {
 
-/** 行主序动态矩阵；构造后维度固定，元素通过(row,col)访问。 */
+/**
+ * 行主序动态矩阵；构造后维度固定，元素通过(row,col)访问。
+ * 越界、维度不匹配或元素数量溢出都抛出异常，让上层事务式更新回滚，
+ * 而不是在滤波状态中留下静默截断或未定义值。
+ */
 class DenseMatrix {
  public:
   DenseMatrix(std::size_t rows, std::size_t cols, double value = 0.0);
@@ -21,6 +25,7 @@ class DenseMatrix {
 
   [[nodiscard]] static DenseMatrix identity(std::size_t size);
   [[nodiscard]] DenseMatrix transpose() const;
+  /** 消除浮点乘加造成的微小非对称；不能修复本身非正定的协方差。 */
   [[nodiscard]] DenseMatrix symmetrized() const;
 
   [[nodiscard]] DenseMatrix operator*(const DenseMatrix& right) const;
@@ -33,7 +38,11 @@ class DenseMatrix {
   std::vector<double> values_;
 };
 
-/** 使用带阈值的主元消元计算数值秩，供动态拓扑几何可观性判断。 */
+/**
+ * 使用带阈值的主元消元计算数值秩，供动态拓扑几何可观性判断。
+ * tolerance是绝对主元阈值，调用方应先按问题尺度选择，不能把结果理解为
+ * 对任意量纲都成立的符号秩。
+ */
 [[nodiscard]] std::size_t numeric_rank(const DenseMatrix& matrix,
                                        double tolerance);
 

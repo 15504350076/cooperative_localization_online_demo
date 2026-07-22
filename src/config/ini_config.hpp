@@ -15,6 +15,11 @@
 
 namespace zju::coop::config {
 
+/**
+ * 临时UDP在线程序参数，不进入算法数学模型。
+ * input/output rate分别用于容量/调度检查；max_payload和max_log_record是
+ * 独立防御上限，后者必须容纳日志元数据加完整ZJCL帧。
+ */
 struct OnlineConfig {
   std::string input_bind_address;
   std::uint16_t input_port{};
@@ -28,7 +33,10 @@ struct OnlineConfig {
   std::size_t max_log_record_size{};
 };
 
-/** 在线Demo的可选惯性路径；缺省不启用，保持原UWB-only配置兼容。 */
+/**
+ * 在线Demo的可选惯性路径。默认demo.ini显式启用，只有配置节缺失或
+ * enabled=false时才进入UWB-only兼容路径；optional不能被理解成IMU可随包切换。
+ */
 struct InertialDemoConfig {
   InertialConfig filter;
   std::vector<InertialNodeInitialization> nodes;
@@ -41,6 +49,7 @@ struct DemoConfig {
   std::optional<InertialDemoConfig> inertial;
 };
 
+/** 可机器判定的配置错误类别；异常文本同时保留具体节/键和原始行号。 */
 enum class IniError {
   kNone,
   kIoFailure,
@@ -70,6 +79,10 @@ class IniConfigError final : public std::runtime_error {
   std::size_t line_;
 };
 
+/**
+ * 严格解析UTF-8 INI：未知节/键、重复定义、尾随字符和组合约束错误均拒绝，
+ * 避免现场拼写错误被当成默认参数继续运行。
+ */
 [[nodiscard]] DemoConfig parse_ini_config(const std::string& text);
 [[nodiscard]] DemoConfig load_ini_config(const std::filesystem::path& path);
 
