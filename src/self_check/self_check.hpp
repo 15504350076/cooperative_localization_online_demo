@@ -14,13 +14,16 @@ namespace zju::coop::self_check {
  * 因而可在开发机和 AIBrainBox 上重复运行而不干扰在线进程。
  */
 struct SelfCheckResult {
-  bool passed{};
-  std::uint32_t passed_checks{};
-  std::uint32_t failed_checks{};
-  std::string report;
+  bool passed{};                       ///< 是否所有已执行检查均通过。
+  std::uint32_t passed_checks{};       ///< 通过检查项数量。
+  std::uint32_t failed_checks{};       ///< 失败检查项数量。
+  std::string report;                  ///< 按执行顺序生成的逐项文本报告。
 };
 
-/** 运行三车 IMU+测距确定性闭环自检；任何异常均转换为失败结果。 */
+/**
+ * 运行三车IMU+测距确定性闭环自检；测距项只验证引擎级Processed处理路径，
+ * 不单独断言底层update_disposition为ACCEPTED；任何异常均转换为失败结果。
+ */
 [[nodiscard]] SelfCheckResult run_self_check() noexcept;
 
 }  // namespace zju::coop::self_check

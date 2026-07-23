@@ -6,7 +6,8 @@
 
 int main() {
   // 自检不读取在线配置、不绑定UDP端口，因此不会影响之后的实机进程。
-  const auto result = zju::coop::self_check::run_self_check();
+  const auto result =  // 汇总全部确定性检查计数及逐项报告的返回值。
+      zju::coop::self_check::run_self_check();
   std::cout << result.report;
   std::cout << "SELF_CHECK " << (result.passed ? "PASS" : "FAIL")
             << " (passed=" << result.passed_checks

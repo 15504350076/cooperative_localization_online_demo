@@ -29,44 +29,53 @@ namespace {
 #if defined(_WIN32)
 using NativeSocket = SOCKET;
 
+/** @param value UdpSocket中保存的平台句柄整数表示。 */
 NativeSocket native_socket(std::uintptr_t value) noexcept {
   return static_cast<NativeSocket>(value);
 }
 
 int last_error() noexcept { return WSAGetLastError(); }
 
+/** @param code 最近一次Winsock调用返回的错误码。 */
 bool timeout_error(int code) noexcept {
   return code == WSAETIMEDOUT || code == WSAEWOULDBLOCK;
 }
 #else
 using NativeSocket = int;
 
+/** @param value UdpSocket中保存的平台文件描述符整数表示。 */
 NativeSocket native_socket(std::uintptr_t value) noexcept {
   return static_cast<NativeSocket>(value);
 }
 
 int last_error() noexcept { return errno; }
 
+/** @param code 最近一次BSD Socket调用对应的errno值。 */
 bool timeout_error(int code) noexcept {
   return code == EAGAIN || code == EWOULDBLOCK;
 }
 #endif
 
+/** @param operation 失败的系统调用名称；@param code 平台套接字错误码。 */
 [[noreturn]] void fail(const char* operation, int code) {
   throw std::runtime_error(std::string(operation) +
                            " failed (socket error " +
                            std::to_string(code) + ")");
 }
 
+/**
+ * @param address 待转换的数字IPv4文本；@param port 主机字节序端口。
+ * @param allow_zero_port 是否允许绑定时由系统分配端口。
+ */
 sockaddr_in endpoint(const std::string& address, std::uint16_t port,
                      bool allow_zero_port) {
   if (address.empty() || (!allow_zero_port && port == 0U)) {
     throw std::invalid_argument("UDP IPv4 address/port is invalid");
   }
-  sockaddr_in result{};
+  sockaddr_in result{};  // 填充并以网络字节序返回的IPv4端点结构。
   result.sin_family = AF_INET;
   result.sin_port = htons(port);
-  const int converted =
+  const int converted =  // inet_pton成功转换的地址数量。
       inet_pton(AF_INET, address.c_str(), &result.sin_addr);
   if (converted != 1) {
     throw std::invalid_argument("UDP address must be numeric IPv4");
@@ -87,22 +96,22 @@ std::uintptr_t UdpSocket::invalid_socket() noexcept {
 UdpSocket::UdpSocket() : socket_(invalid_socket()) {
   // Windows需要初始化Winsock运行时；Linux构造路径直接创建BSD套接字。
 #if defined(_WIN32)
-  WSADATA data{};
-  const int startup = WSAStartup(MAKEWORD(2, 2), &data);
+  WSADATA data{};  // WSAStartup返回的Winsock实现信息。
+  const int startup = WSAStartup(MAKEWORD(2, 2), &data);  // Winsock 2.2运行时初始化结果。
   if (startup != 0) {
     fail("WSAStartup", startup);
   }
   runtime_started_ = true;
 #endif
 
-  const NativeSocket created =
+  const NativeSocket created =  // 新建且尚未转移给socket_的UDP原生句柄。
       ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 #if defined(_WIN32)
   if (created == INVALID_SOCKET) {
 #else
   if (created < 0) {
 #endif
-    const int code = last_error();
+    const int code = last_error();  // 创建失败后在清理前保存的平台错误码。
     close();
     fail("socket", code);
   }
@@ -147,7 +156,7 @@ void UdpSocket::close() noexcept {
 }
 
 void UdpSocket::bind(const std::string& ipv4_address, std::uint16_t port) {
-  const sockaddr_in address = endpoint(ipv4_address, port, true);
+  const sockaddr_in address = endpoint(ipv4_address, port, true);  // 本地绑定IPv4端点。
   if (::bind(native_socket(socket_),
              reinterpret_cast<const sockaddr*>(&address),
              static_cast<int>(sizeof(address))) != 0) {
@@ -164,12 +173,13 @@ void UdpSocket::set_receive_timeout(std::chrono::milliseconds timeout) {
       (std::numeric_limits<DWORD>::max)()) {
     throw std::invalid_argument("UDP receive timeout is too large");
   }
-  const DWORD milliseconds = static_cast<DWORD>(timeout.count());
+  const DWORD milliseconds =  // 传给Windows SO_RCVTIMEO的毫秒值。
+      static_cast<DWORD>(timeout.count());
   if (setsockopt(native_socket(socket_), SOL_SOCKET, SO_RCVTIMEO,
                  reinterpret_cast<const char*>(&milliseconds),
                  static_cast<int>(sizeof(milliseconds))) != 0) {
 #else
-  timeval value{};
+  timeval value{};  // 传给BSD SO_RCVTIMEO的秒/微秒超时结构。
   value.tv_sec = static_cast<decltype(value.tv_sec)>(timeout.count() / 1000);
   value.tv_usec =
       static_cast<decltype(value.tv_usec)>((timeout.count() % 1000) * 1000);
@@ -182,23 +192,23 @@ void UdpSocket::set_receive_timeout(std::chrono::milliseconds timeout) {
 
 ReceiveResult UdpSocket::receive() {
   // UDP一次recvfrom对应一个完整数据报；固定65507字节上限避免无界分配。
-  std::vector<std::uint8_t> buffer(kMaximumDatagramSize);
-  sockaddr_in source{};
+  std::vector<std::uint8_t> buffer(kMaximumDatagramSize);  // 单次recvfrom的最大UDP载荷缓冲。
+  sockaddr_in source{};  // recvfrom回填的数据报发送端IPv4端点。
 #if defined(_WIN32)
-  int source_size = static_cast<int>(sizeof(source));
-  const int received = recvfrom(
+  int source_size = static_cast<int>(sizeof(source));  // Windows传入并回填的地址结构字节数。
+  const int received = recvfrom(  // 收到的载荷字节数或SOCKET_ERROR。
       native_socket(socket_), reinterpret_cast<char*>(buffer.data()),
       static_cast<int>(buffer.size()), 0,
       reinterpret_cast<sockaddr*>(&source), &source_size);
   if (received == SOCKET_ERROR) {
 #else
-  socklen_t source_size = static_cast<socklen_t>(sizeof(source));
-  const ssize_t received = recvfrom(
+  socklen_t source_size = static_cast<socklen_t>(sizeof(source));  // BSD传入并回填的地址结构字节数。
+  const ssize_t received = recvfrom(  // 收到的载荷字节数或负错误值。
       native_socket(socket_), buffer.data(), buffer.size(), 0,
       reinterpret_cast<sockaddr*>(&source), &source_size);
   if (received < 0) {
 #endif
-    const int code = last_error();
+    const int code = last_error();  // recvfrom失败后用于区分正常超时的错误码。
     if (timeout_error(code)) {
       return {};
     }
@@ -206,12 +216,12 @@ ReceiveResult UdpSocket::receive() {
   }
 
   buffer.resize(static_cast<std::size_t>(received));
-  char source_text[INET_ADDRSTRLEN]{};
+  char source_text[INET_ADDRSTRLEN]{};  // 发送端IPv4地址的点分十进制输出缓冲。
   if (inet_ntop(AF_INET, &source.sin_addr, source_text,
                 static_cast<socklen_t>(sizeof(source_text))) == nullptr) {
     fail("inet_ntop", last_error());
   }
-  ReceiveResult result{};
+  ReceiveResult result{};  // 汇总整报载荷和发送端地址的成功接收结果。
   result.status = ReceiveStatus::kData;
   result.datagram.bytes = std::move(buffer);
   result.datagram.source_address = source_text;
@@ -225,16 +235,17 @@ void UdpSocket::send_to(const std::string& ipv4_address, std::uint16_t port,
   if (bytes.size() > kMaximumDatagramSize) {
     throw std::invalid_argument("UDP datagram exceeds 65507 bytes");
   }
-  const sockaddr_in destination = endpoint(ipv4_address, port, false);
+  const sockaddr_in destination =  // 已校验且端口非零的目标IPv4端点。
+      endpoint(ipv4_address, port, false);
 #if defined(_WIN32)
-  const int sent = ::sendto(
+  const int sent = ::sendto(  // Windows报告的发送字节数或SOCKET_ERROR。
       native_socket(socket_), reinterpret_cast<const char*>(bytes.data()),
       static_cast<int>(bytes.size()), 0,
       reinterpret_cast<const sockaddr*>(&destination),
       static_cast<int>(sizeof(destination)));
   if (sent == SOCKET_ERROR) {
 #else
-  const ssize_t sent = ::sendto(
+  const ssize_t sent = ::sendto(  // BSD Socket报告的发送字节数或负错误值。
       native_socket(socket_), bytes.data(), bytes.size(), 0,
       reinterpret_cast<const sockaddr*>(&destination),
       static_cast<socklen_t>(sizeof(destination)));
@@ -248,11 +259,11 @@ void UdpSocket::send_to(const std::string& ipv4_address, std::uint16_t port,
 }
 
 std::uint16_t UdpSocket::local_port() const {
-  sockaddr_in address{};
+  sockaddr_in address{};  // getsockname回填的本地IPv4端点。
 #if defined(_WIN32)
-  int address_size = static_cast<int>(sizeof(address));
+  int address_size = static_cast<int>(sizeof(address));  // Windows地址结构输入/输出长度。
 #else
-  socklen_t address_size = static_cast<socklen_t>(sizeof(address));
+  socklen_t address_size = static_cast<socklen_t>(sizeof(address));  // BSD地址结构输入/输出长度。
 #endif
   if (getsockname(native_socket(socket_),
                   reinterpret_cast<sockaddr*>(&address),
