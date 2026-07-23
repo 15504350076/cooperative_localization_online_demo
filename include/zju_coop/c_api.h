@@ -272,11 +272,11 @@ typedef struct zju_coop_imu_packet {
   uint64_t timestamp_ns;/* 传感器采样的统一时间，单位ns，决定传播顺序。 */
   uint64_t receive_timestamp_ns; /* 本机收包的同一统一时间，单位ns，用于延迟检查。 */
   double orientation_xyzw[4]; /* 车体FLU到导航ENU的[x,y,z,w]四元数。 */
-  double orientation_covariance[9]; /* 姿态误差3×3协方差，ROS行主序；首项-1表示不可用。 */
-  double angular_velocity_rad_s[3]; /* 车体FLU三轴瞬时角速度，单位rad/s。 */
-  double angular_velocity_covariance[9]; /* 角速度3×3协方差，ROS行主序。 */
-  double linear_acceleration_m_s2[3]; /* 车体FLU三轴瞬时比力，单位m/s²，未预积分。 */
-  double linear_acceleration_covariance[9]; /* 比力3×3协方差，ROS行主序。 */
+  double orientation_covariance[9]; /* 对应姿态误差的3×3行主序协方差，单位rad²；首项-1表示不可用。 */
+  double angular_velocity_rad_s[3]; /* 车体FLU三轴瞬时角速度，单位rad/s，未预积分。 */
+  double angular_velocity_covariance[9]; /* 对应角速度的3×3行主序协方差，单位rad²/s²。 */
+  double linear_acceleration_m_s2[3]; /* 车体FLU三轴瞬时比力，单位m/s²，含对重力响应（静止水平时+Z约为+g），未预积分。 */
+  double linear_acceleration_covariance[9]; /* 对应比力的3×3行主序协方差，单位m²/s⁴。 */
   char frame_id[32]; /* 样本坐标系名，必须NUL结尾并匹配expected_frame_id。 */
   zju_coop_bool_t orientation_valid; /* orientation_xyzw是否可信，独立于整包valid。 */
   zju_coop_bool_t valid; /* 角速度、比力和时间是否可供算法处理。 */

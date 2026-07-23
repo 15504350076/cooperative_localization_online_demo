@@ -28,7 +28,7 @@ _LOCALIZATION_STATES = {
     protocol.LOCALIZATION_STALE: "数据陈旧",
 }
 
-# 边观测质量、融合动作与算法进程状态的展示标签。
+# 边观测质量协议枚举到GCS中文展示标签的映射，仅展示而不改变协议值。
 _OBSERVATION_STATES = {
     protocol.OBSERVATION_UNKNOWN: "未知",
     protocol.OBSERVATION_NORMAL: "正常",
@@ -38,6 +38,7 @@ _OBSERVATION_STATES = {
     protocol.OBSERVATION_RECOVERING: "恢复中",
 }
 
+# 融合动作协议枚举到GCS中文展示标签的映射，仅展示而不改变协议值。
 _FUSION_ACTIONS = {
     protocol.FUSION_USE_NORMAL: "正常使用",
     protocol.FUSION_USE_DOWNWEIGHTED: "降权使用",
@@ -46,6 +47,7 @@ _FUSION_ACTIONS = {
     protocol.FUSION_TRIAL_RECOVERY: "试探恢复",
 }
 
+# 算法运行状态协议枚举到GCS中文展示标签的映射，仅展示而不改变协议值。
 _ALGORITHM_RUN_STATES = {
     protocol.ALGORITHM_RUN_INITIALIZING: "初始化中",
     protocol.ALGORITHM_RUN_RUNNING: "运行中",
@@ -54,7 +56,7 @@ _ALGORITHM_RUN_STATES = {
     protocol.ALGORITHM_RUN_STOPPED: "已停止",
 }
 
-# 告警严重度与生命周期的展示标签。
+# 告警严重度协议枚举到GCS中文展示标签的映射，仅展示而不改变协议值。
 _ALERT_LEVELS = {
     protocol.ALERT_LEVEL_INFO: "提示",
     protocol.ALERT_LEVEL_WARNING: "警告",
@@ -62,6 +64,7 @@ _ALERT_LEVELS = {
     protocol.ALERT_LEVEL_CRITICAL: "严重",
 }
 
+# 告警生命周期协议枚举到GCS中文展示标签的映射，仅展示而不改变协议值。
 _ALERT_LIFECYCLES = {
     protocol.ALERT_LIFECYCLE_ACTIVE: "活动",
     protocol.ALERT_LIFECYCLE_CLEARED: "已清除",

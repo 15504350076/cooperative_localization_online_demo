@@ -758,7 +758,7 @@ TEST_CASE(near_singular_range_update_keeps_full_covariance_positive_definite) {
 }
 
 TEST_CASE(prediction_stabilizes_near_singular_full_covariance) {
-  // near_singular_config/nodes/filter/covariance构成近奇异预测；velocity_determinant、inverse_v**与schur_**验证Schur补。
+  // near_singular_config/nodes/filter/covariance构成近奇异预测；velocity_determinant是速度2×2协方差块的行列式。
   FilterConfig near_singular_config{10U, 1.0e-161, 100.0, 1.0,
                                     1.0e-300};
   const std::vector<NodeInitialization> nodes{
@@ -774,10 +774,15 @@ TEST_CASE(prediction_stabilizes_near_singular_full_covariance) {
   const double velocity_determinant =
       covariance(2U, 2U) * covariance(3U, 3U) -
       covariance(2U, 3U) * covariance(3U, 2U);
+  // inverse_v00：速度2×2协方差块逆矩阵的(0,0)元素。
   const double inverse_v00 = covariance(3U, 3U) / velocity_determinant;
+  // inverse_v01：速度2×2协方差块逆矩阵的(0,1)元素。
   const double inverse_v01 = -covariance(2U, 3U) / velocity_determinant;
+  // inverse_v10：速度2×2协方差块逆矩阵的(1,0)元素。
   const double inverse_v10 = -covariance(3U, 2U) / velocity_determinant;
+  // inverse_v11：速度2×2协方差块逆矩阵的(1,1)元素。
   const double inverse_v11 = covariance(2U, 2U) / velocity_determinant;
+  // schur_xx：消去速度块后位置Schur补的xx元素，用于验证完整4×4协方差半正定。
   const double schur_xx =
       covariance(0U, 0U) -
       covariance(0U, 2U) *
@@ -786,6 +791,7 @@ TEST_CASE(prediction_stabilizes_near_singular_full_covariance) {
       covariance(0U, 3U) *
           (inverse_v10 * covariance(2U, 0U) +
            inverse_v11 * covariance(3U, 0U));
+  // schur_xy：消去速度块后位置Schur补的xy元素，用于验证完整4×4协方差半正定。
   const double schur_xy =
       covariance(0U, 1U) -
       covariance(0U, 2U) *
@@ -794,6 +800,7 @@ TEST_CASE(prediction_stabilizes_near_singular_full_covariance) {
       covariance(0U, 3U) *
           (inverse_v10 * covariance(2U, 1U) +
            inverse_v11 * covariance(3U, 1U));
+  // schur_yy：消去速度块后位置Schur补的yy元素，用于验证完整4×4协方差半正定。
   const double schur_yy =
       covariance(1U, 1U) -
       covariance(1U, 2U) *

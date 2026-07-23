@@ -157,13 +157,16 @@ class RangePayload:
 @dataclass(frozen=True)
 class ImuPayload:
     """ROS 2 Imu瞬时量的临时UDP表示；数组按行主序，不包含温度或预积分量。"""
-    # 姿态四元数按(x,y,z,w)，对应协方差为3×3行主序。
+    # 车体FLU到导航ENU的姿态四元数，按(x,y,z,w)；姿态误差协方差为
+    # 3×3行主序，平方单位为rad²。
     orientation_xyzw: tuple
     orientation_covariance: tuple
-    # 三轴角速度（rad/s）及其3×3行主序协方差。
+    # 车体FLU系瞬时三轴角速度（rad/s），未预积分；对应协方差为3×3行主序，
+    # 平方单位为(rad/s)²。
     angular_velocity_rad_s: tuple
     angular_velocity_covariance: tuple
-    # 三轴线加速度（m/s²）及其3×3行主序协方差。
+    # 车体FLU系瞬时比力（m/s²），含重力响应（静止水平时+Z约为+g），未预积分；
+    # 对应协方差为3×3行主序，平方单位为(m/s²)²。
     linear_acceleration_m_s2: tuple
     linear_acceleration_covariance: tuple
     # 非空UTF-8坐标系名，线缆固定槽32字节且必须NUL终止。

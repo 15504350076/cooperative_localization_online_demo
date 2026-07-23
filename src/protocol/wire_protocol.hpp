@@ -122,11 +122,11 @@ struct RangePayload {
 /** 临时在线协议中的标准IMU瞬时量；节点号和采样时间位于40字节帧头。 */
 struct ImuPayload {
   std::array<double, 4> orientation_xyzw{}; /* 车体FLU到导航ENU的[x,y,z,w]四元数。 */
-  std::array<double, 9> orientation_covariance{}; /* 姿态误差3×3协方差，ROS行主序。 */
-  std::array<double, 3> angular_velocity_rad_s{}; /* 车体FLU瞬时角速度，单位rad/s。 */
-  std::array<double, 9> angular_velocity_covariance{}; /* 角速度3×3协方差，行主序。 */
-  std::array<double, 3> linear_acceleration_m_s2{}; /* 车体FLU瞬时比力，单位m/s²。 */
-  std::array<double, 9> linear_acceleration_covariance{}; /* 比力3×3协方差，行主序。 */
+  std::array<double, 9> orientation_covariance{}; /* 对应姿态误差的3×3行主序协方差，单位rad²。 */
+  std::array<double, 3> angular_velocity_rad_s{}; /* 车体FLU三轴瞬时角速度，单位rad/s，未预积分。 */
+  std::array<double, 9> angular_velocity_covariance{}; /* 对应角速度的3×3行主序协方差，单位rad²/s²。 */
+  std::array<double, 3> linear_acceleration_m_s2{}; /* 车体FLU三轴瞬时比力，单位m/s²，含对重力响应（静止水平时+Z约为+g），未预积分。 */
+  std::array<double, 9> linear_acceleration_covariance{}; /* 对应比力的3×3行主序协方差，单位m²/s⁴。 */
   std::array<char, 32> frame_id{}; /* 固定容量且须NUL结尾的IMU坐标系名。 */
   bool orientation_valid{}; /* orientation_xyzw是否可信，独立于valid。 */
   bool valid{}; /* 角速度/比力与时间是否可处理。 */
