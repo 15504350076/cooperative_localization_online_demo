@@ -2,12 +2,13 @@
 # 所有目标统一使用C++17；Windows生成DLL/EXE，Ubuntu与RK3588生成.so和ELF可执行程序。
 cmake_minimum_required(VERSION 3.16)
 
+# zju_coop是本工程标识，0.1.0写入本工程版本变量，C/CXX同时支持纯C ABI冒烟和C++实现。
 project(zju_coop VERSION 0.1.0 LANGUAGES C CXX)
 
 include(CTest)
 include(GNUInstallDirs)
 
-# 算法核心不包含ROS 2和平台网络类型，便于独立静态链接到C ABI动态库。
+# ZJU_COOP_CORE_SOURCES：算法、配置与线协议核心源文件集合，供内部静态库唯一复用。
 set(ZJU_COOP_CORE_SOURCES
     src/config/ini_config.cpp
     src/core/cooperative_inertial_ekf.cpp
@@ -23,6 +24,7 @@ set(ZJU_COOP_CORE_SOURCES
     src/protocol/wire_protocol.cpp
 )
 
+# CMAKE_CURRENT_SOURCE_DIR/CMAKE_CURRENT_BINARY_DIR分别是当前工程源码根与构建根，用于保持两份运行配置的相对布局一致。
 # 把运行配置复制到构建树，使CTest和手工运行都读取本次源码对应的配置；
 # COPYONLY不会在.ini中展开${...}，避免配置内容被CMake意外改写。
 configure_file(
@@ -57,6 +59,7 @@ target_compile_features(zju_coop PRIVATE cxx_std_17)
 target_include_directories(zju_coop
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        # CMAKE_INSTALL_INCLUDEDIR由GNUInstallDirs给出公开头安装子目录，供INSTALL_INTERFACE暴露安装后的包含路径。
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -70,7 +73,9 @@ set_target_properties(zju_coop PROPERTIES
 )
 
 function(zju_coop_verify_hidden_visibility target_name)
+  # target_name：调用方传入的待审计库目标名，仅在本次函数作用域内使用。
   # 配置阶段即校验符号可见性属性，避免某个新增库目标漏配后到交付审计才暴露问题。
+  # target_cxx_visibility/target_inline_visibility：读取目标的普通C++与内联符号可见性属性，期望分别为hidden和真值。
   get_target_property(target_cxx_visibility
       ${target_name} CXX_VISIBILITY_PRESET)
   get_target_property(target_inline_visibility
@@ -89,6 +94,7 @@ zju_coop_verify_hidden_visibility(zju_coop_core)
 zju_coop_verify_hidden_visibility(zju_coop)
 
 if(UNIX AND NOT APPLE)
+  # CMAKE_NM是工具链提供的nm路径，CMAKE_COMMAND是当前CMake可执行文件；二者把目标文件交给构建后ELF审计脚本。
   # Linux/ARM64构建后检查动态符号，防止C++实现细节意外成为上交依赖。
   if(NOT CMAKE_NM)
     message(FATAL_ERROR "CMAKE_NM is required for ELF export validation")
@@ -104,6 +110,7 @@ if(UNIX AND NOT APPLE)
 endif()
 
 function(zju_coop_enable_warnings target_name)
+  # target_name：需要附加平台对应严格警告选项的目标，设置仅作用于该目标的本次编译。
   if(MSVC)
     # 源码和接口文档包含中文注释；显式使用UTF-8，避免受系统代码页影响。
     # Windows SDK 10.0.26100 的系统头含非UTF-8字节，C4828与本工程源码无关。
@@ -119,6 +126,7 @@ endfunction()
 zju_coop_enable_warnings(zju_coop_core)
 zju_coop_enable_warnings(zju_coop)
 
+# ZJU_COOP_DEMO_SUPPORT_SOURCES：在线与回放程序共享的应用适配和UDP实现源文件集合。
 set(ZJU_COOP_DEMO_SUPPORT_SOURCES
     src/apps/app_support.cpp
     src/net/udp_socket.cpp
@@ -133,16 +141,19 @@ add_executable(zju_coop_replay
     src/apps/replay_main.cpp
     ${ZJU_COOP_DEMO_SUPPORT_SOURCES}
 )
+# demo_target：依次指向在线与回放可执行目标，使编译特性、私有头路径、链接库和安装RPATH保持一致。
 foreach(demo_target IN ITEMS zju_coop_online zju_coop_replay)
   target_compile_features(${demo_target} PRIVATE cxx_std_17)
   target_include_directories(${demo_target} PRIVATE
       ${CMAKE_CURRENT_SOURCE_DIR}/src
   )
   target_link_libraries(${demo_target} PRIVATE zju_coop_core zju_coop)
+  # WIN32控制Windows套接字实现依赖，在线与回放目标需链接系统网络库ws2_32。
   if(WIN32)
     target_link_libraries(${demo_target} PRIVATE ws2_32)
   endif()
   if(UNIX AND NOT APPLE)
+    # CMAKE_INSTALL_LIBDIR是GNUInstallDirs给出的库安装子目录，用于从bin中的程序定位相邻共享库。
     set_target_properties(${demo_target} PROPERTIES
         INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}"
     )
@@ -174,6 +185,7 @@ if(UNIX AND NOT APPLE)
 endif()
 
 if(BUILD_TESTING)
+  # BUILD_TESTING由CTest提供，控制本工程是否创建测试目标与注册CTest用例。
   # 单元测试、C头文件冒烟、SDK示例、自检和Python端到端测试统一纳入CTest。
   add_executable(zju_coop_tests
       tests/test_main.cpp
@@ -216,6 +228,7 @@ if(BUILD_TESTING)
   add_test(NAME zju_coop_sdk_consumer COMMAND zju_coop_sdk_consumer)
   add_test(NAME zju_coop_self_check COMMAND zju_coop_self_check)
 
+  # Python3_Interpreter_FOUND/Python3_EXECUTABLE分别表示解释器是否找到及其绝对路径，用于tools中的Python单元测试和两项进程冒烟测试。
   find_package(Python3 QUIET COMPONENTS Interpreter)
   if(Python3_Interpreter_FOUND)
     # Python仅用于模拟数据、协议交叉验证和进程级冒烟，不是RK3588算法运行依赖。
@@ -243,6 +256,7 @@ if(BUILD_TESTING)
   endif()
 endif()
 
+# CMAKE_INSTALL_BINDIR/LIBDIR/INCLUDEDIR/DATADIR由GNUInstallDirs提供，分别承载程序、库、公开头和共享数据。
 # 安装树分为三类：bin/lib是实机运行产物，include是ROS 2适配层编译接口，
 # share/zju_coop保存配置、协议、说明和非必需演示工具。构建目录本身不作为交付物。
 install(TARGETS zju_coop

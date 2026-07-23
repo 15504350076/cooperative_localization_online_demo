@@ -13,30 +13,34 @@ namespace zju::coop::test {
 using TestFunction = void (*)();
 
 struct TestCase {
+  // name：指向静态用例名字符串，生命周期覆盖整个测试进程；function：同名测试函数入口，由注册表统一调度。
   const char* name;
   TestFunction function;
 };
 
 inline std::vector<TestCase>& registry() {
-  // 函数内静态对象规避跨测试翻译单元的初始化顺序问题；Registrar构造时统一写入该表。
+  // cases：进程级用例注册表，首次调用时构造、进程退出时销毁；Registrar只保存静态字符串和函数地址。
   static std::vector<TestCase> cases;
   return cases;
 }
 
 class Registrar {
  public:
+  // name在测试进程内保持有效，function指向无参用例；构造期间把二者复制进长生命周期注册表。
   Registrar(const char* name, TestFunction function) {
     registry().push_back({name, function});
   }
 };
 
+// expression保存失败断言文本，file/line保存宏展开处源码位置，三者只在本次异常消息组装期间借用。
 inline void fail(const char* expression, const char* file, int line) {
-  // 保留表达式和源位置，使CTest日志无需调试器即可定位首个失败断言。
+  // message：暂存带源位置的失败说明，抛出runtime_error时复制其字符串内容。
   std::ostringstream message;
   message << file << ':' << line << ": expectation failed: " << expression;
   throw std::runtime_error(message.str());
 }
 
+// value是被判定的布尔状态；expression/file/line用于失败时还原原始断言及调用位置。
 inline void expect_true(bool value, const char* expression, const char* file,
                         int line) {
   if (!value) {
@@ -45,6 +49,7 @@ inline void expect_true(bool value, const char* expression, const char* file,
 }
 
 template <typename Left, typename Right>
+// left/right是在本次比较期间借用的实参；expression/file/line记录比较文本与断言位置。
 inline void expect_equal(const Left& left, const Right& right,
                          const char* expression, const char* file, int line) {
   if (!(left == right)) {
@@ -54,6 +59,8 @@ inline void expect_equal(const Left& left, const Right& right,
 
 }  // namespace zju::coop::test
 
+// name同时作为静态测试函数标识符和字符串化用例名，保证注册项与实际入口同名。
+// name##_registrar是进程初始化期构造的静态对象，其构造函数把name对应函数登记到registry。
 #define TEST_CASE(name)                                                    \
   static void name();                                                       \
   static ::zju::coop::test::Registrar name##_registrar(#name, &name);      \

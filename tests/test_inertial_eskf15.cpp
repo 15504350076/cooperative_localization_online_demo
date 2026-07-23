@@ -18,6 +18,7 @@ using zju::coop::InertialNodeInitialization;
 using zju::coop::Vec3;
 
 InertialConfig make_config() {
+  // config：固定重力、时间步、噪声密度和frame_id的惯导基准配置。
   InertialConfig config{};
   config.gravity_mps2 = 9.80665;
   config.min_imu_dt_s = 1.0e-6;
@@ -32,15 +33,18 @@ InertialConfig make_config() {
 }
 
 InertialNodeInitialization make_initialization() {
+  // initialization：节点7、单位姿态的单节点名义状态初值。
   InertialNodeInitialization initialization{};
   initialization.node_id = 7U;
   initialization.orientation_b_to_n = {1.0, 0.0, 0.0, 0.0};
   return initialization;
 }
 
+// sequence/timestamp_ns用于去重与积分时基，angular_velocity/linear_acceleration是本次FLU惯性量测。
 ImuPacket make_imu(std::uint64_t sequence, std::uint64_t timestamp_ns,
                    const Vec3& angular_velocity,
                    const Vec3& linear_acceleration) {
+  // packet：按节点7和期望坐标系封装的有效IMU输入；frame：复制进定长frame_id缓冲的源字符串。
   ImuPacket packet{};
   packet.node_id = 7U;
   packet.sequence = sequence;
@@ -57,6 +61,7 @@ ImuPacket make_imu(std::uint64_t sequence, std::uint64_t timestamp_ns,
   return packet;
 }
 
+// value：只在本次计算中借用的三维向量，返回其欧氏范数供绝对容差判定。
 double vector_norm(const Vec3& value) {
   return std::sqrt(value.x * value.x + value.y * value.y +
                    value.z * value.z);
@@ -66,6 +71,7 @@ double vector_norm(const Vec3& value) {
 
 // 时间/运动组：首帧不积分，静止比力抵消重力，恒加速度和恒角速率符合解析结果。
 TEST_CASE(inertial_eskf_first_sample_only_establishes_timebase) {
+  // filter：单位姿态的被测15维ESKF；result：首帧静止IMU回执，期望只建立时基不传播。
   InertialEskf15 filter(make_initialization(), make_config());
 
   const auto result = filter.push_imu(
@@ -79,6 +85,7 @@ TEST_CASE(inertial_eskf_first_sample_only_establishes_timebase) {
 }
 
 TEST_CASE(inertial_eskf_stationary_flu_sample_cancels_enu_gravity) {
+  // filter：先接收静止基准帧再接收10 ms后同量测；result期望传播且速度、位置保持近零。
   InertialEskf15 filter(make_initialization(), make_config());
   (void)filter.push_imu(make_imu(1U, 1'000'000'000ULL, {0.0, 0.0, 0.0},
                                  {0.0, 0.0, 9.80665}));
@@ -96,6 +103,7 @@ TEST_CASE(inertial_eskf_stationary_flu_sample_cancels_enu_gravity) {
 }
 
 TEST_CASE(inertial_eskf_constant_acceleration_matches_analytic_motion) {
+  // filter：承载1 s恒定1 m/s²前向加速度场景；result用于确认传播状态。
   InertialEskf15 filter(make_initialization(), make_config());
   (void)filter.push_imu(make_imu(1U, 1'000'000'000ULL, {0.0, 0.0, 0.0},
                                  {1.0, 0.0, 9.80665}));
@@ -110,6 +118,7 @@ TEST_CASE(inertial_eskf_constant_acceleration_matches_analytic_motion) {
 }
 
 TEST_CASE(inertial_eskf_constant_yaw_rate_rotates_body_x_to_navigation_y) {
+  // filter：积分1 s恒定偏航率；half_pi：90度角速度/解析转角；result/rotated_x：传播回执和旋转后前向轴。
   InertialEskf15 filter(make_initialization(), make_config());
   const double half_pi = std::acos(-1.0) / 2.0;
   (void)filter.push_imu(make_imu(1U, 1'000'000'000ULL,
@@ -128,10 +137,12 @@ TEST_CASE(inertial_eskf_constant_yaw_rate_rotates_body_x_to_navigation_y) {
 }
 
 TEST_CASE(inertial_eskf_compensates_configured_gyro_and_accel_bias) {
+  // initialization：注入已知陀螺与加计偏置；filter：验证偏置补偿的ESKF。
   auto initialization = make_initialization();
   initialization.gyro_bias_rad_s = {0.0, 0.0, 0.1};
   initialization.accel_bias_m_s2 = {0.2, 0.0, 0.0};
   InertialEskf15 filter(initialization, make_config());
+  // measured_acceleration/measured_angular_velocity：恰等于静止真值加所配偏置的两帧输入；result期望传播后无运动。
   const Vec3 measured_acceleration{0.2, 0.0, 9.80665};
   const Vec3 measured_angular_velocity{0.0, 0.0, 0.1};
   (void)filter.push_imu(make_imu(1U, 1'000'000'000ULL,
@@ -149,6 +160,7 @@ TEST_CASE(inertial_eskf_compensates_configured_gyro_and_accel_bias) {
 
 // 边界组：乱序、frame_id、非有限值和姿态有效条件失败时不能污染上一时间基准。
 TEST_CASE(inertial_eskf_rejects_invalid_order_frame_and_nonfinite_data) {
+  // filter：依次承载重复、乱序、错坐标系和NaN场景；baseline/state_before：合法首帧及拒绝前状态基线。
   InertialEskf15 filter(make_initialization(), make_config());
   const ImuPacket baseline =
       make_imu(1U, 1'000'000'000ULL, {0.0, 0.0, 0.0},
@@ -159,6 +171,7 @@ TEST_CASE(inertial_eskf_rejects_invalid_order_frame_and_nonfinite_data) {
   EXPECT_EQ(filter.push_imu(baseline).disposition,
             ImuDisposition::kDuplicate);
 
+  // old：时间倒退的乱序包；wrong_frame/other：坐标系不匹配包及其字符串源；nonfinite：角速度含NaN的非法包。
   ImuPacket old = baseline;
   old.sequence = 2U;
   old.timestamp_ns -= 1U;
@@ -189,10 +202,12 @@ TEST_CASE(inertial_eskf_rejects_invalid_order_frame_and_nonfinite_data) {
 }
 
 TEST_CASE(inertial_eskf_uses_valid_orientation_only_for_first_initialization) {
+  // config/filter：启用首帧姿态初始化的配置与滤波器；half_angle：ROS xyzw中90度偏航所需半角。
   auto config = make_config();
   config.use_orientation_for_initialization = true;
   InertialEskf15 filter(make_initialization(), config);
   const double half_angle = std::acos(-1.0) / 4.0;
+  // first：带有效姿态与协方差的首帧；rotated：初始化后前向轴；second：带不同姿态的后续帧，期望不再重置姿态。
   ImuPacket first = make_imu(1U, 1'000'000'000ULL, {0.0, 0.0, 0.0},
                              {0.0, 0.0, 9.80665});
   first.orientation_valid = true;
@@ -220,6 +235,7 @@ TEST_CASE(inertial_eskf_uses_valid_orientation_only_for_first_initialization) {
 }
 
 TEST_CASE(inertial_eskf_ignores_unavailable_orientation_covariance) {
+  // config/filter：开启姿态初始化；first：协方差首项为-1的“不可用”ROS姿态包，期望保持单位姿态。
   auto config = make_config();
   config.use_orientation_for_initialization = true;
   InertialEskf15 filter(make_initialization(), config);
@@ -236,11 +252,13 @@ TEST_CASE(inertial_eskf_ignores_unavailable_orientation_covariance) {
 
 // 噪声组：只有通过ROS协方差可用性/对称性检查时，消息协方差才替代配置噪声。
 TEST_CASE(inertial_eskf_message_covariance_changes_discrete_process_noise) {
+  // configured_only/message_driven：只用配置噪声与允许消息协方差的对照配置；first_filter/second_filter：对应滤波器。
   auto configured_only = make_config();
   auto message_driven = make_config();
   message_driven.use_message_covariance = true;
   InertialEskf15 first_filter(make_initialization(), configured_only);
   InertialEskf15 second_filter(make_initialization(), message_driven);
+  // first/second：携带大协方差的相邻静止IMU包；configured_result/message_result：两种噪声来源下的离散过程噪声回执。
   ImuPacket first = make_imu(1U, 1'000'000'000ULL, {0.0, 0.0, 0.0},
                              {0.0, 0.0, 9.80665});
   first.angular_velocity_covariance = {4.0, 0.0, 0.0, 0.0, 4.0, 0.0,

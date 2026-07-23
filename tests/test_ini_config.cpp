@@ -89,15 +89,19 @@ velocity_std_mps = 0.1
 )ini";
 }
 
+// text是按值复制后修改的INI文本，from必须至少匹配一次且只替换首个匹配，to是注入的边界或错误片段。
 std::string replace_once(std::string text, const std::string& from,
                          const std::string& to) {
+  // position：目标片段的首字节位置，用于保证用例确实改到了预期配置项。
   const std::size_t position = text.find(from);
   EXPECT_TRUE(position != std::string::npos);
   text.replace(position, from.size(), to);
   return text;
 }
 
+// text是完整INI输入，token是待定位配置项；返回其一基行号供错误位置断言。
 std::size_t line_of(const std::string& text, const std::string& token) {
+  // position：token在原始字节串中的偏移，用于统计此前换行数。
   const std::size_t position = text.find(token);
   EXPECT_TRUE(position != std::string::npos);
   return 1U + static_cast<std::size_t>(
@@ -108,11 +112,13 @@ std::size_t line_of(const std::string& text, const std::string& token) {
 }
 
 struct CapturedIniError {
+  // code/line/message：一次解析失败的分类、原始一基行号和用户诊断，默认值代表未捕获异常。
   IniError code{IniError::kNone};
   std::size_t line{};
   std::string message;
 };
 
+// text：预期解析失败的INI内容；error：catch期间借用的异常，立即复制其三个可观察字段。
 CapturedIniError capture_ini_error(const std::string& text) {
   try {
     static_cast<void>(parse_ini_config(text));
@@ -122,6 +128,7 @@ CapturedIniError capture_ini_error(const std::string& text) {
   return {};
 }
 
+// text是错误输入，code是期望分类；局部error保存实际分类、行号和带行号消息。
 void expect_ini_error(const std::string& text, IniError code) {
   const CapturedIniError error = capture_ini_error(text);
   EXPECT_EQ(error.code, code);
@@ -130,6 +137,7 @@ void expect_ini_error(const std::string& text, IniError code) {
               std::string::npos);
 }
 
+// config：在调用期间保持有效的配置；node_id：要查找的节点标识；candidate：逐项借用节点集合元素。
 const NodeInitialization& node(const DemoConfig& config,
                                std::uint32_t node_id) {
   for (const auto& candidate : config.engine.nodes) {
@@ -144,6 +152,7 @@ const NodeInitialization& node(const DemoConfig& config,
 
 // 成功路径先锁定每个配置节的强类型映射和默认/回退示例文件的实际语义。
 TEST_CASE(ini_config_maps_all_engine_filter_degradation_online_and_node_values) {
+  // config：由内嵌完整INI解析出的强类型配置，用于核对各主要配置节的代表性字段映射。
   const DemoConfig config = parse_ini_config(valid_ini());
 
   EXPECT_EQ(config.engine.filter.reference_node_id, 1U);
@@ -180,6 +189,7 @@ TEST_CASE(ini_config_maps_all_engine_filter_degradation_online_and_node_values) 
 }
 
 TEST_CASE(demo_ini_loads_three_node_three_four_five_geometry_and_udp_ports) {
+  // config：从交付默认路径加载的IMU+测距配置，期望保持3-4-5几何和固定UDP端口。
   const DemoConfig config = load_ini_config("config/demo.ini");
   EXPECT_EQ(config.engine.nodes.size(), 3U);
   EXPECT_EQ(config.engine.filter.reference_node_id, 1U);
@@ -200,6 +210,7 @@ TEST_CASE(demo_ini_loads_three_node_three_four_five_geometry_and_udp_ports) {
 }
 
 TEST_CASE(range_only_demo_ini_keeps_measurement_only_fallback) {
+  // config：从测距回退配置加载的结果，期望不创建惯导配置且保留三节点与20 Hz输入率。
   const DemoConfig config = load_ini_config("config/range_only_demo.ini");
   EXPECT_TRUE(!config.inertial.has_value());
   EXPECT_EQ(config.engine.nodes.size(), 3U);
@@ -250,6 +261,7 @@ TEST_CASE(ini_config_rejects_bad_numbers_booleans_ports_and_non_finite_values) {
   expect_ini_error(replace_once(valid_ini(), "x = 3", "x = inf"),
                    IniError::kInvalidValue);
 
+  // boundary：把输入端口改为65535后的边界配置，期望仍能成功解析。
   const DemoConfig boundary = parse_ini_config(replace_once(
       valid_ini(), "input_port = 39001", "input_port = 65535"));
   EXPECT_EQ(boundary.online.input_port, 65535U);
@@ -279,6 +291,7 @@ TEST_CASE(ini_config_rejects_unsafe_large_log_limit) {
                                 "max_log_record_size = 1048616",
                                 "max_log_record_size = 1048617"),
                    IniError::kInvalidConfiguration);
+  // tighter：把日志记录上限收紧到100字节后的合法配置。
   const DemoConfig tighter = parse_ini_config(replace_once(
       valid_ini(), "max_log_record_size = 1048616",
       "max_log_record_size = 100"));
@@ -286,6 +299,7 @@ TEST_CASE(ini_config_rejects_unsafe_large_log_limit) {
 }
 
 TEST_CASE(ini_config_tracked_edge_error_reports_the_offending_entry_line) {
+  // too_few_tracked：把边跟踪容量降到不足值的输入；error：期望指向该配置项原始行的跨字段错误。
   const std::string too_few_tracked = replace_once(
       valid_ini(), "max_tracked_edges = 2016", "max_tracked_edges = 2");
   const CapturedIniError error = capture_ini_error(too_few_tracked);
@@ -294,6 +308,7 @@ TEST_CASE(ini_config_tracked_edge_error_reports_the_offending_entry_line) {
 }
 
 TEST_CASE(ini_config_node_overflow_reports_the_offending_entry_line) {
+  // overflowing_std：把节点位置标准差放大到平方溢出的输入；error：应定位到该节点字段行。
   const std::string overflowing_std = replace_once(
       valid_ini(), "position_std_m = 0.1", "position_std_m = 1e200");
   const CapturedIniError error = capture_ini_error(overflowing_std);
@@ -302,6 +317,7 @@ TEST_CASE(ini_config_node_overflow_reports_the_offending_entry_line) {
 }
 
 TEST_CASE(ini_config_rejects_invalid_utf8_and_reports_its_line) {
+  // invalid：在合法INI首字节前插入0xFF的输入缓冲，期望报告UTF-8错误而非继续解析。
   std::string invalid = valid_ini();
   invalid.insert(0U, 1U, static_cast<char>(0xFF));
   expect_ini_error(invalid, IniError::kInvalidUtf8);

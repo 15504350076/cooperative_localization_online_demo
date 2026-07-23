@@ -13,6 +13,7 @@
 
 namespace {
 
+// kTimestampNs：C ABI输入场景统一使用的50 ms有效时刻；两个Stride常量是标准输出结构的紧密步长。
 constexpr std::uint64_t kTimestampNs = 50'000'000ULL;
 constexpr std::uint32_t kLocalizationStride =
     static_cast<std::uint32_t>(sizeof(zju_coop_localization_t));
@@ -20,24 +21,29 @@ constexpr std::uint32_t kObservationStride =
     static_cast<std::uint32_t>(sizeof(zju_coop_observation_t));
 
 struct ExtendedNode {
+  // value是ABI可见前缀，tail是验证自定义大步长不会被库越界改写的调用方扩展区。
   zju_coop_node_initialization_t value{};
   std::uint64_t tail{};
 };
 
 struct ExtendedLocalization {
+  // value是定位输出前缀，tail是跨zju_coop_step保持不变的调用方私有尾部。
   zju_coop_localization_t value{};
   std::uint64_t tail{};
 };
 
 struct ExtendedObservation {
+  // value是观测输出前缀，tail是跨zju_coop_step保持不变的调用方私有尾部。
   zju_coop_observation_t value{};
   std::uint64_t tail{};
 };
 
 struct TestEngine {
+  // handle：由构造函数创建、析构函数销毁的独占C句柄，在辅助对象生命周期内保持有效。
   zju_coop_handle_t* handle{};
 
   TestEngine() {
+    // nodes：构造器栈内三节点3-4布局，create必须在其销毁前深拷贝；node逐项初始化结构头和标准差。
     std::array<zju_coop_node_initialization_t, 3U> nodes{};
     for (auto& node : nodes) {
       EXPECT_EQ(zju_coop_node_initialization_init(&node), ZJU_COOP_OK);
@@ -50,6 +56,7 @@ struct TestEngine {
     nodes[2U].node_id = 3U;
     nodes[2U].y = 4.0;
 
+    // config：只在create调用期间有效的C配置，handle不得借用其节点指针。
     zju_coop_config_t config{};
     EXPECT_EQ(zju_coop_config_init(&config), ZJU_COOP_OK);
     config.reference_node_id = 1U;
@@ -70,9 +77,11 @@ struct TestEngine {
   TestEngine& operator=(const TestEngine&) = delete;
 };
 
+// from/to/range_m/timestamp_ns分别指定边端点、距离和采样/接收时刻。
 zju_coop_range_packet_t range_packet(std::uint16_t from, std::uint16_t to,
                                      double range_m,
                                      std::uint64_t timestamp_ns) {
+  // packet：已初始化结构头、0.1 m标准差和有效状态的测距输入。
   zju_coop_range_packet_t packet{};
   EXPECT_EQ(zju_coop_range_packet_init(&packet), ZJU_COOP_OK);
   packet.from_node = from;
@@ -87,11 +96,13 @@ zju_coop_range_packet_t range_packet(std::uint16_t from, std::uint16_t to,
 }
 
 zju_coop_range_processing_result_t initialized_push_result() {
+  // result：带正确结构大小和ABI版本的空测距处理输出缓冲。
   zju_coop_range_processing_result_t result{};
   EXPECT_EQ(zju_coop_range_processing_result_init(&result), ZJU_COOP_OK);
   return result;
 }
 
+// localizations/observations/network均由调用方持有，本函数只初始化结构头；循环引用仅在遍历期间有效。
 void initialize_outputs(std::vector<zju_coop_localization_t>& localizations,
                         std::vector<zju_coop_observation_t>& observations,
                         zju_coop_network_t& network) {
@@ -116,6 +127,7 @@ TEST_CASE(c_api_exposes_stable_version_defaults_and_error_strings) {
                   static_cast<zju_coop_error_code_t>(999))) != 0U);
 
   EXPECT_EQ(zju_coop_config_init(nullptr), ZJU_COOP_INVALID_ARGUMENT);
+  // config：公开初始化函数写入的默认配置，期望版本、容量和步长均稳定。
   zju_coop_config_t config{};
   EXPECT_EQ(zju_coop_config_init(&config), ZJU_COOP_OK);
   EXPECT_EQ(config.struct_size, sizeof(config));
@@ -144,6 +156,7 @@ TEST_CASE(c_api_reason_mask_bits_are_public_and_stable) {
 
 // 创建/跨度组故意提供空指针、坏版本、未对齐stride和溢出地址，校验前不得解引用。
 TEST_CASE(c_api_create_rejects_null_bad_size_and_bad_version) {
+  // handle：预置非空哨兵以确认所有创建失败路径都会清零输出；config依次注入坏大小和坏ABI版本。
   zju_coop_handle_t* handle = reinterpret_cast<zju_coop_handle_t*>(1U);
   EXPECT_EQ(zju_coop_create(nullptr, &handle), ZJU_COOP_INVALID_ARGUMENT);
   EXPECT_TRUE(handle == nullptr);
@@ -166,11 +179,13 @@ TEST_CASE(c_api_create_rejects_null_bad_size_and_bad_version) {
 }
 
 TEST_CASE(c_api_create_deep_copies_initialization_and_step_queries_buffers) {
+  // 三个Tail常量：节点输入、定位输出和观测输出私有尾部的不同哨兵位型。
   constexpr std::uint64_t kNodeTail = UINT64_C(0x1122334455667788);
   constexpr std::uint64_t kLocalizationTail =
       UINT64_C(0x8877665544332211);
   constexpr std::uint64_t kObservationTail =
       UINT64_C(0xA5A55A5AF0F00F0F);
+  // nodes/node：带扩展尾部的三节点输入及逐项引用；config/handle：自定义stride配置与创建结果。
   std::array<ExtendedNode, 3U> nodes{};
   for (auto& node : nodes) {
     EXPECT_EQ(zju_coop_node_initialization_init(&node.value), ZJU_COOP_OK);
@@ -200,6 +215,7 @@ TEST_CASE(c_api_create_deep_copies_initialization_and_step_queries_buffers) {
     EXPECT_EQ(node.tail, kNodeTail);
   }
 
+  // localization_count/observation_count：先接收容量查询所需数量，随后作为实际写入计数。
   std::uint32_t localization_count{};
   std::uint32_t observation_count{};
   EXPECT_EQ(zju_coop_step(handle, 0U, nullptr, 0U, 0U,
@@ -209,6 +225,7 @@ TEST_CASE(c_api_create_deep_copies_initialization_and_step_queries_buffers) {
   EXPECT_EQ(localization_count, 3U);
   EXPECT_EQ(observation_count, 3U);
 
+  // localizations/observations/network：带私有尾部的输出缓冲和网络输出；循环引用只初始化各元素。
   std::vector<ExtendedLocalization> localizations(localization_count);
   std::vector<ExtendedObservation> observations(observation_count);
   zju_coop_network_t network{};
@@ -235,6 +252,7 @@ TEST_CASE(c_api_create_deep_copies_initialization_and_step_queries_buffers) {
                 &observation_count, &network),
             ZJU_COOP_OK);
 
+  // second：定位输出中节点2的迭代器；lambda参数value仅在单次谓词调用中借用当前扩展元素。
   const auto second = std::find_if(
       localizations.begin(), localizations.end(),
       [](const ExtendedLocalization& value) {
@@ -258,6 +276,7 @@ TEST_CASE(c_api_create_deep_copies_initialization_and_step_queries_buffers) {
 }
 
 TEST_CASE(c_api_rejects_invalid_node_and_output_strides_without_dereference) {
+  // nodes/node/config/handle：标准三节点输入、逐项初始化引用、待变步长配置及创建输出。
   std::array<zju_coop_node_initialization_t, 3U> nodes{};
   for (auto& node : nodes) {
     EXPECT_EQ(zju_coop_node_initialization_init(&node), ZJU_COOP_OK);
@@ -286,6 +305,7 @@ TEST_CASE(c_api_rejects_invalid_node_and_output_strides_without_dereference) {
   EXPECT_TRUE(handle == nullptr);
   nodes[1U].struct_size = sizeof(nodes[1U]);
 
+  // maximum_address/invalid_address：对齐到结构要求的近地址空间末端伪指针，验证跨度溢出检查先于解引用。
   const auto maximum_address = std::numeric_limits<std::uintptr_t>::max();
   const auto invalid_address =
       maximum_address -
@@ -295,6 +315,7 @@ TEST_CASE(c_api_rejects_invalid_node_and_output_strides_without_dereference) {
   EXPECT_EQ(zju_coop_create(&config, &handle), ZJU_COOP_INVALID_ARGUMENT);
   EXPECT_TRUE(handle == nullptr);
 
+  // engine：有效句柄对照；localizations/observations/network：标准输出缓冲；两个count预置哨兵确认失败不改写。
   TestEngine engine;
   std::vector<zju_coop_localization_t> localizations(3U);
   std::vector<zju_coop_observation_t> observations(3U);
@@ -325,6 +346,7 @@ TEST_CASE(c_api_rejects_invalid_node_and_output_strides_without_dereference) {
   EXPECT_EQ(observation_count, 74U);
   localizations[1U].struct_size = sizeof(localizations[1U]);
 
+  // invalid_output：同一近地址末端伪指针，用于验证输出跨度溢出拒绝。
   auto* invalid_output = reinterpret_cast<zju_coop_localization_t*>(
       invalid_address);
   localization_count = 75U;
@@ -340,6 +362,7 @@ TEST_CASE(c_api_rejects_invalid_node_and_output_strides_without_dereference) {
 }
 
 TEST_CASE(c_api_push_range_returns_processing_and_filter_diagnostics) {
+  // engine/packet/result：有效测试句柄、序号17测距包及已初始化回执，期望返回完整处理和滤波诊断。
   TestEngine engine;
   auto packet = range_packet(1U, 2U, 3.0, kTimestampNs);
   packet.sequence = 17U;
@@ -359,6 +382,7 @@ TEST_CASE(c_api_push_range_returns_processing_and_filter_diagnostics) {
 }
 
 TEST_CASE(c_api_validates_range_headers_flags_status_and_finite_values) {
+  // engine/packet/result：复用于空指针、坏结构头、非法布尔/状态和非有限字段的输入与输出缓冲。
   TestEngine engine;
   auto packet = range_packet(1U, 2U, 3.0, kTimestampNs);
   auto result = initialized_push_result();
@@ -411,6 +435,7 @@ TEST_CASE(c_api_validates_range_headers_flags_status_and_finite_values) {
 
 // 输出事务组验证容量查询不推进时间，坏缓冲不部分写入，Engine失败也不提交候选状态。
 TEST_CASE(c_api_step_never_partially_writes_when_capacity_or_headers_fail) {
+  // engine：有效句柄；localizations/observations/network：预置可辨内容的输出；两个count接收需求或保留哨兵。
   TestEngine engine;
   std::vector<zju_coop_localization_t> localizations(2U);
   std::vector<zju_coop_observation_t> observations(3U);
@@ -463,6 +488,7 @@ TEST_CASE(c_api_step_never_partially_writes_when_capacity_or_headers_fail) {
 }
 
 TEST_CASE(c_api_failed_engine_step_is_transactional_for_outputs_and_handle) {
+  // nodes/node/config/handle：极大过程噪声的三节点引擎输入、逐项引用、配置和句柄。
   std::array<zju_coop_node_initialization_t, 3U> nodes{};
   for (auto& node : nodes) {
     EXPECT_EQ(zju_coop_node_initialization_init(&node), ZJU_COOP_OK);
@@ -483,6 +509,7 @@ TEST_CASE(c_api_failed_engine_step_is_transactional_for_outputs_and_handle) {
   zju_coop_handle_t* handle{};
   EXPECT_EQ(zju_coop_create(&config, &handle), ZJU_COOP_OK);
 
+  // localizations/observations/network及两个count：失败前写入哨兵的输出事务缓冲。
   std::vector<zju_coop_localization_t> localizations(3U);
   std::vector<zju_coop_observation_t> observations(3U);
   zju_coop_network_t network{};
@@ -522,6 +549,7 @@ TEST_CASE(c_api_failed_engine_step_is_transactional_for_outputs_and_handle) {
 }
 
 TEST_CASE(c_api_step_validates_null_contract_and_destroy_rejects_null) {
+  // engine：有效句柄对照；localization_count/observation_count：验证空契约时的计数指针组合。
   TestEngine engine;
   std::uint32_t localization_count{};
   std::uint32_t observation_count{};
@@ -540,6 +568,7 @@ TEST_CASE(c_api_step_validates_null_contract_and_destroy_rejects_null) {
 }
 
 TEST_CASE(c_api_buffer_query_does_not_advance_engine_timebase) {
+  // engine与两个count执行仅查询容量；packet/result随后验证查询时间不曾提交到引擎。
   TestEngine engine;
   std::uint32_t localization_count{};
   std::uint32_t observation_count{};
@@ -557,6 +586,7 @@ TEST_CASE(c_api_buffer_query_does_not_advance_engine_timebase) {
 
 // 惯性集成组证明标准ROS字段可映射为普通C结构，核心库本身不链接ROS 2。
 TEST_CASE(c_api_configures_and_pushes_standard_imu_without_ros_dependency) {
+  // engine：有效C句柄；nodes/index：三节点惯导初值及逐项编号索引；config：仅在配置调用期间借用节点数组。
   TestEngine engine;
   std::array<zju_coop_inertial_node_initialization_t, 3U> nodes{};
   for (std::size_t index = 0U; index < nodes.size(); ++index) {
@@ -573,6 +603,7 @@ TEST_CASE(c_api_configures_and_pushes_standard_imu_without_ros_dependency) {
   config.node_count = static_cast<std::uint32_t>(nodes.size());
   EXPECT_EQ(zju_coop_configure_inertial(engine.handle, &config), ZJU_COOP_OK);
 
+  // packet：节点2的标准ROS字段布局静止IMU首帧；result：已初始化的处理输出，期望只建立时基。
   zju_coop_imu_packet_t packet{};
   EXPECT_EQ(zju_coop_imu_packet_init(&packet), ZJU_COOP_OK);
   packet.node_id = 2U;

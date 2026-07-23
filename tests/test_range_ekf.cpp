@@ -19,12 +19,15 @@ using zju::coop::RangeEkf;
 using zju::coop::RangePacket;
 using zju::coop::UpdateDisposition;
 
+// kTolerance：常规状态与协方差比较使用的默认绝对误差上限。
 constexpr double kTolerance = 1.0e-9;
 
+// left/right是被比较标量，tolerance是本次判定允许的绝对误差。
 bool near(double left, double right, double tolerance = kTolerance) {
   return std::abs(left - right) <= tolerance;
 }
 
+// reference_node_id指定相对坐标原点，返回其余噪声、NIS和协方差下限固定的配置。
 FilterConfig config(std::uint32_t reference_node_id = 10U) {
   return {reference_node_id, 0.2, 100.0, 0.25, 1.0e-12};
 }
@@ -37,8 +40,10 @@ std::vector<NodeInitialization> triangle_nodes() {
   };
 }
 
+// from/to指定测距端点，range/range_std是量测及标准差，timestamp_ns驱动预测和乱序判定。
 RangePacket packet(std::uint16_t from, std::uint16_t to, double range,
                    double range_std, std::uint64_t timestamp_ns = 1U) {
+  // value：封装上述字段的有效测距输入包。
   RangePacket value{};
   value.from_node = from;
   value.to_node = to;
@@ -49,12 +54,15 @@ RangePacket packet(std::uint16_t from, std::uint16_t to, double range,
   return value;
 }
 
+// left/right是调用期间借用的两个节点估计，返回其二维欧氏距离。
 double distance(const NodeEstimate& left, const NodeEstimate& right) {
   return std::hypot(left.x - right.x, left.y - right.y);
 }
 
+// left/right是两种分步策略的滤波器，tolerance统一约束状态与协方差逐项误差。
 bool same_state_and_covariance(const RangeEkf& left, const RangeEkf& right,
                                double tolerance) {
+  // node_id：依次选择参考与两个从节点；left_estimate/right_estimate：同节点的策略对照快照。
   for (const std::uint32_t node_id : {10U, 42U, 7U}) {
     const NodeEstimate left_estimate = left.estimate(node_id);
     const NodeEstimate right_estimate = right.estimate(node_id);
@@ -66,12 +74,14 @@ bool same_state_and_covariance(const RangeEkf& left, const RangeEkf& right,
     }
   }
 
+  // left_covariance/right_covariance：在整个逐项比较期间借用的联合协方差矩阵。
   const auto& left_covariance = left.covariance();
   const auto& right_covariance = right.covariance();
   if (left_covariance.rows() != right_covariance.rows() ||
       left_covariance.cols() != right_covariance.cols()) {
     return false;
   }
+  // row/col：遍历协方差每个元素的行列索引。
   for (std::size_t row = 0U; row < left_covariance.rows(); ++row) {
     for (std::size_t col = 0U; col < left_covariance.cols(); ++col) {
       if (!near(left_covariance(row, col), right_covariance(row, col),
@@ -83,10 +93,12 @@ bool same_state_and_covariance(const RangeEkf& left, const RangeEkf& right,
   return true;
 }
 
+// matrix：调用期间借用的待验协方差；返回其是否为可严格Cholesky分解的正定方阵。
 bool has_strict_cholesky_factor(const DenseMatrix& matrix) {
   if (matrix.rows() != matrix.cols()) {
     return false;
   }
+  // lower：逐元素构造的下三角因子；row/col/inner：当前元素及已完成内积索引；residual：扣除内积后的主元。
   DenseMatrix lower(matrix.rows(), matrix.cols());
   for (std::size_t row = 0U; row < matrix.rows(); ++row) {
     for (std::size_t col = 0U; col <= row; ++col) {
@@ -110,10 +122,12 @@ bool has_strict_cholesky_factor(const DenseMatrix& matrix) {
   return true;
 }
 
+// matrix按值复制以允许原地高斯消元，不改变调用方矩阵。
 double matrix_determinant(DenseMatrix matrix) {
   if (matrix.rows() != matrix.cols()) {
     return std::numeric_limits<double>::quiet_NaN();
   }
+  // determinant：累计主元乘积及换行符号；col/pivot_row/row：当前主元列、最佳主元行和候选行。
   double determinant = 1.0;
   for (std::size_t col = 0U; col < matrix.cols(); ++col) {
     std::size_t pivot_row = col;
@@ -127,11 +141,13 @@ double matrix_determinant(DenseMatrix matrix) {
       return 0.0;
     }
     if (pivot_row != col) {
+      // swap_col：从当前列起交换主元行，已消元前缀无需触碰。
       for (std::size_t swap_col = col; swap_col < matrix.cols(); ++swap_col) {
         std::swap(matrix(col, swap_col), matrix(pivot_row, swap_col));
       }
       determinant = -determinant;
     }
+    // pivot：当前非零主元；factor：下方行的消元倍率；update_col：待更新尾部列。
     const double pivot = matrix(col, col);
     determinant *= pivot;
     for (std::size_t row = col + 1U; row < matrix.rows(); ++row) {
@@ -145,12 +161,15 @@ double matrix_determinant(DenseMatrix matrix) {
   return determinant;
 }
 
+// matrix按值接收并对称化，Jacobi迭代后返回最小特征值近似，不改变调用方协方差。
 double minimum_symmetric_eigenvalue(DenseMatrix matrix) {
   matrix = matrix.symmetrized();
+  // iteration：最多128轮Jacobi旋转；pivot_row/pivot_col/largest：本轮最大非对角元位置与幅值。
   for (unsigned int iteration = 0U; iteration < 128U; ++iteration) {
     std::size_t pivot_row = 0U;
     std::size_t pivot_col = 0U;
     double largest = 0.0;
+    // row/col/magnitude：扫描上三角非对角元素的索引和绝对值。
     for (std::size_t row = 0U; row < matrix.rows(); ++row) {
       for (std::size_t col = row + 1U; col < matrix.cols(); ++col) {
         const double magnitude = std::abs(matrix(row, col));
@@ -165,6 +184,7 @@ double minimum_symmetric_eigenvalue(DenseMatrix matrix) {
       break;
     }
 
+    // app/aqq/apq：旋转子块三元素；tau/tangent/cosine/sine：稳定Jacobi旋转参数。
     const double app = matrix(pivot_row, pivot_row);
     const double aqq = matrix(pivot_col, pivot_col);
     const double apq = matrix(pivot_row, pivot_col);
@@ -173,6 +193,7 @@ double minimum_symmetric_eigenvalue(DenseMatrix matrix) {
         1.0 / (std::abs(tau) + std::sqrt(1.0 + tau * tau)), tau);
     const double cosine = 1.0 / std::sqrt(1.0 + tangent * tangent);
     const double sine = tangent * cosine;
+    // index：更新主元两行列之外的耦合项；aip/aiq：旋转前的两项副本。
     for (std::size_t index = 0U; index < matrix.rows(); ++index) {
       if (index == pivot_row || index == pivot_col) {
         continue;
@@ -194,6 +215,7 @@ double minimum_symmetric_eigenvalue(DenseMatrix matrix) {
     matrix(pivot_col, pivot_row) = 0.0;
   }
 
+  // minimum：迭代后对角线中的当前最小值；index：扫描其余特征值近似。
   double minimum = matrix(0U, 0U);
   for (std::size_t index = 1U; index < matrix.rows(); ++index) {
     minimum = std::min(minimum, matrix(index, index));
@@ -205,6 +227,7 @@ double minimum_symmetric_eigenvalue(DenseMatrix matrix) {
 
 // 构造组：冻结主参考相对化、稀疏节点编号、初始方差和资源/溢出拒绝语义。
 TEST_CASE(range_ekf_translates_all_initial_positions_to_reference_origin) {
+  // filter：以节点10为原点的三节点滤波器；reference/b/c：期望为(0,0)、(3,4)、(-5,12)的初始相对估计。
   RangeEkf filter(config(), triangle_nodes());
 
   const NodeEstimate reference = filter.estimate(10U);
@@ -222,6 +245,7 @@ TEST_CASE(range_ekf_translates_all_initial_positions_to_reference_origin) {
 }
 
 TEST_CASE(range_ekf_rejects_nonpositive_process_standard_deviation) {
+  // invalid_config：过程标准差为零的配置；rejected：构造器是否抛出参数异常。
   FilterConfig invalid_config = config();
   invalid_config.process_accel_std_mps2 = 0.0;
   bool rejected = false;
@@ -234,6 +258,7 @@ TEST_CASE(range_ekf_rejects_nonpositive_process_standard_deviation) {
 }
 
 TEST_CASE(range_ekf_applies_covariance_floor_at_construction) {
+  // floored/nodes/filter/covariance：0.25下限配置、微小先验节点、被测滤波器及其矩阵；index遍历对角线。
   FilterConfig floored = config();
   floored.min_covariance_diagonal = 0.25;
   auto nodes = triangle_nodes();
@@ -248,6 +273,7 @@ TEST_CASE(range_ekf_applies_covariance_floor_at_construction) {
 }
 
 TEST_CASE(range_ekf_rejects_initialization_variance_overflow) {
+  // nodes：位置标准差平方会溢出的初值；rejected记录构造拒绝。
   auto nodes = triangle_nodes();
   nodes[1].position_std_m = std::numeric_limits<double>::max();
   bool rejected = false;
@@ -260,6 +286,7 @@ TEST_CASE(range_ekf_rejects_initialization_variance_overflow) {
 }
 
 TEST_CASE(range_ekf_rejects_relative_position_overflow_at_construction) {
+  // nodes：参考与从节点之差会溢出的正负最大坐标；rejected记录构造拒绝。
   auto nodes = triangle_nodes();
   nodes[0].x = -std::numeric_limits<double>::max();
   nodes[1].x = std::numeric_limits<double>::max();
@@ -273,6 +300,7 @@ TEST_CASE(range_ekf_rejects_relative_position_overflow_at_construction) {
 }
 
 TEST_CASE(range_ekf_rejects_process_variance_overflow) {
+  // invalid_config：过程标准差平方溢出的配置；rejected记录构造拒绝。
   FilterConfig invalid_config = config();
   invalid_config.process_accel_std_mps2 =
       std::numeric_limits<double>::max();
@@ -286,6 +314,7 @@ TEST_CASE(range_ekf_rejects_process_variance_overflow) {
 }
 
 TEST_CASE(range_ekf_rejects_process_variance_underflow) {
+  // invalid_config：过程标准差平方下溢的配置；rejected记录构造拒绝。
   FilterConfig invalid_config = config();
   invalid_config.process_accel_std_mps2 = 1.0e-200;
   bool rejected = false;
@@ -299,6 +328,7 @@ TEST_CASE(range_ekf_rejects_process_variance_underflow) {
 
 // 预测组：比较闭式分段过程噪声与显式多子步，并覆盖极端步数和失败事务回滚。
 TEST_CASE(range_ekf_tiny_prediction_step_still_advances_full_duration) {
+  // tiny_step/filter：分段上限1e-20 s的配置与滤波器，期望仍推进完整1 s。
   FilterConfig tiny_step = config();
   tiny_step.max_prediction_step_s = 1.0e-20;
   RangeEkf filter(tiny_step, triangle_nodes());
@@ -310,6 +340,7 @@ TEST_CASE(range_ekf_tiny_prediction_step_still_advances_full_duration) {
 }
 
 TEST_CASE(one_prediction_matches_four_explicit_quarter_second_predictions) {
+  // quarter_step：0.25 s分段配置；one_call/four_calls：单次与四次预测对照；base/step：初始时基和子步序号。
   FilterConfig quarter_step = config();
   quarter_step.max_prediction_step_s = 0.25;
   RangeEkf one_call(quarter_step, triangle_nodes());
@@ -327,6 +358,7 @@ TEST_CASE(one_prediction_matches_four_explicit_quarter_second_predictions) {
 }
 
 TEST_CASE(closed_form_prediction_matches_more_than_ten_thousand_substeps) {
+  // tiny_step：0.1 ms配置；one_call/explicit_calls：闭式与逐步对照；base/step_ns/step_count/step定义10001步。
   FilterConfig tiny_step = config();
   tiny_step.max_prediction_step_s = 0.0001;
   RangeEkf one_call(tiny_step, triangle_nodes());
@@ -346,6 +378,7 @@ TEST_CASE(closed_form_prediction_matches_more_than_ten_thousand_substeps) {
 }
 
 TEST_CASE(extreme_segment_count_uses_finite_inverse_count_process_noise) {
+  // extreme_steps/filter：巨大理论分段数场景；predicted：是否完成；covariance及row/col用于全矩阵有限性检查。
   FilterConfig extreme_steps = config();
   extreme_steps.max_prediction_step_s = 1.0e-200;
   RangeEkf filter(extreme_steps, triangle_nodes());
@@ -368,6 +401,7 @@ TEST_CASE(extreme_segment_count_uses_finite_inverse_count_process_noise) {
 }
 
 TEST_CASE(extreme_finite_process_noise_avoids_intermediate_product_overflow) {
+  // extreme_noise/filter：极大有限噪声与极小步长组合；predicted记录长预测；covariance核对有限数量级。
   FilterConfig extreme_noise = config();
   extreme_noise.process_accel_std_mps2 = 1.0e150;
   extreme_noise.max_prediction_step_s = 1.0e-91;
@@ -394,6 +428,7 @@ TEST_CASE(extreme_finite_process_noise_avoids_intermediate_product_overflow) {
 }
 
 TEST_CASE(numerical_prediction_failure_rolls_back_state_and_time) {
+  // nodes/filter：1e308位置速度的溢出场景；before/after：失败前后状态；update_result期望NumericalFailure。
   auto nodes = triangle_nodes();
   nodes[1].x = 1.0e308;
   nodes[1].vx = 1.0e308;
@@ -412,6 +447,7 @@ TEST_CASE(numerical_prediction_failure_rolls_back_state_and_time) {
 }
 
 TEST_CASE(range_ekf_accepts_arbitrary_initialization_order_and_sparse_ids) {
+  // nodes：反转后的稀疏ID初值；filter/estimates：按ID索引的滤波器及输出集合。
   auto nodes = triangle_nodes();
   std::reverse(nodes.begin(), nodes.end());
   RangeEkf filter(config(), nodes);
@@ -426,6 +462,7 @@ TEST_CASE(range_ekf_accepts_arbitrary_initialization_order_and_sparse_ids) {
 }
 
 TEST_CASE(range_ekf_first_timestamp_only_establishes_timebase_then_predicts_cv) {
+  // filter：含非零相对速度的滤波器；b/c：第二次predict后的两个从节点恒速解析状态。
   RangeEkf filter(config(), triangle_nodes());
 
   filter.predict_to(2'000'000'000ULL);
@@ -443,6 +480,7 @@ TEST_CASE(range_ekf_first_timestamp_only_establishes_timebase_then_predicts_cv) 
 }
 
 TEST_CASE(timestamp_zero_establishes_timebase_before_one_second_prediction) {
+  // filter：显式以0建立时基；b：1 s恒速预测后的节点42估计。
   RangeEkf filter(config(), triangle_nodes());
   filter.predict_to(0U);
   filter.predict_to(1'000'000'000ULL);
@@ -454,6 +492,7 @@ TEST_CASE(timestamp_zero_establishes_timebase_before_one_second_prediction) {
 }
 
 TEST_CASE(equal_absolute_velocities_produce_zero_relative_velocity) {
+  // nodes/filter：参考与节点42绝对速度相同的初值与相对滤波器；initial_range/reference/b核对距离和相对速度。
   auto nodes = triangle_nodes();
   nodes[0].vx = 10.0;
   nodes[0].vy = -2.0;
@@ -476,6 +515,7 @@ TEST_CASE(equal_absolute_velocities_produce_zero_relative_velocity) {
 
 // 更新组：两端距离雅可比建立交叉协方差，后续边可把修正传播到相关第三节点。
 TEST_CASE(reference_ranges_correct_only_the_observed_nonreference_node) {
+  // filter：初始无交叉相关；c_before、ab、b_after、c_after_ab记录首边更新；ac/b_after_ac记录第二边更新。
   RangeEkf filter(config(), triangle_nodes());
   const NodeEstimate c_before = filter.estimate(7U);
 
@@ -496,6 +536,7 @@ TEST_CASE(reference_ranges_correct_only_the_observed_nonreference_node) {
 }
 
 TEST_CASE(peer_range_moves_both_nodes_and_builds_cross_covariance) {
+  // filter/result及b/c前后快照描述对等测距更新；has_cross_covariance/covariance与row/col扫描跨节点块。
   RangeEkf filter(config(), triangle_nodes());
   const NodeEstimate b_before = filter.estimate(42U);
   const NodeEstimate c_before = filter.estimate(7U);
@@ -519,6 +560,7 @@ TEST_CASE(peer_range_moves_both_nodes_and_builds_cross_covariance) {
 }
 
 TEST_CASE(cross_covariance_propagates_a_later_correction_to_correlated_node) {
+  // filter：先建立42-7相关；c_before/c_after：随后10-42修正前后的节点7快照。
   RangeEkf filter(config(), triangle_nodes());
   EXPECT_EQ(filter.update(packet(42U, 7U, 13.0, 0.2)).disposition,
             UpdateDisposition::Accepted);
@@ -531,6 +573,7 @@ TEST_CASE(cross_covariance_propagates_a_later_correction_to_correlated_node) {
 }
 
 TEST_CASE(accepted_small_residual_reduces_range_innovation) {
+  // filter/measured_range/result：4.8 m小残差更新；before/after：更新前后绝对创新。
   RangeEkf filter(config(), triangle_nodes());
   const double measured_range = 4.8;
   const double before = std::abs(measured_range -
@@ -552,6 +595,7 @@ TEST_CASE(accepted_small_residual_reduces_range_innovation) {
 }
 
 TEST_CASE(subnormal_measurement_variance_avoids_intermediate_underflow) {
+  // subnormal_config/nodes/filter：亚正规方差双节点场景；result：极小量测标准差与大倍率的更新回执。
   FilterConfig subnormal_config{10U, 0.2, 100.0, 0.25, 1.0e-300};
   const std::vector<NodeInitialization> nodes{
       {10U, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0},
@@ -569,6 +613,7 @@ TEST_CASE(subnormal_measurement_variance_avoids_intermediate_underflow) {
 
 // 拒绝/数值组：区分输入类别、NIS边界、乱序、零基线和近奇异协方差稳定化。
 TEST_CASE(range_ekf_reports_invalid_packet_categories_without_correction) {
+  // filter承载各拒绝类别；invalid是valid=false包，nonfinite是距离NaN包。
   RangeEkf filter(config(), triangle_nodes());
 
   auto invalid = packet(10U, 42U, 5.0, 0.1);
@@ -595,6 +640,7 @@ TEST_CASE(range_ekf_reports_invalid_packet_categories_without_correction) {
 }
 
 TEST_CASE(nis_rejection_keeps_prediction_but_not_measurement_correction) {
+  // strict：严NIS门限；rejected/predicted_only：离群更新与纯预测对照；result、actual/expected及两矩阵验证只提交预测。
   FilterConfig strict = config();
   strict.nis_gate = 0.01;
   RangeEkf rejected(strict, triangle_nodes());
@@ -625,6 +671,7 @@ TEST_CASE(nis_rejection_keeps_prediction_but_not_measurement_correction) {
 }
 
 TEST_CASE(nis_equal_to_gate_is_accepted) {
+  // preview_config/preview/preview_result先测精确NIS；exact_config/exact将门限设为该值验证等号接受。
   FilterConfig preview_config = config();
   preview_config.nis_gate = 1.0e9;
   RangeEkf preview(preview_config, triangle_nodes());
@@ -639,6 +686,7 @@ TEST_CASE(nis_equal_to_gate_is_accepted) {
 }
 
 TEST_CASE(overflowing_innovation_square_is_reported_as_nis_rejection) {
+  // filter/result：最大有限距离使创新平方溢出的场景，期望饱和NIS并拒绝。
   RangeEkf filter(config(), triangle_nodes());
   const auto result = filter.update(packet(
       10U, 42U, std::numeric_limits<double>::max(), 0.1));
@@ -648,6 +696,7 @@ TEST_CASE(overflowing_innovation_square_is_reported_as_nis_rejection) {
 }
 
 TEST_CASE(coincident_nodes_report_numerical_failure_for_range_derivative) {
+  // nodes/filter：两端位置重合、距离雅可比不可定义的场景。
   auto nodes = triangle_nodes();
   nodes[1].x = nodes[0].x;
   nodes[1].y = nodes[0].y;
@@ -658,6 +707,7 @@ TEST_CASE(coincident_nodes_report_numerical_failure_for_range_derivative) {
 }
 
 TEST_CASE(out_of_order_range_is_rejected_without_rewinding_filter) {
+  // filter已推进到20；before/result/after记录时刻19乱序量测前、回执与后状态。
   RangeEkf filter(config(), triangle_nodes());
   filter.predict_to(10U);
   filter.predict_to(20U);
@@ -672,6 +722,7 @@ TEST_CASE(out_of_order_range_is_rejected_without_rewinding_filter) {
 }
 
 TEST_CASE(accepted_updates_leave_covariance_symmetric_with_positive_diagonal) {
+  // filter/covariance：两次接受更新后的矩阵；row/col遍历有限正对角和对称性。
   RangeEkf filter(config(), triangle_nodes());
   static_cast<void>(filter.update(packet(10U, 42U, 4.9, 0.2)));
   static_cast<void>(filter.update(packet(42U, 7U, 13.1, 0.2)));
@@ -687,6 +738,7 @@ TEST_CASE(accepted_updates_leave_covariance_symmetric_with_positive_diagonal) {
 }
 
 TEST_CASE(near_singular_range_update_keeps_full_covariance_positive_definite) {
+  // near_singular_config/nodes/filter/result构成近奇异更新；covariance/position_determinant核对完整正定性。
   FilterConfig near_singular_config{10U, 0.2, 100.0, 0.25, 1.0e-300};
   const std::vector<NodeInitialization> nodes{
       {10U, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0},
@@ -706,6 +758,7 @@ TEST_CASE(near_singular_range_update_keeps_full_covariance_positive_definite) {
 }
 
 TEST_CASE(prediction_stabilizes_near_singular_full_covariance) {
+  // near_singular_config/nodes/filter/covariance构成近奇异预测；velocity_determinant、inverse_v**与schur_**验证Schur补。
   FilterConfig near_singular_config{10U, 1.0e-161, 100.0, 1.0,
                                     1.0e-300};
   const std::vector<NodeInitialization> nodes{
@@ -753,6 +806,7 @@ TEST_CASE(prediction_stabilizes_near_singular_full_covariance) {
   EXPECT_TRUE(minimum_symmetric_eigenvalue(covariance) >= 0.0);
   EXPECT_TRUE(has_strict_cholesky_factor(covariance));
 
+  // rounding_edge：相邻非整齐预测终点对照，检查舍入边界仍保持正定。
   RangeEkf rounding_edge(near_singular_config, nodes);
   EXPECT_EQ(
       rounding_edge.update(packet(10U, 42U, 1.0, 1.0e-11, 0U)).disposition,
@@ -764,6 +818,7 @@ TEST_CASE(prediction_stabilizes_near_singular_full_covariance) {
 
 // 集成组：三条一致测距应形成稳定非共线相对几何，而不宣称绝对位置或航向。
 TEST_CASE(three_consistent_ranges_converge_to_stable_triangle_geometry) {
+  // loose/nodes/filter：宽门限、带初始偏差的三节点场景；timestamp：十轮一致测距时刻；a/b/c为收敛快照。
   FilterConfig loose = config();
   loose.nis_gate = 1.0e9;
   const std::vector<NodeInitialization> nodes{

@@ -1,5 +1,6 @@
 # 模块职责：Linux/ARM64构建后用nm审计.so动态符号，只允许稳定zju_coop_* C API导出。
 # 该脚本由CMake POST_BUILD调用，不参与Windows DLL构建。
+# NM_TOOL由主构建传入nm可执行文件路径；LIBRARY_FILE是刚生成的zju_coop共享库绝对路径。
 if(NOT DEFINED NM_TOOL OR NM_TOOL STREQUAL "")
   message(FATAL_ERROR "NM_TOOL was not provided")
 endif()
@@ -12,6 +13,7 @@ endif()
 # 因而检查目标是“调用方实际可链接到的导出”，不是ELF中的全部调试/局部符号。
 execute_process(
     COMMAND "${NM_TOOL}" -D --defined-only "${LIBRARY_FILE}"
+    # nm_result保存进程退出码，dynamic_symbols保存标准输出符号表，nm_error保存失败诊断。
     RESULT_VARIABLE nm_result
     OUTPUT_VARIABLE dynamic_symbols
     ERROR_VARIABLE nm_error

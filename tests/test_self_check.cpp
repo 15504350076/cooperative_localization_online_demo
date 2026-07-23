@@ -5,6 +5,7 @@
 #include <string>
 
 TEST_CASE(self_check_validates_public_c_abi_without_external_io) {
+  // result：一次无外部I/O自检的完整汇总，期望总状态通过、失败计数为零且关键阶段均留有通过记录。
   const zju::coop::self_check::SelfCheckResult result =
       zju::coop::self_check::run_self_check();
 

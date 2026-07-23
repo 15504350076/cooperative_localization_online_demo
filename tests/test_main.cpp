@@ -5,14 +5,16 @@
 #include <iostream>
 
 int main() {
-  // 每个register_*函数对应一个独立模块，新增测试文件必须在此显式注册。
+  // failures：累计未通过用例数，决定汇总输出和进程退出码。
   unsigned int failures = 0U;
 
+  // test_case：依次借用进程级注册表中的用例描述，注册表在整个遍历期间保持稳定。
   for (const auto& test_case : zju::coop::test::registry()) {
     try {
       test_case.function();
       std::cout << "[PASS] " << test_case.name << '\n';
     } catch (const std::exception& error) {
+      // error：仅在当前catch块存活的失败异常引用，用于把断言诊断写入CTest日志。
       ++failures;
       std::cerr << "[FAIL] " << test_case.name << ": " << error.what()
                 << '\n';
