@@ -12,6 +12,7 @@ namespace zju::coop::protocol {
  * 调用方决定覆盖字节范围；ZJCL v1会把CRC字段从输入中排除，而不是依赖主机布局。
  */
 [[nodiscard]] std::uint32_t crc32_ieee(
+    // bytes为调用方选择的连续校验输入；ZJCL调用者必须传入头[0,36)+payload，明确排除CRC字段。
     const std::vector<std::uint8_t>& bytes) noexcept;
 
 }  // namespace zju::coop::protocol

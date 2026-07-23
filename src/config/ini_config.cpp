@@ -19,9 +19,11 @@
 namespace zju::coop::config {
 namespace {
 
+// kMaximumConfigBytes限制INI文件；kMaximumPayloadBytes限制ZJCL载荷；kWireHeaderBytes为协议固定头长，单位均为字节。
 constexpr std::size_t kMaximumConfigBytes = 1024U * 1024U;
 constexpr std::size_t kMaximumPayloadBytes = 1024U * 1024U;
 constexpr std::size_t kWireHeaderBytes = 40U;
+// 下列上限分别约束单链去重缓存、节点数、完全图边数、4×非参考节点状态维数和质量边状态数。
 constexpr std::size_t kMaximumDuplicateCachePerLink = 4096U;
 constexpr std::size_t kMaximumNodes = 64U;
 constexpr std::size_t kMaximumEdges = 2016U;
@@ -29,24 +31,25 @@ constexpr std::size_t kMaximumStateDimension = 252U;
 constexpr std::size_t kMaximumTrackedEdges = 1'000'000U;
 
 struct Entry {
-  std::string value;
-  std::size_t line{};
+  std::string value;  // 去除键名与等号两侧ASCII空白后的原始值文本。
+  std::size_t line{}; // 该赋值在原始INI中的1起始行号。
 };
 
 struct Section {
-  std::string name;
-  std::size_t line{};
-  bool node{};
-  std::uint32_t node_id{};
-  std::map<std::string, Entry> entries;
+  std::string name;   // 方括号内规范化后的节名。
+  std::size_t line{}; // 节声明在原始INI中的1起始行号。
+  bool node{};        // true表示名称匹配node.<id>动态节点节。
+  std::uint32_t node_id{}; // node=true时解析出的平台业务编号。
+  std::map<std::string, Entry> entries; // 本节按键名索引的值与来源行，解析结果独占。
 };
 
 struct ParsedIni {
-  std::map<std::string, Section> sections;
-  std::size_t final_line{1U};
+  std::map<std::string, Section> sections; // 完整INI按唯一节名索引的所有节。
+  std::size_t final_line{1U}; // 至少为1的末行号，用于缺失节这类无直接行号错误。
 };
 
 struct NodeEntryLines {
+  // x/y/vx/vy分别记录对应平面初值键的1起始行；position_std/velocity_std记录两类1σ键行号。
   std::size_t x{};
   std::size_t y{};
   std::size_t vx{};
@@ -55,20 +58,23 @@ struct NodeEntryLines {
   std::size_t velocity_std{};
 };
 
+// code为机器错误类别，line为原始INI行号，detail为包含节/键语境的诊断文本。
 [[noreturn]] void fail(IniError code, std::size_t line,
                        const std::string& detail) {
   throw IniConfigError(code, line, detail);
 }
 
+// byte为待判断是否处于0x80..0xBF范围的UTF-8后续字节。
 bool continuation(unsigned char byte) {
   return byte >= 0x80U && byte <= 0xBFU;
 }
 
+// text是完整配置字节串；line记录1起始来源行，index按码点推进，返回0表示全部合法。
 std::size_t invalid_utf8_line(const std::string& text) {
-  // 逐字节校验UTF-8并返回首个错误行，避免中文配置在不同平台被错误解码。
   std::size_t line = 1U;
   std::size_t index = 0U;
   while (index < text.size()) {
+    // first识别当前码点类别并在ASCII换行时推进line；count随后保存该码点总字节数。
     const unsigned char first =
         static_cast<unsigned char>(text[index]);
     if (first <= 0x7FU) {
@@ -92,12 +98,14 @@ std::size_t invalid_utf8_line(const std::string& text) {
     if (index + count > text.size()) {
       return line;
     }
+    // offset遍历当前多字节码点中首字节之后的每个后续字节。
     for (std::size_t offset = 1U; offset < count; ++offset) {
       if (!continuation(
               static_cast<unsigned char>(text[index + offset]))) {
         return line;
       }
     }
+    // second与first联合拒绝过长编码、UTF-16代理项和超出U+10FFFF的组合。
     const unsigned char second =
         static_cast<unsigned char>(text[index + 1U]);
     if ((first == 0xE0U && second < 0xA0U) ||
@@ -111,11 +119,13 @@ std::size_t invalid_utf8_line(const std::string& text) {
   return 0U;
 }
 
+// character为待判定的INI修剪字符，仅接受四种ASCII空白。
 bool ascii_space(char character) {
   return character == ' ' || character == '\t' || character == '\r' ||
          character == '\n';
 }
 
+// text是待修剪片段；first/last夹定首尾ASCII空白后的半开区间，返回独立副本。
 std::string trim(const std::string& text) {
   std::size_t first = 0U;
   while (first < text.size() && ascii_space(text[first])) {
@@ -128,6 +138,7 @@ std::string trim(const std::string& text) {
   return text.substr(first, last - first);
 }
 
+// key是等号左侧修剪后的键名；character逐字节遍历，lower/digit标识允许的字母和数字类别。
 bool ascii_key(const std::string& key) {
   if (key.empty()) {
     return false;
@@ -142,6 +153,7 @@ bool ascii_key(const std::string& key) {
   return true;
 }
 
+// value是待匹配文本；candidate遍历candidates中生命周期覆盖本次调用的白名单字面量。
 bool one_of(const std::string& value,
             std::initializer_list<const char*> candidates) {
   for (const char* candidate : candidates) {
@@ -152,6 +164,7 @@ bool one_of(const std::string& value,
   return false;
 }
 
+// name是节名；prefix/prefix_size限定“node.”前缀，node_id仅在完整解析uint16十进制编号后写入。
 bool parse_node_section(const std::string& name, std::uint32_t& node_id) {
   constexpr const char* prefix = "node.";
   constexpr std::size_t prefix_size = 5U;
@@ -159,6 +172,7 @@ bool parse_node_section(const std::string& name, std::uint32_t& node_id) {
       name.compare(0U, prefix_size, prefix) != 0) {
     return false;
   }
+  // value是十进制累加器；index遍历前缀后的字符，character/digit提供乘加前的数字与溢出检查。
   std::uint32_t value = 0U;
   for (std::size_t index = prefix_size; index < name.size(); ++index) {
     const char character = name[index];
@@ -177,6 +191,7 @@ bool parse_node_section(const std::string& name, std::uint32_t& node_id) {
   return true;
 }
 
+// section提供当前节类别，key为待验证键名；仅白名单项可继续解析。
 bool allowed_key(const Section& section, const std::string& key) {
   if (section.node) {
     return one_of(key, {"x", "y", "vx", "vy", "position_std_m",
@@ -227,14 +242,17 @@ bool allowed_key(const Section& section, const std::string& key) {
   return false;
 }
 
+// source为调用方完整UTF-8配置文本；返回拥有全部节/值副本和原始行号的中间表示。
 ParsedIni parse_sections(const std::string& source) {
   // 阶段1：处理UTF-8/BOM并逐行识别节和键值，同时保留行号用于错误报告。
+  // invalid_line为首个UTF-8错误所在行，0表示编码合法。
   const std::size_t invalid_line = invalid_utf8_line(source);
   if (invalid_line != 0U) {
     fail(IniError::kInvalidUtf8, invalid_line,
          "input is not valid UTF-8");
   }
 
+  // text为可移除UTF-8 BOM的私有副本，不修改调用方source。
   std::string text = source;
   if (text.size() >= 3U &&
       static_cast<unsigned char>(text[0U]) == 0xEFU &&
@@ -243,14 +261,18 @@ ParsedIni parse_sections(const std::string& source) {
     text.erase(0U, 3U);
   }
 
+  // parsed累计解析结果；node_lines记录node_id首次声明行以检测跨节重复。
   ParsedIni parsed{};
   std::unordered_map<std::uint32_t, std::size_t> node_lines;
+  // current借用parsed中当前节，新增节前可为空；input逐行读取私有text副本。
   Section* current = nullptr;
   std::istringstream input(text);
+  // raw_line接收含注释的当前行；line_number为原始文本1起始行号计数器。
   std::string raw_line;
   std::size_t line_number = 0U;
   while (std::getline(input, raw_line)) {
     ++line_number;
+    // hash/semicolon为两种注释标记的首下标；comment选择其中最靠前者作为截断游标。
     const std::size_t hash = raw_line.find('#');
     const std::size_t semicolon = raw_line.find(';');
     std::size_t comment = std::string::npos;
@@ -264,6 +286,7 @@ ParsedIni parse_sections(const std::string& source) {
     if (comment != std::string::npos) {
       raw_line.erase(comment);
     }
+    // line为去注释并修剪后的有效语法行。
     const std::string line = trim(raw_line);
     if (line.empty()) {
       continue;
@@ -274,17 +297,20 @@ ParsedIni parse_sections(const std::string& source) {
         fail(IniError::kSyntax, line_number,
              "section declaration is malformed");
       }
+      // section_name为方括号内修剪后的唯一节名。
       const std::string section_name = trim(line.substr(1U, line.size() - 2U));
       if (parsed.sections.find(section_name) != parsed.sections.end()) {
         fail(IniError::kDuplicateSection, line_number,
              "section '" + section_name + "' is duplicated");
       }
+      // section在完成类别/节点号校验后整体移入parsed，避免半成品可见。
       Section section{};
       section.name = section_name;
       section.line = line_number;
       if (!one_of(section_name,
                   {"engine", "filter", "degradation", "online",
                    "inertial"})) {
+        // node_id接收node.<id>动态节解析出的平台编号。
         std::uint32_t node_id = 0U;
         if (!parse_node_section(section_name, node_id)) {
           fail(IniError::kUnknownSection, line_number,
@@ -298,6 +324,7 @@ ParsedIni parse_sections(const std::string& source) {
         section.node = true;
         section.node_id = node_id;
       }
+      // insertion携带map中新节迭代器，current随后借用其稳定节点地址。
       auto insertion =
           parsed.sections.emplace(section_name, std::move(section));
       current = &insertion.first->second;
@@ -308,11 +335,13 @@ ParsedIni parse_sections(const std::string& source) {
       fail(IniError::kSyntax, line_number,
            "assignment appears before any section");
     }
+    // equals为当前赋值行首个等号的0起始下标。
     const std::size_t equals = line.find('=');
     if (equals == std::string::npos) {
       fail(IniError::kSyntax, line_number,
            "configuration line is not an assignment");
     }
+    // key/value分别为等号两侧修剪后的键名和仍保持文本形式的值。
     const std::string key = trim(line.substr(0U, equals));
     const std::string value = trim(line.substr(equals + 1U));
     if (!ascii_key(key)) {
@@ -335,8 +364,10 @@ ParsedIni parse_sections(const std::string& source) {
   return parsed;
 }
 
+// parsed为只读中间表示，name为必需节名；返回引用与parsed同生命周期。
 const Section& require_section(const ParsedIni& parsed,
                                const std::string& name) {
+  // found为name在节索引中的查找位置。
   const auto found = parsed.sections.find(name);
   if (found == parsed.sections.end()) {
     fail(IniError::kMissingSection, parsed.final_line,
@@ -345,7 +376,9 @@ const Section& require_section(const ParsedIni& parsed,
   return found->second;
 }
 
+// section为只读节，key为必需键名；返回引用与section同生命周期。
 const Entry& require_entry(const Section& section, const std::string& key) {
+  // found为key在当前节键值索引中的查找位置。
   const auto found = section.entries.find(key);
   if (found == section.entries.end()) {
     fail(IniError::kMissingKey, section.line,
@@ -355,6 +388,7 @@ const Entry& require_entry(const Section& section, const std::string& key) {
   return found->second;
 }
 
+// entry提供十进制文本与行号，minimum/maximum定义闭区间，description用于错误语境。
 std::uint64_t unsigned_value(const Entry& entry, std::uint64_t minimum,
                              std::uint64_t maximum,
                              const char* description) {
@@ -363,12 +397,14 @@ std::uint64_t unsigned_value(const Entry& entry, std::uint64_t minimum,
          std::string(description) + " is empty");
   }
   // 手工十进制累加能在乘法前检查溢出，也明确拒绝符号、空白和0x前缀。
+  // value为十进制乘加累加器；character依次遍历每个必须为数字的值字节。
   std::uint64_t value = 0U;
   for (const char character : entry.value) {
     if (character < '0' || character > '9') {
       fail(IniError::kInvalidValue, entry.line,
            std::string(description) + " is not an unsigned integer");
     }
+    // digit为当前字符的0..9数值，参与乘加前溢出检查。
     const std::uint64_t digit =
         static_cast<std::uint64_t>(character - '0');
     if (value > (std::numeric_limits<std::uint64_t>::max() - digit) /
@@ -385,6 +421,7 @@ std::uint64_t unsigned_value(const Entry& entry, std::uint64_t minimum,
   return value;
 }
 
+// entry提供无符号文本，minimum/maximum为本平台size_t闭区间，description用于错误消息。
 std::size_t size_value(const Entry& entry, std::size_t minimum,
                        std::size_t maximum, const char* description) {
   return static_cast<std::size_t>(unsigned_value(
@@ -392,9 +429,11 @@ std::size_t size_value(const Entry& entry, std::size_t minimum,
       static_cast<std::uint64_t>(maximum), description));
 }
 
+// entry提供待按classic locale解析的浮点文本，description标识字段业务名称。
 double finite_value(const Entry& entry, const char* description) {
   // 固定classic locale，保证Windows和Ubuntu都用点作小数分隔符；eof检查
   // 拒绝“1.0abc”这类前缀可解析但尾部无效的现场配置。
+  // input拥有值文本的解析流副本；value接收要求完整消费且有限的数值。
   std::istringstream input(entry.value);
   input.imbue(std::locale::classic());
   double value = 0.0;
@@ -406,8 +445,10 @@ double finite_value(const Entry& entry, const char* description) {
   return value;
 }
 
+// entry/description同finite_value；allow_zero=true时闭区间从0开始，否则要求严格正值。
 double positive_value(const Entry& entry, const char* description,
                       bool allow_zero = false) {
+  // value为已排除NaN/Inf和尾随字符的候选物理量。
   const double value = finite_value(entry, description);
   if (allow_zero ? value < 0.0 : value <= 0.0) {
     fail(IniError::kInvalidValue, entry.line,
@@ -416,7 +457,9 @@ double positive_value(const Entry& entry, const char* description,
   return value;
 }
 
+// entry为概率/比率文本，description用于错误语境；返回值必须位于[0,1]。
 double unit_value(const Entry& entry, const char* description) {
+  // value为已完成有限性检查的候选无量纲比率。
   const double value = finite_value(entry, description);
   if (value < 0.0 || value > 1.0) {
     fail(IniError::kInvalidValue, entry.line,
@@ -425,6 +468,7 @@ double unit_value(const Entry& entry, const char* description) {
   return value;
 }
 
+// entry为布尔文本，description用于错误语境；只接受true/false/1/0四种形式。
 bool boolean_value(const Entry& entry, const char* description) {
   if (entry.value == "true" || entry.value == "1") {
     return true;
@@ -436,6 +480,7 @@ bool boolean_value(const Entry& entry, const char* description) {
        std::string(description) + " must be true, false, 0, or 1");
 }
 
+// entry为已修剪字符串值，description用于错误语境；返回独立非空副本。
 std::string nonempty_value(const Entry& entry, const char* description) {
   if (entry.value.empty()) {
     fail(IniError::kInvalidValue, entry.line,
@@ -444,6 +489,9 @@ std::string nonempty_value(const Entry& entry, const char* description) {
   return entry.value;
 }
 
+// config为已完成单字段转换的候选配置；engine_section提供节点/边/状态维数上限键行号，
+// filter_section提供参考节点和过程噪声键行号，degradation_section提供退化时长/边缓存/频率键行号，
+// online_section提供ZJCL帧长度上限键行号；node_entry_lines提供各节点初值组合错误的原始行号。
 void validate_engine_config(const DemoConfig& config,
                             const Section& engine_section,
                             const Section& filter_section,
@@ -454,9 +502,11 @@ void validate_engine_config(const DemoConfig& config,
                                 node_entry_lines) {
   // 单字段范围已在解析时检查；这里验证节点/边/状态维度、保持时间和记录大小
   // 等跨字段约束，避免每个值合法但组合后无法分配或语义矛盾。
+  // node_count为配置平台总数；reference_entry提供参考节点键的原始行号。
   const std::size_t node_count = config.engine.nodes.size();
   const Entry& reference_entry =
       require_entry(filter_section, "reference_node_id");
+  // reference为参考节点在已排序初值数组中的迭代器；lambda借用config并逐个检查node_id。
   const auto reference = std::find_if(
       config.engine.nodes.begin(), config.engine.nodes.end(),
       [&config](const NodeInitialization& node) {
@@ -472,12 +522,14 @@ void validate_engine_config(const DemoConfig& config,
          require_entry(engine_section, "max_nodes").line,
          "node count exceeds configured limit");
   }
+  // nonreference_count决定UWB-only每节点4维状态的块数。
   const std::size_t nonreference_count = node_count - 1U;
   if (nonreference_count > config.engine.max_state_dimension / 4U) {
     fail(IniError::kInvalidConfiguration,
          require_entry(engine_section, "max_state_dimension").line,
          "filter state dimension exceeds configured limit");
   }
+  // edge_count为全部配置节点形成的完全无向图边数。
   const std::size_t edge_count = node_count * (node_count - 1U) / 2U;
   if (edge_count > config.engine.max_edges) {
     fail(IniError::kInvalidConfiguration,
@@ -496,6 +548,7 @@ void validate_engine_config(const DemoConfig& config,
          "reject duration must not be shorter than suspend duration");
   }
 
+  // process_variance为过程加速度标准差process_accel_std_mps2的平方，用于确认过程方差可有限表示。
   const double process_variance =
       config.engine.filter.process_accel_std_mps2 *
       config.engine.filter.process_accel_std_mps2;
@@ -504,12 +557,15 @@ void validate_engine_config(const DemoConfig& config,
          require_entry(filter_section, "process_accel_std_mps2").line,
          "process acceleration variance is not representable");
   }
+  // node依次引用每个平台初值，用来源行号检查平方和相对量的可表示性。
   for (const NodeInitialization& node : config.engine.nodes) {
+    // lines为当前node_id的六个原始键行号查找结果。
     const auto lines = node_entry_lines.find(node.node_id);
     if (lines == node_entry_lines.end()) {
       fail(IniError::kInvalidConfiguration, reference_entry.line,
            "node source metadata is missing");
     }
+    // position_variance/velocity_variance为1σ平方后的协方差对角初值。
     const double position_variance = node.position_std_m * node.position_std_m;
     const double velocity_variance =
         node.velocity_std_mps * node.velocity_std_mps;
@@ -539,6 +595,7 @@ void validate_engine_config(const DemoConfig& config,
     }
   }
 
+  // expected为窗口内理论样本数；maximum_expected由单边质量历史的内存预算推导。
   const long double expected =
       static_cast<long double>(config.engine.degradation.nominal_rate_hz) *
       static_cast<long double>(config.engine.degradation.window_ns) /
@@ -575,14 +632,17 @@ std::size_t IniConfigError::line() const noexcept { return line_; }
 
 DemoConfig parse_ini_config(const std::string& text) {
   // 阶段2：按功能节把字符串转换为强类型配置，缺失或越界值立即抛出。
+  // parsed拥有带来源行号的中间表示；四个section引用其必需功能节。
   const ParsedIni parsed = parse_sections(text);
   const Section& engine_section = require_section(parsed, "engine");
   const Section& filter_section = require_section(parsed, "filter");
   const Section& degradation_section =
       require_section(parsed, "degradation");
   const Section& online_section = require_section(parsed, "online");
+  // inertial_section_entry标识可选惯性节是否存在，不存在时明确走UWB-only路径。
   const auto inertial_section_entry = parsed.sections.find("inertial");
 
+  // config为逐字段构造并最终返回的强类型值；node_entry_lines保留节点组合校验的原始行号。
   DemoConfig config{};
   std::unordered_map<std::uint32_t, NodeEntryLines> node_entry_lines;
   config.engine.edge_timeout_ns = unsigned_value(
@@ -694,13 +754,17 @@ DemoConfig parse_ini_config(const std::string& text) {
                             std::numeric_limits<std::uint32_t>::max()),
       "maximum log record size");
 
+  // section_entry遍历所有节索引项，只把node.<id>节转换为平面节点初值。
   for (const auto& section_entry : parsed.sections) {
+    // section引用当前节对象，其生命周期由parsed覆盖整个解析函数。
     const Section& section = section_entry.second;
     if (!section.node) {
       continue;
     }
+    // node为当前动态节点节构造的二维初值，完成全部字段校验后才追加。
     NodeInitialization node{};
     node.node_id = section.node_id;
+    // 六个*_entry分别提供x/y/vx/vy及位置/速度1σ的文本和值来源行。
     const Entry& x_entry = require_entry(section, "x");
     const Entry& y_entry = require_entry(section, "y");
     const Entry& vx_entry = require_entry(section, "vx");
@@ -724,6 +788,7 @@ DemoConfig parse_ini_config(const std::string& text) {
                        velocity_std_entry.line});
     config.engine.nodes.push_back(node);
   }
+  // 排序lambda不捕获外部状态；left/right为待比较节点，按node_id建立确定配置顺序。
   std::sort(config.engine.nodes.begin(), config.engine.nodes.end(),
             [](const NodeInitialization& left,
                const NodeInitialization& right) {
@@ -731,12 +796,14 @@ DemoConfig parse_ini_config(const std::string& text) {
             });
 
   if (inertial_section_entry != parsed.sections.end()) {
+    // section引用可选惯性节；enabled=true才构造15N状态配置。
     const Section& section = inertial_section_entry->second;
     const bool enabled = boolean_value(require_entry(section, "enabled"),
                                        "inertial enabled");
     // enabled=false等价于完全不构造惯性optional，Engine因此明确走仅测距回退；
     // 运行过程中不能靠切换输入消息类型在两种状态模型之间动态切换。
     if (enabled) {
+      // inertial为完成全部时序、噪声和资源校验后才移入config.optional的候选值。
       InertialDemoConfig inertial{};
       inertial.max_inertial_state_dimension = size_value(
           require_entry(section, "max_inertial_state_dimension"), 15U,
@@ -785,10 +852,12 @@ DemoConfig parse_ini_config(const std::string& text) {
              require_entry(section, "expected_frame_id").line,
              "IMU frame id must fit in 31 bytes");
       }
+      // initial_z/initial_vz为所有节点共用的ENU竖直位置/速度初值，单位m和m/s。
       const double initial_z = finite_value(
           require_entry(section, "initial_z_m"), "initial z");
       const double initial_vz = finite_value(
           require_entry(section, "initial_vz_mps"), "initial vertical velocity");
+      // attitude_std、gyro_bias_std、accel_bias_std分别填充δθ/δbg/δba三轴1σ。
       const double attitude_std = positive_value(
           require_entry(section, "attitude_std_rad"), "attitude standard deviation");
       const double gyro_bias_std = positive_value(
@@ -804,7 +873,9 @@ DemoConfig parse_ini_config(const std::string& text) {
              "inertial time or resource limits are inconsistent");
       }
       inertial.nodes.reserve(config.engine.nodes.size());
+      // source遍历已排序二维节点；每项扩展成ENU/FLU约定的15维惯性初值。
       for (const auto& source : config.engine.nodes) {
+        // node为当前平台的惯性初值副本，完成所有三轴块后追加到inertial.nodes。
         InertialNodeInitialization node{};
         node.node_id = source.node_id;
         node.position_n_m = {source.x, source.y, initial_z};
@@ -834,11 +905,13 @@ DemoConfig parse_ini_config(const std::string& text) {
 
 DemoConfig load_ini_config(const std::filesystem::path& path) {
   // 文件按二进制读取，编码、换行和BOM统一交给parse_ini_config处理。
+  // input为函数独占的二进制文件流，避免平台文本模式改写换行或BOM。
   std::ifstream input(path, std::ios::binary);
   if (!input.is_open()) {
     fail(IniError::kIoFailure, 1U,
          "configuration file could not be opened");
   }
+  // text累计不超过1 MiB的原始配置字节；character为逐字节读取缓冲。
   std::string text;
   char character = 0;
   while (input.get(character)) {

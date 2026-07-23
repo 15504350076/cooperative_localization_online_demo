@@ -19,6 +19,7 @@
 
 // 每个句柄拥有一个独立算法会话；C ABI本身不加锁，由ROS 2适配层保证串行调用。
 struct zju_coop_handle {
+  // config移交给独占Engine；configured_node_count/configured_edge_count冻结v1输出数组所需元素数。
   zju_coop_handle(zju::coop::EngineConfig config,
                   std::uint32_t configured_node_count,
                   std::uint32_t configured_edge_count)
@@ -26,24 +27,26 @@ struct zju_coop_handle {
         localization_count(configured_node_count),
         observation_count(configured_edge_count) {}
 
-  std::unique_ptr<zju::coop::Engine> engine;
-  std::uint32_t localization_count{};
-  std::uint32_t observation_count{};
-  bool processing_started{};
-  bool inertial_configured{};
+  std::unique_ptr<zju::coop::Engine> engine; /* 句柄独占的算法会话，随句柄销毁。 */
+  std::uint32_t localization_count{}; /* 每次step输出的全部配置节点定位条数，包含参考节点。 */
+  std::uint32_t observation_count{};  /* 每次step必须输出的完全图无向边质量条数。 */
+  bool processing_started{}; /* true表示已有输入或step，之后禁止惯性重配置。 */
+  bool inertial_configured{}; /* true表示15N状态、节点初值和IMU参数已冻结。 */
 };
 
 namespace {
 
+// kMaximumNodes限制平台数；kMaximumEdges限制64节点完全图边数；kMaximumStateDimension限制4×63平面状态。
 constexpr std::uint32_t kMaximumNodes = 64U;
 constexpr std::uint32_t kMaximumEdges = 2016U;
 constexpr std::uint32_t kMaximumStateDimension = 252U;
+// kMaximumDuplicateCachePerLink限制单向sequence缓存；kMaximumTrackedEdges限制质量状态总边数。
 constexpr std::uint32_t kMaximumDuplicateCachePerLink = 4096U;
 constexpr std::uint32_t kMaximumTrackedEdges = 1'000'000U;
 
 template <typename Structure>
+// value借用调用方结构；Structure同时确定v1最小布局，并以struct_size/abi_version判定兼容性。
 zju_coop_error_code_t validate_header(const Structure* value) {
-  // struct_size允许未来版本尾部扩展，abi_version防止旧调用方误解现有字段。
   if (value == nullptr) {
     return ZJU_COOP_INVALID_ARGUMENT;
   }
@@ -56,24 +59,29 @@ zju_coop_error_code_t validate_header(const Structure* value) {
   return ZJU_COOP_OK;
 }
 
+// value为跨C ABI传入的单字节布尔编码，仅0和1合法。
 bool valid_boolean(zju_coop_bool_t value) {
   return value == ZJU_COOP_FALSE || value == ZJU_COOP_TRUE;
 }
 
+// value为进入算法前待排除NaN/Inf的浮点字段。
 bool finite(double value) { return std::isfinite(value); }
 
 template <std::size_t Size>
+// values是字段布局确定的Size个浮点量；无捕获lambda的value逐项排除NaN/Inf。
 bool finite_array(const double (&values)[Size]) {
   return std::all_of(std::begin(values), std::end(values),
                      [](double value) { return finite(value); });
 }
 
+// value为固定容量字符缓冲首地址；capacity为可搜索NUL的最大字节数，内存由调用方持有。
 bool nul_terminated_nonempty(const char* value, std::size_t capacity) {
   return value != nullptr && value[0] != '\0' &&
          std::memchr(value, '\0', capacity) != nullptr;
 }
 
 template <typename Structure>
+// base借用调用方数组，count/stride给出元素数和字节步长；Structure确定最小大小与对齐。
 bool valid_array_span(const void* base, std::uint32_t count,
                       std::uint32_t stride) {
   // 在做指针运算前验证步长、对齐和地址溢出，避免跨语言数组导致越界访问。
@@ -84,6 +92,8 @@ bool valid_array_span(const void* base, std::uint32_t count,
       stride % alignof(Structure) != 0U) {
     return false;
   }
+  // base_address把首地址转为整数；maximum、last_index、last_offset、last_address和last_byte
+  // 共同证明最后一个Structure元素的末字节仍落在可表示地址范围内。
   const auto base_address = reinterpret_cast<std::uintptr_t>(base);
   if (base_address % alignof(Structure) != 0U) {
     return false;
@@ -103,27 +113,33 @@ bool valid_array_span(const void* base, std::uint32_t count,
 }
 
 template <typename Structure>
+// base为已验证数组首地址，index为目标0起始元素号，stride为相邻元素字节步长。
 const Structure* array_element(const void* base, std::uint32_t index,
                                std::uint32_t stride) {
+  // bytes保留调用方只读所有权；offset为目标元素相对首地址的字节偏移。
   const auto* bytes = static_cast<const unsigned char*>(base);
   const auto offset = static_cast<std::uintptr_t>(index) * stride;
   return reinterpret_cast<const Structure*>(bytes + offset);
 }
 
 template <typename Structure>
+// base为已验证可写数组首地址，index为目标0起始元素号，stride为相邻元素字节步长。
 Structure* array_element(void* base, std::uint32_t index,
                          std::uint32_t stride) {
+  // bytes借用调用方可写缓冲；offset为目标元素相对首地址的字节偏移。
   auto* bytes = static_cast<unsigned char*>(base);
   const auto offset = static_cast<std::uintptr_t>(index) * stride;
   return reinterpret_cast<Structure*>(bytes + offset);
 }
 
+// node为待进入二维状态初始化的C ABI节点，检查所有物理量均有限。
 bool finite_node(const zju_coop_node_initialization_t& node) {
   return finite(node.x) && finite(node.y) && finite(node.vx) &&
          finite(node.vy) && finite(node.position_std_m) &&
          finite(node.velocity_std_mps);
 }
 
+// config为待转换的基础配置，仅检查其中全部浮点阈值和噪声参数有限。
 bool finite_config(const zju_coop_config_t& config) {
   return finite(config.process_accel_std_mps2) && finite(config.nis_gate) &&
          finite(config.max_prediction_step_s) &&
@@ -137,6 +153,7 @@ bool finite_config(const zju_coop_config_t& config) {
          finite(config.rigidity_tolerance);
 }
 
+// input为已通过v1头校验的调用方配置；output为成功时才完整覆盖的内部配置目标。
 zju_coop_error_code_t convert_config(const zju_coop_config_t& input,
                                      zju::coop::EngineConfig& output) {
   // 阶段1：先检查资源上限与数组跨度，再逐节点深拷贝，库不保存调用方内存指针。
@@ -157,6 +174,7 @@ zju_coop_error_code_t convert_config(const zju_coop_config_t& input,
     return ZJU_COOP_INVALID_ARGUMENT;
   }
 
+  // node_count提升到64位避免组合计算溢出；edge_count为完全图边数，state_dimension为4×非参考节点数。
   const std::uint64_t node_count = input.node_count;
   const std::uint64_t edge_count = node_count * (node_count - 1U) / 2U;
   const std::uint64_t state_dimension = (node_count - 1U) * 4U;
@@ -165,11 +183,15 @@ zju_coop_error_code_t convert_config(const zju_coop_config_t& input,
     return ZJU_COOP_INVALID_ARGUMENT;
   }
 
+  // nodes为深拷贝后的内部二维初值，局部构造完成后整体移交output。
   std::vector<zju::coop::NodeInitialization> nodes;
   nodes.reserve(input.node_count);
+  // index遍历调用方nodes数组中每个配置节点的0起始位置。
   for (std::uint32_t index = 0U; index < input.node_count; ++index) {
+    // source借用当前跨步元素，仅在本次迭代和input数组生命周期内有效。
     const auto* source = array_element<zju_coop_node_initialization_t>(
         input.nodes, index, input.node_stride);
+    // header_status保留当前节点v1大小/版本校验的稳定ABI错误码。
     const auto header_status = validate_header(source);
     if (header_status != ZJU_COOP_OK) {
       return header_status;
@@ -212,6 +234,7 @@ zju_coop_error_code_t convert_config(const zju_coop_config_t& input,
 }
 
 zju_coop_error_code_t convert_inertial_config(
+    // input为已通过v1头校验的调用方惯性配置；inertial/nodes为成功时交给Engine的内部输出。
     const zju_coop_inertial_config_t& input,
     zju::coop::InertialConfig& inertial,
     std::vector<zju::coop::InertialNodeInitialization>& nodes) {
@@ -241,10 +264,13 @@ zju_coop_error_code_t convert_inertial_config(
 
   nodes.clear();
   nodes.reserve(input.node_count);
+  // index遍历调用方惯性初值数组中每个平台的0起始位置。
   for (std::uint32_t index = 0U; index < input.node_count; ++index) {
+    // source借用当前跨步初值元素，不保存到返回对象。
     const auto* source =
         array_element<zju_coop_inertial_node_initialization_t>(
             input.nodes, index, input.node_stride);
+    // header_status为当前惯性节点结构的v1头校验结论。
     const auto header_status = validate_header(source);
     if (header_status != ZJU_COOP_OK) {
       return header_status;
@@ -262,6 +288,7 @@ zju_coop_error_code_t convert_inertial_config(
         !finite_array(source->accel_bias_std_m_s2)) {
       return ZJU_COOP_INVALID_ARGUMENT;
     }
+    // node为当前平台的15维内部初值副本，四元数由xyzw重排为内部wxyz。
     zju::coop::InertialNodeInitialization node{};
     node.node_id = source->node_id;
     node.position_n_m = {source->position_n_m[0], source->position_n_m[1],
@@ -322,6 +349,7 @@ zju_coop_error_code_t convert_inertial_config(
   return ZJU_COOP_OK;
 }
 
+// value为Engine整包处理结论，返回其固定数值的C ABI等价值；未知值保守映射为无效包。
 zju_coop_processing_disposition_t processing_disposition(
     zju::coop::ProcessingDisposition value) {
   switch (value) {
@@ -343,6 +371,7 @@ zju_coop_processing_disposition_t processing_disposition(
   return ZJU_COOP_PROCESSING_INVALID_PACKET;
 }
 
+// value为滤波量测更新结论，返回稳定C ABI错误枚举；未知值按数值失败处理。
 zju_coop_update_disposition_t update_disposition(
     zju::coop::UpdateDisposition value) {
   switch (value) {
@@ -366,6 +395,7 @@ zju_coop_update_disposition_t update_disposition(
   return ZJU_COOP_UPDATE_NUMERICAL_FAILURE;
 }
 
+// value为内部IMU处理结论，返回固定C ABI数值；未知值按无效包处理。
 zju_coop_imu_disposition_t imu_disposition(
     zju::coop::ImuDisposition value) {
   switch (value) {
@@ -391,6 +421,7 @@ zju_coop_imu_disposition_t imu_disposition(
   return ZJU_COOP_IMU_INVALID_PACKET;
 }
 
+// value为质量状态机动作，转换为稳定C ABI动作；未知值保守拒绝融合。
 zju_coop_fusion_action_t fusion_action(zju::coop::FusionAction value) {
   switch (value) {
     case zju::coop::FusionAction::kUseNormal:
@@ -407,6 +438,7 @@ zju_coop_fusion_action_t fusion_action(zju::coop::FusionAction value) {
   return ZJU_COOP_FUSION_REJECT;
 }
 
+// value为内部单边长期质量状态，转换为稳定C ABI状态；未知值保留为UNKNOWN。
 zju_coop_observation_state_t observation_state(
     zju::coop::ObservationState value) {
   switch (value) {
@@ -426,6 +458,7 @@ zju_coop_observation_state_t observation_state(
   return ZJU_COOP_OBSERVATION_UNKNOWN;
 }
 
+// value为内部综合定位状态，转换为稳定C ABI状态；未知值回退到未初始化。
 zju_coop_localization_state_t localization_state(
     zju::coop::LocalizationState value) {
   switch (value) {
@@ -443,8 +476,10 @@ zju_coop_localization_state_t localization_state(
   return ZJU_COOP_LOCALIZATION_UNINITIALIZED;
 }
 
+// source为Engine快照中的单节点内部输出，返回不借用source的v1 C结构副本。
 zju_coop_localization_t localization_output(
     const zju::coop::LocalizationSnapshot& source) {
+  // output为完整初始化后按值返回的C ABI定位元素。
   zju_coop_localization_t output{};
   output.struct_size = sizeof(output);
   output.abi_version = ZJU_COOP_ABI_VERSION_V1;
@@ -465,8 +500,10 @@ zju_coop_localization_t localization_output(
   return output;
 }
 
+// source为单条规范化无向边的内部质量快照，返回计数安全收窄后的v1 C结构。
 zju_coop_observation_t observation_output(
     const zju::coop::ObservationQuality& source) {
+  // output为完整初始化后按值返回的C ABI边质量元素。
   zju_coop_observation_t output{};
   output.struct_size = sizeof(output);
   output.abi_version = ZJU_COOP_ABI_VERSION_V1;
@@ -493,7 +530,9 @@ zju_coop_observation_t observation_output(
   return output;
 }
 
+// source为Engine的当前拓扑快照，返回不借用source的v1 C网络结构。
 zju_coop_network_t network_output(const zju::coop::NetworkSnapshot& source) {
+  // output为完成全部计数收窄与状态转换后按值返回的网络元素。
   zju_coop_network_t output{};
   output.struct_size = sizeof(output);
   output.abi_version = ZJU_COOP_ABI_VERSION_V1;
@@ -510,7 +549,9 @@ zju_coop_network_t network_output(const zju::coop::NetworkSnapshot& source) {
   return output;
 }
 
+// snapshot为待导出快照；检查所有size_t计数均可无损放入v1的uint32_t字段。
 bool counts_fit_v1(const zju::coop::EngineSnapshot& snapshot) {
+  // maximum是v1所有公开计数字段允许的最大值。
   constexpr auto maximum = std::numeric_limits<std::uint32_t>::max();
   if (snapshot.localizations.size() > maximum ||
       snapshot.observations.size() > maximum ||
@@ -519,6 +560,7 @@ bool counts_fit_v1(const zju::coop::EngineSnapshot& snapshot) {
       snapshot.network.active_edge_count > maximum) {
     return false;
   }
+  // quality依次引用快照中的每条边质量记录，核查其六个累计计数。
   for (const auto& quality : snapshot.observations) {
     if (quality.expected_count > maximum || quality.received_count > maximum ||
         quality.valid_count > maximum || quality.nlos_count > maximum ||
@@ -701,6 +743,7 @@ zju_coop_inertial_node_initialization_init(
   value->struct_size = sizeof(*value);
   value->abi_version = ZJU_COOP_ABI_VERSION_V1;
   value->orientation_xyzw[3] = 1.0;
+  // axis遍历ENU/FLU三个轴，为五个15维误差状态块写入默认1σ。
   for (std::size_t axis = 0U; axis < 3U; ++axis) {
     value->position_std_m[axis] = 0.5;
     value->velocity_std_mps[axis] = 0.5;
@@ -768,19 +811,23 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_create(
     return ZJU_COOP_INVALID_ARGUMENT;
   }
   *out_handle = nullptr;
+  // header_status为输入基础配置的大小/ABI校验结果，转换前直接透传。
   const auto header_status = validate_header(config);
   if (header_status != ZJU_COOP_OK) {
     return header_status;
   }
   try {
+    // converted为即将移交Engine的内部配置；conversion_status保留字段/资源约束转换结论。
     zju::coop::EngineConfig converted{};
     const auto conversion_status = convert_config(*config, converted);
     if (conversion_status != ZJU_COOP_OK) {
       return conversion_status;
     }
+    // node_count提升到64位；edge_count为固定输出的完全图无向边数量。
     const std::uint64_t node_count = config->node_count;
     const std::uint64_t edge_count =
         node_count * (node_count > 0U ? node_count - 1U : 0U) / 2U;
+    // created在句柄交给调用方前临时独占对象，异常时自动销毁，release后所有权转给out_handle。
     std::unique_ptr<zju_coop_handle_t> created(new zju_coop_handle_t(
         std::move(converted), config->node_count,
         static_cast<std::uint32_t>(edge_count)));
@@ -809,6 +856,7 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_configure_inertial(
   if (handle == nullptr) {
     return ZJU_COOP_INVALID_ARGUMENT;
   }
+  // header_status为惯性配置公开头校验结论，失败时不改变句柄。
   const auto header_status = validate_header(config);
   if (header_status != ZJU_COOP_OK) {
     return header_status;
@@ -818,8 +866,10 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_configure_inertial(
     return ZJU_COOP_INVALID_ARGUMENT;
   }
   try {
+    // converted保存传播参数，nodes保存全部平台深拷贝初值，二者仅在完整成功后移交Engine。
     zju::coop::InertialConfig converted{};
     std::vector<zju::coop::InertialNodeInitialization> nodes;
+    // conversion_status保留惯性字段、数组跨度与物理值的转换结论。
     const auto conversion_status =
         convert_inertial_config(*config, converted, nodes);
     if (conversion_status != ZJU_COOP_OK) {
@@ -842,6 +892,7 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_push_imu(
   if (handle == nullptr) {
     return ZJU_COOP_INVALID_ARGUMENT;
   }
+  // packet_status/result_status分别验证只读输入与调用方输出结构的v1头部。
   const auto packet_status = validate_header(packet);
   if (packet_status != ZJU_COOP_OK) {
     return packet_status;
@@ -864,11 +915,13 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_push_imu(
     return ZJU_COOP_INVALID_ARGUMENT;
   }
   if (!std::all_of(std::begin(packet->reserved1), std::end(packet->reserved1),
+                   // lambda的[]明确不捕获外部对象；value为reserved1中当前保留字节，v1要求逐字节为零。
                    [](std::uint8_t value) { return value == 0U; })) {
     return ZJU_COOP_INVALID_ARGUMENT;
   }
 
   try {
+    // converted为不借用调用方缓冲的内部IMU副本，数组布局在此保持ROS行主序。
     zju::coop::ImuPacket converted{};
     converted.node_id = packet->node_id;
     converted.sequence = packet->sequence;
@@ -900,6 +953,7 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_push_imu(
     converted.status = packet->status;
 
     // 阶段2：算法处理完成后先构造局部结果，最后一次性覆盖调用方输出结构。
+    // processed是Engine内部诊断；output是待完整构造后一次性提交的C ABI结果。
     const auto processed = handle->engine->push_imu(converted);
     zju_coop_imu_processing_result_t output{};
     output.struct_size = sizeof(output);
@@ -908,6 +962,7 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_push_imu(
     output.propagated =
         processed.propagated ? ZJU_COOP_TRUE : ZJU_COOP_FALSE;
     output.dt_s = processed.dt_s;
+    // caller_size保留调用方声明的实际结构容量，覆盖v1字段后原样恢复以兼容尾部扩展。
     const std::uint32_t caller_size = result->struct_size;
     *result = output;
     result->struct_size = caller_size;
@@ -925,6 +980,7 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_push_range(
   if (handle == nullptr) {
     return ZJU_COOP_INVALID_ARGUMENT;
   }
+  // packet_status/result_status分别验证测距输入与调用方诊断输出的v1头部。
   const auto packet_status = validate_header(packet);
   if (packet_status != ZJU_COOP_OK) {
     return packet_status;
@@ -944,6 +1000,7 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_push_range(
   }
 
   try {
+    // converted为不借用C缓冲的内部测距副本，保留有向节点号、sequence和两种统一时间。
     zju::coop::RangePacket converted{};
     converted.from_node = packet->from_node;
     converted.to_node = packet->to_node;
@@ -959,6 +1016,7 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_push_range(
     converted.valid = packet->valid == ZJU_COOP_TRUE;
     converted.status = packet->status;
 
+    // processed为Engine对该包的质量/融合诊断；output为原子写回前的C ABI临时值。
     const auto processed = handle->engine->push_range(converted);
     zju_coop_range_processing_result_t output{};
     output.struct_size = sizeof(output);
@@ -975,6 +1033,7 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_push_range(
     output.innovation_variance = processed.update.innovation_variance;
     output.nis = processed.update.nis;
     output.covariance_scale = processed.update.covariance_scale;
+    // caller_size保留调用方结构容量，避免覆盖未来版本尾部大小声明。
     const std::uint32_t caller_size = result->struct_size;
     *result = output;
     result->struct_size = caller_size;
@@ -1003,6 +1062,7 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_step(
 
   try {
     // 阶段1：支持NULL/0容量查询所需数量；查询本身不能推进算法时间。
+    // required_localizations/required_observations是句柄创建时冻结的两个输出数组元素需求。
     const auto required_localizations = handle->localization_count;
     const auto required_observations = handle->observation_count;
 
@@ -1023,66 +1083,83 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_step(
       return ZJU_COOP_INVALID_ARGUMENT;
     }
 
+    // index遍历调用方localizations数组，写入前逐元素验证头部与stride容量。
     for (std::uint32_t index = 0U; index < required_localizations; ++index) {
+      // output借用当前定位输出元素，只读检查阶段不修改调用方内存。
       const auto* output = array_element<zju_coop_localization_t>(
           localizations, index, localization_stride);
+      // status为当前定位元素的v1头部校验码。
       const auto status = validate_header(output);
       if (status != ZJU_COOP_OK || output->struct_size > localization_stride) {
         return status != ZJU_COOP_OK ? status : ZJU_COOP_INVALID_ARGUMENT;
       }
     }
+    // index遍历调用方observations数组，写入前逐元素验证头部与stride容量。
     for (std::uint32_t index = 0U; index < required_observations; ++index) {
+      // output借用当前边质量输出元素，只读检查阶段不修改调用方内存。
       const auto* output = array_element<zju_coop_observation_t>(
           observations, index, observation_stride);
+      // status为当前边质量元素的v1头部校验码。
       const auto status = validate_header(output);
       if (status != ZJU_COOP_OK || output->struct_size > observation_stride) {
         return status != ZJU_COOP_OK ? status : ZJU_COOP_INVALID_ARGUMENT;
       }
     }
+    // network_status验证单个网络输出结构可安全写入v1字段。
     const auto network_status = validate_header(network);
     if (network_status != ZJU_COOP_OK) {
       return network_status;
     }
 
     // 阶段2：在Engine副本和临时输出数组上完成step与全部转换，保证失败可回滚。
+    // localization_values/observation_values暂存完整C数组；candidate为可回滚的Engine副本。
     std::vector<zju_coop_localization_t> localization_values(
         required_localizations);
     std::vector<zju_coop_observation_t> observation_values(
         required_observations);
     auto candidate = std::make_unique<zju::coop::Engine>(*handle->engine);
+    // snapshot是candidate推进到now_ns后的原子内部快照，全部转换成功前不替换正式Engine。
     const auto snapshot = candidate->step(now_ns);
     if (!counts_fit_v1(snapshot) ||
         snapshot.localizations.size() != required_localizations ||
         snapshot.observations.size() != required_observations) {
       return ZJU_COOP_INTERNAL_ERROR;
     }
+    // index遍历内部定位快照并转换到同下标的临时C数组元素。
     for (std::uint32_t index = 0U; index < required_localizations; ++index) {
       localization_values[index] =
           localization_output(snapshot.localizations[index]);
     }
+    // index遍历内部边质量快照并转换到同下标的临时C数组元素。
     for (std::uint32_t index = 0U; index < required_observations; ++index) {
       observation_values[index] =
           observation_output(snapshot.observations[index]);
     }
+    // network_value为完成计数收窄和状态映射的临时C网络快照。
     const auto network_value = network_output(snapshot.network);
 
     // 阶段3：全部成功后先提交Engine，再整体写入调用方缓冲区，避免半快照。
     handle->engine.swap(candidate);
     handle->processing_started = true;
+    // index遍历已验证的调用方定位数组，提交对应临时元素。
     for (std::uint32_t index = 0U; index < required_localizations; ++index) {
+      // output借用当前可写元素；caller_size保留其调用方声明容量。
       auto* output = array_element<zju_coop_localization_t>(
           localizations, index, localization_stride);
       const std::uint32_t caller_size = output->struct_size;
       *output = localization_values[index];
       output->struct_size = caller_size;
     }
+    // index遍历已验证的调用方边质量数组，提交对应临时元素。
     for (std::uint32_t index = 0U; index < required_observations; ++index) {
+      // output借用当前可写元素；caller_size保留其调用方声明容量。
       auto* output = array_element<zju_coop_observation_t>(
           observations, index, observation_stride);
       const std::uint32_t caller_size = output->struct_size;
       *output = observation_values[index];
       output->struct_size = caller_size;
     }
+    // caller_size保留调用方network结构容量，再以临时快照整体覆盖v1字段。
     const std::uint32_t caller_size = network->struct_size;
     *network = network_value;
     network->struct_size = caller_size;
