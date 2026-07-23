@@ -65,6 +65,7 @@ double Quaternion::norm() const noexcept {
 }
 
 bool Quaternion::normalize() noexcept {
+  // `magnitude`为当前wxyz四元数的欧氏范数，用于单位化与失效判定。
   const double magnitude = norm();
   // 接近零或非有限范数没有可定义的旋转方向，不能用任意单位姿态替代。
   if (!finite() || !std::isfinite(magnitude) ||
@@ -92,19 +93,25 @@ Quaternion Quaternion::operator*(const Quaternion& right) const noexcept {
 
 Vec3 Quaternion::rotate(const Vec3& value) const noexcept {
   // 单位四元数旋转的向量形式，避免构造两个临时四元数。
+  // `vector`是当前wxyz四元数的(x,y,z)向量部。
   const Vec3 vector{x, y, z};
+  // `twice_cross`为2*(q_vec×value)，供主动旋转闭式表达式复用。
   const Vec3 twice_cross = 2.0 * cross(vector, value);
   return value + w * twice_cross + cross(vector, twice_cross);
 }
 
 Quaternion Quaternion::exp(const Vec3& rotation_vector) noexcept {
   // 旋转向量模长是总转角；四元数标量部和向量部均使用半角关系。
+  // `angle`是旋转向量的总转角，单位rad。
   const double angle = zju::coop::norm(rotation_vector);
   if (!std::isfinite(angle) || !zju::coop::finite(rotation_vector)) {
+    // `invalid`是为四个分量统一返回的静默NaN失败标记。
     const double invalid = std::numeric_limits<double>::quiet_NaN();
     return {invalid, invalid, invalid, invalid};
   }
 
+  // `half_angle`为四元数三角函数所需半角，单位rad；
+  // `vector_scale`为向量部相对旋转向量的无量纲系数。
   const double half_angle = 0.5 * angle;
   double vector_scale = 0.5;
   if (angle > 1.0e-8) {
@@ -114,11 +121,13 @@ Quaternion Quaternion::exp(const Vec3& rotation_vector) noexcept {
     vector_scale = 0.5 - angle * angle / 48.0;
   }
 
+  // `result`是按指数映射构造并将在返回前归一化的wxyz增量四元数。
   Quaternion result{std::cos(half_angle),
                     rotation_vector.x * vector_scale,
                     rotation_vector.y * vector_scale,
                     rotation_vector.z * vector_scale};
   if (!result.normalize()) {
+    // `invalid`是归一化失败时为四个分量统一返回的NaN标记。
     const double invalid = std::numeric_limits<double>::quiet_NaN();
     return {invalid, invalid, invalid, invalid};
   }
