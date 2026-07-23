@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import zjcl_protocol as protocol
 
 
+# 协议枚举到面板中文标签的只读映射；缺失值由严格解码器提前拒绝。
 _LOCALIZATION_STATES = {
     protocol.LOCALIZATION_UNINITIALIZED: "未初始化",
     protocol.LOCALIZATION_NORMAL: "正常",
@@ -27,6 +28,7 @@ _LOCALIZATION_STATES = {
     protocol.LOCALIZATION_STALE: "数据陈旧",
 }
 
+# 边观测质量、融合动作与算法进程状态的展示标签。
 _OBSERVATION_STATES = {
     protocol.OBSERVATION_UNKNOWN: "未知",
     protocol.OBSERVATION_NORMAL: "正常",
@@ -52,6 +54,7 @@ _ALGORITHM_RUN_STATES = {
     protocol.ALGORITHM_RUN_STOPPED: "已停止",
 }
 
+# 告警严重度与生命周期的展示标签。
 _ALERT_LEVELS = {
     protocol.ALERT_LEVEL_INFO: "提示",
     protocol.ALERT_LEVEL_WARNING: "警告",
@@ -64,6 +67,7 @@ _ALERT_LIFECYCLES = {
     protocol.ALERT_LIFECYCLE_CLEARED: "已清除",
 }
 
+# 观测状态到前端边线颜色的固定调色板。
 _QUALITY_COLORS = {
     protocol.OBSERVATION_UNKNOWN: "#94a3b8",
     protocol.OBSERVATION_NORMAL: "#22c55e",
@@ -73,6 +77,7 @@ _QUALITY_COLORS = {
     protocol.OBSERVATION_RECOVERING: "#38bdf8",
 }
 
+# reason_mask位序到退化原因文本的协议展示契约。
 _REASON_BITS = (
     (0, "非视距比例高"),
     (1, "有效观测比例低"),
@@ -88,8 +93,12 @@ _REASON_BITS = (
 
 
 def _reason_texts(mask):
+    """展开原因位图；mask是协议uint32 reason_mask，未知位会保留为十六进制证据。"""
+    # 已知且置位的原因文本；bit/text分别来自_REASON_BITS位序与标签。
     reasons = [text for bit, text in _REASON_BITS if mask & (1 << bit)]
+    # 当前面板认识的全部原因位；bit用于置位，下划线刻意忽略此处不需要的原因文本。
     known_mask = sum(1 << bit for bit, _ in _REASON_BITS)
+    # 不在当前映射中的置位部分，不能静默丢弃。
     unknown_mask = mask & ~known_mask
     if unknown_mask:
         reasons.append(f"未知原因位 0x{unknown_mask:08X}")
@@ -100,9 +109,13 @@ class DashboardState:
     """线程安全的遥测最新值仓库；一次数据报只原子更新其对应业务对象。"""
 
     def __init__(self):
+        # 所有快照成员的唯一同步锁；UDP写线程与HTTP读线程共同遵守。
         self._lock = threading.Lock()
+        # 按节点字符串ID索引的最新定位值，随DashboardState生命周期持续更新。
         self._nodes = {}
+        # 按规范化“较小节点-较大节点”键索引的最新边观测值。
         self._edges = {}
+        # 最新网络快照；锁内由UDP接收线程整体替换，初值表示未初始化。
         self._network = {
             "node_count": 0,
             "reachable_node_count": 0,
@@ -117,6 +130,7 @@ class DashboardState:
             "sequence": 0,
             "source_node": 0,
         }
+        # 最新算法状态；锁内整体替换，累计计数生命周期由远端进程定义。
         self._algorithm_status = {
             "abi_version": 0,
             "software_version_packed": 0,
@@ -135,6 +149,7 @@ class DashboardState:
             "sequence": 0,
             "source_node": 0,
         }
+        # 最新告警生命周期快照；锁内整体替换，初值显式表示无活动告警。
         self._alert = {
             "alert_code": 0,
             "level": protocol.ALERT_LEVEL_INFO,
@@ -153,6 +168,7 @@ class DashboardState:
             "sequence": 0,
             "source_node": 0,
         }
+        # 本面板进程生命周期内的接收分类计数和最后接收Unix纳秒时间。
         self._stats = {
             "datagrams": 0,
             "accepted": 0,
@@ -162,15 +178,17 @@ class DashboardState:
         }
 
     def _count(self, category):
+        """原子记录非接受数据报；category必须是ignored或rejected统计键。"""
         with self._lock:
             self._stats["datagrams"] += 1
             self._stats[category] += 1
             self._stats["last_receive_time_ns"] = time.time_ns()
 
     def ingest_datagram(self, data):
-        """严格解码一帧；成功返回True，坏帧或非GCS输出类型不覆盖最后有效值。"""
+        """严格解码一帧；data是单个UDP数据报，坏帧/非GCS类型不覆盖有效快照。"""
         # 阶段1：公共帧CRC/长度通过后，再按消息类型解析固定载荷。
         try:
+            # 已通过公共头长度、类型和CRC验证的完整业务帧。
             frame = protocol.decode_frame(data, udp=True)
         except (protocol.ProtocolError, TypeError, ValueError):
             self._count("rejected")
@@ -188,6 +206,7 @@ class DashboardState:
 
         try:
             if frame.message_type == protocol.MSG_LOCALIZATION:
+                # decoded是类型专属载荷对象，update_kind选择唯一待替换的快照。
                 decoded = protocol.decode_localization_payload(frame.payload)
                 update_kind = "localization"
             elif frame.message_type == protocol.MSG_NETWORK:
@@ -207,6 +226,7 @@ class DashboardState:
             return False
 
         # 阶段2：载荷完全合法后才获取锁并替换单个最新值；解析异常不会造成半更新。
+        # 本机接收完成的Unix纳秒时间，与远端frame.timestamp_ns分开保存。
         received_at = time.time_ns()
         with self._lock:
             if update_kind == "localization":
@@ -244,6 +264,7 @@ class DashboardState:
                     "receive_time_ns": received_at,
                 }
             elif update_kind == "observation":
+                # 无向边的规范端点顺序，保证反向上报仍覆盖同一面板条目。
                 first = min(frame.source_node, frame.target_node)
                 second = max(frame.source_node, frame.target_node)
                 self._edges[f"{first}-{second}"] = {
@@ -274,6 +295,7 @@ class DashboardState:
                     "receive_time_ns": received_at,
                 }
             elif update_kind == "algorithm_status":
+                # 远端压缩版本整数及供人阅读的major.minor.patch文本。
                 packed = decoded.software_version_packed
                 version = f"{packed >> 16}.{(packed >> 8) & 0xFF}.{packed & 0xFF}"
                 self._algorithm_status = {
@@ -335,9 +357,16 @@ class UdpReceiver(threading.Thread):
     """可由其他线程停止的后台UDP接收器；短超时限制退出等待时间。"""
 
     def __init__(self, state, bind_address, port):
+        """创建后台接收线程。
+
+        state是线程安全快照仓库；bind_address与port是UDP监听端点，port可为0以动态分配。
+        """
         super().__init__(name="zjcl-gcs-udp", daemon=True)
+        # 外部共享状态引用；只由本接收线程调用ingest_datagram。
         self._state = state
+        # 跨线程停止信号，由控制线程设置、接收线程轮询。
         self._stop_event = threading.Event()
+        # 本接收线程独占读取、控制线程可在stop中关闭的UDP套接字。
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             self._socket.bind((bind_address, port))
@@ -345,12 +374,15 @@ class UdpReceiver(threading.Thread):
         except Exception:
             self._socket.close()
             raise
+        # 套接字生命周期内实际绑定端口，支持调用方请求动态端口0。
         self.port = self._socket.getsockname()[1]
 
     def run(self):
+        """线程主体：保持UDP数据报边界并把每个data交给共享state。"""
         # 阶段2：保持数据报边界，把协议语义交给DashboardState集中处理。
         while not self._stop_event.is_set():
             try:
+                # data是单个UDP数据报；未使用的地址元组不参与协议语义。
                 data, _ = self._socket.recvfrom(protocol.MAX_UDP_DATAGRAM + 1)
             except socket.timeout:
                 continue
@@ -361,6 +393,7 @@ class UdpReceiver(threading.Thread):
             self._state.ingest_datagram(data)
 
     def stop(self):
+        """由控制线程请求停止并关闭接收套接字；可在未启动或已退出时调用。"""
         # 先设置事件再关闭socket，使正常stop与运行时OSError可以可靠区分。
         self._stop_event.set()
         try:
@@ -369,6 +402,7 @@ class UdpReceiver(threading.Thread):
             pass
 
 
+# 浏览器端单页应用源码；只消费/api/state，不向服务端写入状态。
 _DASHBOARD_PAGE = r"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -538,18 +572,26 @@ refresh();
 
 
 class _DashboardHttpServer(ThreadingHTTPServer):
+    # 每个HTTP请求线程随服务退出，无需阻塞主线程回收。
     daemon_threads = True
+    # 测试和短时联调可立即复用刚释放的HTTP监听端口。
     allow_reuse_address = True
 
 
 def create_http_server(bind_address, port, state):
-    """创建只读HTTP服务；动态JSON来自state，静态页面内嵌在本模块。"""
+    """创建但不启动只读HTTP服务。
+
+    bind_address与port指定HTTP监听端点，port可为0；state为线程安全动态快照源。
+    """
     """Create, but do not start, the dashboard HTTP server."""
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
+            """响应当前请求；self由HTTP服务器线程持有，只提供页面与状态JSON。"""
+            # 去除查询参数后的路由路径。
             path = self.path.partition("?")[0]
             if path == "/api/state":
+                # 当前锁一致快照的紧凑UTF-8 JSON响应体。
                 body = json.dumps(
                     state.snapshot(), ensure_ascii=False, separators=(",", ":")
                 ).encode("utf-8")
@@ -557,11 +599,13 @@ def create_http_server(bind_address, port, state):
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Cache-Control", "no-store")
             elif path in ("/", "/index.html"):
+                # 内嵌单页应用的UTF-8响应体。
                 body = _DASHBOARD_PAGE.encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Cache-Control", "no-store")
             else:
+                # 未知路由的固定404响应体。
                 body = b"not found"
                 self.send_response(404)
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
@@ -570,14 +614,18 @@ def create_http_server(bind_address, port, state):
             self.wfile.write(body)
 
         def log_message(self, _format, *args):
+            """关闭默认访问日志；_format和args由BaseHTTPRequestHandler传入但有意忽略。"""
             del args
 
     return _DashboardHttpServer((bind_address, port), Handler)
 
 
 def _port(value):
+    """argparse端口转换器；value须为0..65535，0表示请求系统动态分配。"""
     try:
+        # 命令行词法值转换后的候选端口号。
         result = int(value)
+    # error保留端口文本无法转成整数时的原始ValueError。
     except ValueError as error:
         raise argparse.ArgumentTypeError("端口必须是整数") from error
     if result < 0 or result > 65535:
@@ -586,8 +634,14 @@ def _port(value):
 
 
 def _duration(value):
+    """把value解析为浮点秒数并拒绝小于0的值，0表示持续运行。
+
+    当前实现未额外拒绝NaN或正无穷，这是命令行校验的已知限制。
+    """
     try:
+        # 命令行词法值转换后的运行秒数。
         result = float(value)
+    # error保留运行时长文本无法转成浮点秒数时的原始ValueError。
     except ValueError as error:
         raise argparse.ArgumentTypeError("运行时长必须是数字") from error
     if result < 0.0:
@@ -596,6 +650,8 @@ def _duration(value):
 
 
 def _arguments(argv):
+    """解析CLI；argv为可选参数序列，None表示读取sys.argv。"""
+    # 面板UDP/HTTP端口、运行时长和浏览器行为的参数解析器。
     parser = argparse.ArgumentParser(
         description="接收 ZJCL 输出并展示三车二维协同定位结果",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -612,37 +668,49 @@ def _arguments(argv):
 
 
 def main(argv=None):
-    """启动UDP、HTTP和可选浏览器，并在信号到达时有序停止。"""
+    """启动UDP、HTTP和可选浏览器；argv为可选CLI参数序列。"""
     # 阶段3：先绑定全部端口再启动线程，避免页面可见但数据端口尚不可用。
+    # 已解析启动参数和跨线程共享的遥测仓库。
     args = _arguments(argv)
     state = DashboardState()
+    # UDP后台接收线程句柄；main发出停止请求并最多等待2秒。
     receiver = None
+    # 只读HTTP服务器句柄；由main负责shutdown和server_close。
     server = None
+    # 执行server.serve_forever的HTTP后台线程句柄；main最多等待2秒，不保证已终止。
     server_thread = None
+    # 主控制流的停止事件，信号处理器和定时等待共同使用。
     stop_event = threading.Event()
+    # 被替换的进程信号处理器，退出时逐项恢复。
     previous_handlers = {}
 
     def request_stop(_signum=None, _frame=None):
+        """信号回调；_signum与_frame由signal模块提供，只转换为线程停止事件。"""
         stop_event.set()
 
     try:
         receiver = UdpReceiver(state, args.udp_bind, args.udp_port)
         server = create_http_server(args.http_bind, args.http_port, state)
         receiver.start()
+        # 主函数创建的HTTP服务线程；finally会限时join，但超时后线程仍可能存活。
         server_thread = threading.Thread(
             target=server.serve_forever, name="zjcl-gcs-http", daemon=True
         )
         server_thread.start()
 
+        # signal_name遍历平台可能提供的两种正常终止信号。
         for signal_name in ("SIGINT", "SIGTERM"):
             if hasattr(signal, signal_name):
+                # 当前平台上的信号编号及其进入本模块前的处理器。
                 selected = getattr(signal, signal_name)
                 previous_handlers[selected] = signal.getsignal(selected)
                 signal.signal(selected, request_stop)
 
+        # 浏览器可连接的主机名；通配监听地址需改写为本机回环地址。
         browser_host = args.http_bind
         if browser_host in ("", "0.0.0.0", "::"):
             browser_host = "127.0.0.1"
+        # 面板最终可访问URL，包含系统可能动态分配的实际HTTP端口。
         url = f"http://{browser_host}:{server.server_port}/"
         print(
             f"GCS_DASHBOARD udp_port={receiver.port} http_port={server.server_port} url={url}",
@@ -656,10 +724,12 @@ def main(argv=None):
         else:
             while not stop_event.wait(0.5):
                 pass
+    # error捕获端口绑定、服务器创建或启动参数失败，形成进程级错误SUMMARY。
     except (OSError, ValueError) as error:
         print(f"SUMMARY status=ERROR error={error}", file=sys.stderr, flush=True)
         return 2
     finally:
+        # selected/previous分别为已替换信号编号和原处理器。
         for selected, previous in previous_handlers.items():
             signal.signal(selected, previous)
         if server is not None:
@@ -672,6 +742,7 @@ def main(argv=None):
         if server_thread is not None:
             server_thread.join(timeout=2.0)
 
+    # 发出停止并完成限时等待后的接收统计；不据此断言后台线程一定已终止。
     stats = state.snapshot()["stats"]
     print(
         "SUMMARY status=OK "

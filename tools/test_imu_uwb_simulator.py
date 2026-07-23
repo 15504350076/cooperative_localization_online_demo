@@ -9,9 +9,11 @@ import zjcl_protocol as zjcl
 class ImuUwbSimulatorTests(unittest.TestCase):
     """确认一次采样为每个节点产生一帧可解码的标准瞬时IMU。"""
     def test_one_tick_contains_three_valid_imu_frames(self):
+        # simulator/frames覆盖三节点批次；循环内frame/payload再分层核对公共头与IMU语义。
         simulator = imu_uwb_simulator.ImuUwbSimulator()
         frames = simulator.generate_imu_tick(123)
         self.assertEqual(len(frames), 3)
+        # expected_node/encoded把列表顺序与协议源节点逐一绑定。
         for expected_node, encoded in enumerate(frames, 1):
             frame = zjcl.decode_frame(encoded, udp=True)
             self.assertEqual(frame.message_type, zjcl.MSG_IMU)
