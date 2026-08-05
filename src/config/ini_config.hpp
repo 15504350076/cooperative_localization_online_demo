@@ -1,6 +1,12 @@
 // 模块职责：定义在线/回放程序共享的配置模型和严格INI加载入口。
 // 所有滤波阈值、时间门限、资源上限、网络端点和日志参数均由配置文件提供；
 // 算法源码不得硬编码现场调参值，解析错误必须携带类别和原始行号。
+//
+// C++初学者阅读提示：
+// 1. 每个Config结构对应INI中的一组配置，成员后的{}表示先采用安全默认值。
+// 2. std::optional<T>表示该配置“可以没有”；使用前先判断has_value()或if(optional)。
+// 3. std::filesystem::path专门表示文件路径，比普通字符串更适合跨Windows/Linux使用。
+// 4. load_ini是本模块最主要的入口：成功时返回完整配置，失败时抛出带行号的ConfigError。
 #pragma once
 
 #include "core/engine.hpp"
@@ -61,28 +67,31 @@ struct DemoConfig {
 
 /** 可机器判定的配置错误类别；异常文本同时保留具体节/键和原始行号。 */
 enum class IniError {
-  kNone,
-  kIoFailure,
-  kInvalidUtf8,
-  kSyntax,
-  kDuplicateSection,
-  kDuplicateKey,
-  kDuplicateNode,
-  kUnknownSection,
-  kUnknownKey,
-  kInvalidValue,
-  kMissingSection,
-  kMissingKey,
-  kMissingReferenceNode,
-  kInvalidConfiguration,
+  kNone,                 ///< 没有错误，仅作默认/占位值。
+  kIoFailure,            ///< 文件无法打开、读取失败或大小超过限制。
+  kInvalidUtf8,          ///< 输入字节不是合法UTF-8编码。
+  kSyntax,               ///< 节名、等号、注释或行结构不符合INI语法。
+  kDuplicateSection,     ///< 同一普通节重复声明。
+  kDuplicateKey,         ///< 同一节内同名键重复，拒绝“后值覆盖前值”歧义。
+  kDuplicateNode,        ///< 两个动态节点节解析出相同node_id。
+  kUnknownSection,       ///< 出现当前版本不认识的节。
+  kUnknownKey,           ///< 已知节中出现当前版本不认识的键。
+  kInvalidValue,         ///< 文本可定位到键，但类型、范围或格式不合法。
+  kMissingSection,       ///< 缺少必需配置节。
+  kMissingKey,           ///< 已有节中缺少必需键。
+  kMissingReferenceNode, ///< reference_node_id没有对应节点节。
+  kInvalidConfiguration, ///< 单字段合法，但跨字段组合约束不成立。
 };
 
+// `final`禁止继续派生；`: public`表示公开继承runtime_error，可被catch(std::exception&)捕获。
 class IniConfigError final : public std::runtime_error {
  public:
   // code为机器可判定类别，line为原始INI的1起始行号（非行级错误可为0），message为面向操作者的上下文文本。
   IniConfigError(IniError code, std::size_t line, std::string message);
 
+  /** 返回机器可判定错误类别，不修改异常对象。 */
   [[nodiscard]] IniError code() const noexcept;
+  /** 返回1起始原始行号；0表示不是单行错误。 */
   [[nodiscard]] std::size_t line() const noexcept;
 
  private:

@@ -1,6 +1,12 @@
 // 模块实现：封装Winsock/BSD Socket创建、绑定、超时接收、整报发送和资源释放差异。
 // 关键原则：算法核心只处理字节帧，不依赖平台网络API；UDP超时是正常状态，
 // 其他系统错误转为异常交给应用入口记录并退出，禁止静默吞掉网络故障。
+//
+// C++初学者阅读顺序：SocketRuntime初始化平台网络环境 -> 创建socket整数句柄
+// -> UdpReceiver绑定端口并收包 / UdpSender解析目标并发包 -> 析构函数关闭句柄。
+// #if defined(_WIN32)中的代码只在Windows编译，#else部分用于Ubuntu和RK3588。
+// `native_socket_t`是平台相关句柄别名；`reinterpret_cast`用于系统API要求的sockaddr视图；
+// move构造/赋值会把旧对象句柄改成无效值，从而保证最终只关闭一次。
 #include "net/udp_socket.hpp"
 
 #include <cerrno>
@@ -73,14 +79,14 @@ sockaddr_in endpoint(const std::string& address, std::uint16_t port,
     throw std::invalid_argument("UDP IPv4 address/port is invalid");
   }
   sockaddr_in result{};  // 填充并以网络字节序返回的IPv4端点结构。
-  result.sin_family = AF_INET;
-  result.sin_port = htons(port);
+  result.sin_family = AF_INET;  // 指定IPv4地址族；否则系统不知道如何解释结构。
+  result.sin_port = htons(port);  // htons把主机端口转换为网络规定的大端16位字节序。
   const int converted =  // inet_pton成功转换的地址数量。
       inet_pton(AF_INET, address.c_str(), &result.sin_addr);
   if (converted != 1) {
     throw std::invalid_argument("UDP address must be numeric IPv4");
   }
-  return result;
+  return result;  // 按值返回完整端点，结构很小且通常会消除复制。
 }
 
 }  // namespace
@@ -101,7 +107,7 @@ UdpSocket::UdpSocket() : socket_(invalid_socket()) {
   if (startup != 0) {
     fail("WSAStartup", startup);
   }
-  runtime_started_ = true;
+  runtime_started_ = true;  // 记录清理责任，close中据此只调用一次WSACleanup。
 #endif
 
   const NativeSocket created =  // 新建且尚未转移给socket_的UDP原生句柄。
@@ -115,26 +121,26 @@ UdpSocket::UdpSocket() : socket_(invalid_socket()) {
     close();
     fail("socket", code);
   }
-  socket_ = static_cast<std::uintptr_t>(created);
+  socket_ = static_cast<std::uintptr_t>(created);  // 统一保存为无符号整数，使头文件不必包含平台Socket类型。
 }
 
 UdpSocket::~UdpSocket() { close(); }
 
 UdpSocket::UdpSocket(UdpSocket&& other) noexcept
     : socket_(other.socket_), runtime_started_(other.runtime_started_) {
-  other.socket_ = invalid_socket();
-  other.runtime_started_ = false;
+  other.socket_ = invalid_socket();  // 清空源对象，防止两个析构函数关闭同一原生句柄。
+  other.runtime_started_ = false;  // 同时转移Winsock清理责任。
 }
 
 UdpSocket& UdpSocket::operator=(UdpSocket&& other) noexcept {
   if (this != &other) {
     close();
-    socket_ = other.socket_;
-    runtime_started_ = other.runtime_started_;
-    other.socket_ = invalid_socket();
-    other.runtime_started_ = false;
+    socket_ = other.socket_;  // 接管源对象的原生句柄。
+    runtime_started_ = other.runtime_started_;  // 接管源对象的平台运行时清理责任。
+    other.socket_ = invalid_socket();  // 把源对象恢复为可安全析构的空状态。
+    other.runtime_started_ = false;  // 源对象不再执行WSACleanup。
   }
-  return *this;
+  return *this;  // 返回当前对象引用，允许a = std::move(b)这类赋值表达式按惯例工作。
 }
 
 void UdpSocket::close() noexcept {
@@ -145,12 +151,12 @@ void UdpSocket::close() noexcept {
 #else
     ::close(native_socket(socket_));
 #endif
-    socket_ = invalid_socket();
+    socket_ = invalid_socket();  // 关闭后立刻标无效，重复调用close不会再次关闭。
   }
 #if defined(_WIN32)
   if (runtime_started_) {
     WSACleanup();
-    runtime_started_ = false;
+    runtime_started_ = false;  // 清理后清除标志，使close保持幂等。
   }
 #endif
 }
@@ -215,18 +221,18 @@ ReceiveResult UdpSocket::receive() {
     fail("recvfrom", code);
   }
 
-  buffer.resize(static_cast<std::size_t>(received));
+  buffer.resize(static_cast<std::size_t>(received));  // 丢掉未使用尾部容量，让bytes.size等于真实报文长度。
   char source_text[INET_ADDRSTRLEN]{};  // 发送端IPv4地址的点分十进制输出缓冲。
   if (inet_ntop(AF_INET, &source.sin_addr, source_text,
                 static_cast<socklen_t>(sizeof(source_text))) == nullptr) {
     fail("inet_ntop", last_error());
   }
   ReceiveResult result{};  // 汇总整报载荷和发送端地址的成功接收结果。
-  result.status = ReceiveStatus::kData;
-  result.datagram.bytes = std::move(buffer);
-  result.datagram.source_address = source_text;
-  result.datagram.source_port = ntohs(source.sin_port);
-  return result;
+  result.status = ReceiveStatus::kData;  // 与超时返回的默认状态明确区分。
+  result.datagram.bytes = std::move(buffer);  // 转移65507字节缓冲，避免复制整份数据报。
+  result.datagram.source_address = source_text;  // char数组转换为拥有自身内存的std::string。
+  result.datagram.source_port = ntohs(source.sin_port);  // ntohs把网络大端端口恢复为主机字节序。
+  return result;  // 返回载荷和来源端点的独立副本。
 }
 
 void UdpSocket::send_to(const std::string& ipv4_address, std::uint16_t port,

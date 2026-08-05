@@ -2,6 +2,10 @@
 // 当前交付默认使用IMU+测距的15维联合滤波；本模块保留用于故障回退、历史数据
 // 回归和无IMU环境演示，Engine保证两种预测模型不会同时推进同一状态。
 // 维度记号：M为非参考节点数，参考节点固定为零状态且不占四维状态块。
+//
+// 初学者注意：这是“没有IMU时”的备用滤波器，不是默认15维惯导。
+// 每个非参考节点只有[x,y,vx,vy]四个状态，使用匀速模型向前预测，再用节点间距离修正。
+// 读代码时不要把这里的4M维状态与CooperativeInertialEkf的15N维误差状态混在一起。
 #pragma once
 
 #include "core/dense_matrix.hpp"
@@ -54,14 +58,14 @@ struct NodeEstimate {
 
 /** 拒绝原因保持互斥，便于区分输入问题、统计门限和矩阵数值失败。 */
 enum class UpdateDisposition {
-  Accepted,
-  InvalidPacket,
-  UnknownNode,
-  SelfRange,
-  NonPositiveRange,
-  OutOfOrder,
-  NisRejected,
-  NumericalFailure,
+  Accepted,          ///< 输入合法、通过NIS门限且状态与协方差已提交。
+  InvalidPacket,     ///< valid/status/时间/有限值等基础字段不合法。
+  UnknownNode,       ///< from或to节点未出现在初始化配置中。
+  SelfRange,         ///< from与to相同，自身到自身的距离不能形成约束。
+  NonPositiveRange,  ///< 距离或标准差不是正有限数。
+  OutOfOrder,        ///< 测量时刻早于滤波器当前时间，兼容路径不做延迟状态重放。
+  NisRejected,       ///< 输入格式合法，但创新统计量超过配置门限。
+  NumericalFailure,  ///< 矩阵或状态计算产生非有限值/非正创新方差，更新已回滚。
 };
 
 /** 单次测距更新诊断；即使拒绝量测也保留创新、方差和NIS便于告警分析。 */
@@ -95,7 +99,9 @@ class RangeEkf {
 
   /** `node_id`指定待查询的平台；未知编号返回`valid=false`及NaN数值。 */
   [[nodiscard]] NodeEstimate estimate(std::uint32_t node_id) const;
+  /** 返回全部节点估计的独立vector副本，顺序与构造时initializations一致。 */
   [[nodiscard]] std::vector<NodeEstimate> estimates() const;
+  /** 返回只读引用，避免复制4M×4M矩阵；引用生命周期不能超过RangeEkf对象。 */
   [[nodiscard]] const DenseMatrix& covariance() const noexcept;
 
  private:
@@ -109,6 +115,7 @@ class RangeEkf {
   [[nodiscard]] const NodeRecord* find_node(std::uint32_t node_id) const;
   /** `node`为`nodes_`中的有效记录，用于组装对应相对状态输出。 */
   [[nodiscard]] NodeEstimate make_estimate(const NodeRecord& node) const;
+  /** 检查state_和covariance_全部有限且协方差对角线不低于稳定下限。 */
   [[nodiscard]] bool finite_state_and_covariance() const;
   /** `total_seconds`为正预测区间；`step_count`为闭式过程噪声对应的等效等长子步数。 */
   void predict_interval(double total_seconds, long double step_count);

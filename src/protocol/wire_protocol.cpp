@@ -1,6 +1,13 @@
 // 模块实现：ZJCL公共帧头和各固定载荷的小端编解码、CRC校验与字段语义校验。
 // 关键原则：编码端拒绝不可表示数据，解码端按“长度→头部→CRC→载荷语义”顺序失败；
 // C++与Python实现共享固定字节布局，任何新增字段必须升级协议版本或使用新消息类型。
+//
+// C++初学者可先区分两组函数：
+// - append_*：把一个整数/浮点数拆成字节，依次追加到vector末尾；
+// - read_*：从当前offset读取字节并还原数值，同时向后移动offset。
+// 公开encode_*和decode_*只是在这些基础积木上按协议字段顺序组装或拆分。
+// `memcpy`只复制浮点数位模式而不做数值转换；`static_assert`在编译期确认类型尺寸；
+// `std::variant/std::get`保证载荷是受控类型集合，而不是无类型void指针。
 #include "protocol/wire_protocol.hpp"
 
 #include "protocol/crc32.hpp"
@@ -538,21 +545,22 @@ std::vector<std::uint8_t> encode_frame(const Frame& frame,
 
   // output是最终40字节头+payload目标缓冲：先顺序编码主机字段并写CRC零占位，最后回填。
   std::vector<std::uint8_t> output;
-  output.reserve(kWireHeaderSize + frame.payload.size());
-  output.insert(output.end(), kMagic.begin(), kMagic.end());
-  output.push_back(kProtocolMajorVersion);
-  output.push_back(kProtocolMinorVersion);
+  output.reserve(kWireHeaderSize + frame.payload.size());  // reserve只预留容量，不改变size，避免后续追加时多次分配。
+  output.insert(output.end(), kMagic.begin(), kMagic.end());  // 先写4字节ZJCL魔数，接收端据此识别本协议。
+  output.push_back(kProtocolMajorVersion);  // 第5字节写主版本；不兼容修改必须提升主版本。
+  output.push_back(kProtocolMinorVersion);  // 第6字节写次版本；兼容扩展可提升次版本。
   append_u16(output,
              static_cast<std::uint16_t>(frame.header.message_type));
-  append_u16(output, static_cast<std::uint16_t>(kWireHeaderSize));
-  append_u16(output, frame.header.flags);
-  append_u32(output, static_cast<std::uint32_t>(frame.payload.size()));
-  append_u64(output, frame.header.sequence);
-  append_u64(output, frame.header.timestamp_ns);
-  append_u16(output, frame.header.source_node);
-  append_u16(output, frame.header.target_node);
-  append_u32(output, 0U);
-  output.insert(output.end(), frame.payload.begin(), frame.payload.end());
+  // 上一行把强类型enum class显式转为16位线序消息类型，避免隐式收窄。
+  append_u16(output, static_cast<std::uint16_t>(kWireHeaderSize));  // 头长固定40字节，便于接收端拒绝布局不一致。
+  append_u16(output, frame.header.flags);  // 预留标志位可表达以后兼容功能。
+  append_u32(output, static_cast<std::uint32_t>(frame.payload.size()));  // 载荷长度已验证可安全收窄为32位。
+  append_u64(output, frame.header.sequence);  // 序号用于丢包、乱序和重复检测。
+  append_u64(output, frame.header.timestamp_ns);  // 统一时间轴上的测量/结果时刻。
+  append_u16(output, frame.header.source_node);  // 消息来源平台编号。
+  append_u16(output, frame.header.target_node);  // 目标平台编号；广播语义由接口文档约定。
+  append_u32(output, 0U);  // CRC字段先写零占位，因为必须等完整载荷写完才能计算。
+  output.insert(output.end(), frame.payload.begin(), frame.payload.end());  // 将已编码载荷原样追加到固定头后。
 
   // 阶段2：完整帧先保留CRC占位，crc_input明确跳过[36,40)字段，
   // 对头部[0,36)紧接载荷求CRC，再回填固定偏移；解码端使用完全相同的拼接规则。
@@ -623,18 +631,18 @@ FrameDecodeResult decode_frame(const std::vector<std::uint8_t>& bytes,
 
   // result在外层校验完成后拥有主机序头和payload副本，不借用bytes。
   FrameDecodeResult result{};
-  result.value.header.message_type = message_type;
-  result.value.header.flags = read_u16(bytes, 10U);
-  result.value.header.payload_size = payload_size;
-  result.value.header.sequence = read_u64(bytes, 16U);
-  result.value.header.timestamp_ns = read_u64(bytes, 24U);
-  result.value.header.source_node = read_u16(bytes, 32U);
-  result.value.header.target_node = read_u16(bytes, 34U);
-  result.value.header.crc32 = encoded_crc;
+  result.value.header.message_type = message_type;  // 保存已验证属于已知集合的消息类型。
+  result.value.header.flags = read_u16(bytes, 10U);  // 从固定偏移恢复标志位。
+  result.value.header.payload_size = payload_size;  // 保存已与总帧长核对过的载荷长度。
+  result.value.header.sequence = read_u64(bytes, 16U);  // 恢复发送端单调序号。
+  result.value.header.timestamp_ns = read_u64(bytes, 24U);  // 恢复统一时间戳。
+  result.value.header.source_node = read_u16(bytes, 32U);  // 恢复来源节点号。
+  result.value.header.target_node = read_u16(bytes, 34U);  // 恢复目标节点号。
+  result.value.header.crc32 = encoded_crc;  // 保存已复算通过的CRC，供日志或诊断查看。
   result.value.payload.assign(
       bytes.begin() + static_cast<std::ptrdiff_t>(kWireHeaderSize),
       bytes.end());
-  return result;
+  return result;  // error保持默认kNone，表示外层帧验证成功。
 }
 
 std::vector<std::uint8_t> encode_range_payload(
@@ -643,15 +651,15 @@ std::vector<std::uint8_t> encode_range_payload(
   require_range_values(payload);
   // output按24字节固定顺序拥有编码结果。
   std::vector<std::uint8_t> output;
-  output.reserve(kRangePayloadSize);
-  append_double(output, payload.range_m);
-  append_double(output, payload.range_std_m);
-  append_float(output, payload.nlos_probability);
-  output.push_back(payload.nlos_flag ? 1U : 0U);
-  output.push_back(payload.has_nlos_probability ? 1U : 0U);
-  output.push_back(payload.valid ? 1U : 0U);
-  output.push_back(payload.status);
-  return output;
+  output.reserve(kRangePayloadSize);  // 精确预留24字节，避免逐字段追加触发扩容。
+  append_double(output, payload.range_m);  // 偏移0：节点间距离，单位米。
+  append_double(output, payload.range_std_m);  // 偏移8：测距1σ标准差，单位米。
+  append_float(output, payload.nlos_probability);  // 偏移16：NLOS概率，用float节省线序空间。
+  output.push_back(payload.nlos_flag ? 1U : 0U);  // 偏移20：明确NLOS标志；三目运算保证只写0或1。
+  output.push_back(payload.has_nlos_probability ? 1U : 0U);  // 偏移21：说明概率字段是否由设备真实提供。
+  output.push_back(payload.valid ? 1U : 0U);  // 偏移22：设备/适配层对本包的有效性结论。
+  output.push_back(payload.status);  // 偏移23：传感器状态码。
+  return output;  // vector按值返回；编译器可移动或消除复制。
 }
 
 PayloadDecodeResult<RangePayload> decode_range_payload(
@@ -663,9 +671,9 @@ PayloadDecodeResult<RangePayload> decode_range_payload(
   }
   // result逐字段填充，全部布尔和物理语义通过后才返回成功。
   PayloadDecodeResult<RangePayload> result{};
-  result.value.range_m = read_double(bytes, 0U);
-  result.value.range_std_m = read_double(bytes, 8U);
-  result.value.nlos_probability = read_float(bytes, 16U);
+  result.value.range_m = read_double(bytes, 0U);  // 按协议偏移0恢复距离。
+  result.value.range_std_m = read_double(bytes, 8U);  // 按协议偏移8恢复标准差。
+  result.value.nlos_probability = read_float(bytes, 16U);  // 按协议偏移16恢复单精度概率。
   if (!decode_boolean(bytes[20U], result.value.nlos_flag) ||
       !decode_boolean(bytes[21U], result.value.has_nlos_probability) ||
       !decode_boolean(bytes[22U], result.value.valid)) {
@@ -673,7 +681,7 @@ PayloadDecodeResult<RangePayload> decode_range_payload(
         ProtocolError::kInvalidBoolean,
         "range payload boolean must be zero or one");
   }
-  result.value.status = bytes[23U];
+  result.value.status = bytes[23U];  // 最后1字节是设备状态码，随后再做取值范围检查。
   if (!finite(result.value.range_m) ||
       !finite(result.value.range_std_m) ||
       !finite(static_cast<double>(result.value.nlos_probability))) {
@@ -689,7 +697,7 @@ PayloadDecodeResult<RangePayload> decode_range_payload(
         ProtocolError::kInvalidValue,
         "range payload contains invalid data");
   }
-  return result;
+  return result;  // 所有长度、布尔、有限性和物理范围检查都通过才走到这里。
 }
 
 std::vector<std::uint8_t> encode_imu_payload(const ImuPayload& payload) {
@@ -706,21 +714,21 @@ std::vector<std::uint8_t> encode_imu_payload(const ImuPayload& payload) {
       append_double(output, value);
     }
   };
-  append_values(payload.orientation_xyzw);
-  append_values(payload.orientation_covariance);
-  append_values(payload.angular_velocity_rad_s);
-  append_values(payload.angular_velocity_covariance);
-  append_values(payload.linear_acceleration_m_s2);
-  append_values(payload.linear_acceleration_covariance);
+  append_values(payload.orientation_xyzw);  // 先写4个xyzw姿态分量，与ROS 2 Imu顺序一致。
+  append_values(payload.orientation_covariance);  // 再写9个姿态协方差元素，保持行主序。
+  append_values(payload.angular_velocity_rad_s);  // 写3轴瞬时角速度，单位rad/s。
+  append_values(payload.angular_velocity_covariance);  // 写3×3角速度协方差。
+  append_values(payload.linear_acceleration_m_s2);  // 写3轴瞬时线加速度，单位m/s²。
+  append_values(payload.linear_acceleration_covariance);  // 写3×3线加速度协方差。
   // value遍历frame_id全部32个原始字符字节，不因提前NUL缩短线序布局。
   for (const char value : payload.frame_id) {
     output.push_back(static_cast<std::uint8_t>(value));
   }
-  output.push_back(payload.orientation_valid ? 1U : 0U);
-  output.push_back(payload.valid ? 1U : 0U);
-  output.push_back(payload.status);
-  output.push_back(payload.reserved);
-  return output;
+  output.push_back(payload.orientation_valid ? 1U : 0U);  // 标明orientation是否能用于首次姿态初始化。
+  output.push_back(payload.valid ? 1U : 0U);  // 标明整包IMU瞬时量是否有效。
+  output.push_back(payload.status);  // 写入传感器状态码。
+  output.push_back(payload.reserved);  // v1保留字节必须为0，为未来兼容扩展留位置。
+  return output;  // 完成固定332字节载荷。
 }
 
 PayloadDecodeResult<ImuPayload> decode_imu_payload(
@@ -740,12 +748,12 @@ PayloadDecodeResult<ImuPayload> decode_imu_payload(
       offset += sizeof(double);
     }
   };
-  read_values(result.value.orientation_xyzw);
-  read_values(result.value.orientation_covariance);
-  read_values(result.value.angular_velocity_rad_s);
-  read_values(result.value.angular_velocity_covariance);
-  read_values(result.value.linear_acceleration_m_s2);
-  read_values(result.value.linear_acceleration_covariance);
+  read_values(result.value.orientation_xyzw);  // 按编码顺序读取4个姿态分量。
+  read_values(result.value.orientation_covariance);  // 接着读取9个姿态协方差元素。
+  read_values(result.value.angular_velocity_rad_s);  // 接着读取3轴角速度。
+  read_values(result.value.angular_velocity_covariance);  // 接着读取9个角速度协方差元素。
+  read_values(result.value.linear_acceleration_m_s2);  // 接着读取3轴线加速度。
+  read_values(result.value.linear_acceleration_covariance);  // 最后读取9个线加速度协方差元素。
   // value遍历目标frame_id的32个字符槽并推进载荷游标。
   for (char& value : result.value.frame_id) {
     value = static_cast<char>(bytes[offset++]);
@@ -756,8 +764,8 @@ PayloadDecodeResult<ImuPayload> decode_imu_payload(
         ProtocolError::kInvalidBoolean,
         "IMU payload boolean must be zero or one");
   }
-  result.value.status = bytes[offset++];
-  result.value.reserved = bytes[offset];
+  result.value.status = bytes[offset++];  // 读取状态码并让游标前移到最后一个保留字节。
+  result.value.reserved = bytes[offset];  // 最后无需再递增offset，因为后面不再读取载荷。
   if (!finite_array(result.value.orientation_xyzw) ||
       !finite_array(result.value.orientation_covariance) ||
       !finite_array(result.value.angular_velocity_rad_s) ||
@@ -777,7 +785,7 @@ PayloadDecodeResult<ImuPayload> decode_imu_payload(
     return payload_failure<ImuPayload>(
         ProtocolError::kInvalidValue, "IMU payload contains invalid data");
   }
-  return result;
+  return result;  // error保持无错误，value包含独立的主机序IMU副本。
 }
 
 std::vector<std::uint8_t> encode_localization_payload(
@@ -786,20 +794,20 @@ std::vector<std::uint8_t> encode_localization_payload(
   require_localization_values(payload);
   // output按7个double、状态/有效位和能力位顺序累计64字节。
   std::vector<std::uint8_t> output;
-  output.reserve(kLocalizationPayloadSize);
-  append_double(output, payload.x);
-  append_double(output, payload.y);
-  append_double(output, payload.vx);
-  append_double(output, payload.vy);
-  append_double(output, payload.cov_xx);
-  append_double(output, payload.cov_xy);
-  append_double(output, payload.cov_yy);
-  output.push_back(static_cast<std::uint8_t>(payload.state));
-  output.push_back(payload.valid ? 1U : 0U);
-  output.push_back(payload.yaw_valid ? 1U : 0U);
-  output.push_back(payload.z_valid ? 1U : 0U);
-  append_u32(output, payload.capability_mask);
-  return output;
+  output.reserve(kLocalizationPayloadSize);  // 精确预留64字节定位载荷。
+  append_double(output, payload.x);  // 偏移0：相对参考节点的东向位置。
+  append_double(output, payload.y);  // 偏移8：相对参考节点的北向位置。
+  append_double(output, payload.vx);  // 偏移16：东向相对速度。
+  append_double(output, payload.vy);  // 偏移24：北向相对速度。
+  append_double(output, payload.cov_xx);  // 偏移32：x位置方差。
+  append_double(output, payload.cov_xy);  // 偏移40：x-y位置互协方差。
+  append_double(output, payload.cov_yy);  // 偏移48：y位置方差。
+  output.push_back(static_cast<std::uint8_t>(payload.state));  // 偏移56：强类型定位状态显式转为1字节线序值。
+  output.push_back(payload.valid ? 1U : 0U);  // 偏移57：整条定位结果是否可用。
+  output.push_back(payload.yaw_valid ? 1U : 0U);  // 偏移58：航向字段能力标志。
+  output.push_back(payload.z_valid ? 1U : 0U);  // 偏移59：高度字段能力标志。
+  append_u32(output, payload.capability_mask);  // 偏移60：算法当前支持能力的位掩码。
+  return output;  // 返回固定64字节载荷。
 }
 
 PayloadDecodeResult<LocalizationPayload> decode_localization_payload(
@@ -811,13 +819,13 @@ PayloadDecodeResult<LocalizationPayload> decode_localization_payload(
   }
   // result为按固定偏移恢复的定位载荷，成功前完成有限性、协方差和枚举检查。
   PayloadDecodeResult<LocalizationPayload> result{};
-  result.value.x = read_double(bytes, 0U);
-  result.value.y = read_double(bytes, 8U);
-  result.value.vx = read_double(bytes, 16U);
-  result.value.vy = read_double(bytes, 24U);
-  result.value.cov_xx = read_double(bytes, 32U);
-  result.value.cov_xy = read_double(bytes, 40U);
-  result.value.cov_yy = read_double(bytes, 48U);
+  result.value.x = read_double(bytes, 0U);  // 从偏移0恢复x位置。
+  result.value.y = read_double(bytes, 8U);  // 从偏移8恢复y位置。
+  result.value.vx = read_double(bytes, 16U);  // 从偏移16恢复x速度。
+  result.value.vy = read_double(bytes, 24U);  // 从偏移24恢复y速度。
+  result.value.cov_xx = read_double(bytes, 32U);  // 从偏移32恢复x方差。
+  result.value.cov_xy = read_double(bytes, 40U);  // 从偏移40恢复xy互协方差。
+  result.value.cov_yy = read_double(bytes, 48U);  // 从偏移48恢复y方差。
   // values按位置、速度和协方差字段排列；value逐项检查有限性。
   const double values[] = {
       result.value.x,      result.value.y,      result.value.vx,
@@ -840,7 +848,7 @@ PayloadDecodeResult<LocalizationPayload> decode_localization_payload(
         ProtocolError::kInvalidValue,
         "localization payload state is invalid");
   }
-  result.value.state = static_cast<LocalizationState>(bytes[56U]);
+  result.value.state = static_cast<LocalizationState>(bytes[56U]);  // 枚举范围已检查，现可安全恢复强类型枚举。
   if (!decode_boolean(bytes[57U], result.value.valid) ||
       !decode_boolean(bytes[58U], result.value.yaw_valid) ||
       !decode_boolean(bytes[59U], result.value.z_valid)) {
@@ -848,8 +856,8 @@ PayloadDecodeResult<LocalizationPayload> decode_localization_payload(
         ProtocolError::kInvalidBoolean,
         "localization payload boolean must be zero or one");
   }
-  result.value.capability_mask = read_u32(bytes, 60U);
-  return result;
+  result.value.capability_mask = read_u32(bytes, 60U);  // 恢复最后4字节能力位图。
+  return result;  // 成功结果包含经过有限性和半正定检查的定位数据。
 }
 
 std::vector<std::uint8_t> encode_network_payload(
@@ -857,16 +865,16 @@ std::vector<std::uint8_t> encode_network_payload(
   require_network_values(payload);
   // output按计数、布尔、状态、保留位和原因位图累计20字节。
   std::vector<std::uint8_t> output;
-  output.reserve(kNetworkPayloadSize);
-  append_u32(output, payload.node_count);
-  append_u32(output, payload.reachable_node_count);
-  append_u32(output, payload.active_edge_count);
-  output.push_back(payload.connected ? 1U : 0U);
-  output.push_back(payload.observable ? 1U : 0U);
-  output.push_back(static_cast<std::uint8_t>(payload.state));
-  output.push_back(payload.reserved);
-  append_u32(output, payload.reason_mask);
-  return output;
+  output.reserve(kNetworkPayloadSize);  // 精确预留20字节网络载荷。
+  append_u32(output, payload.node_count);  // 偏移0：配置的节点总数。
+  append_u32(output, payload.reachable_node_count);  // 偏移4：从参考节点当前可达的节点数。
+  append_u32(output, payload.active_edge_count);  // 偏移8：未超时且质量允许的无向边数。
+  output.push_back(payload.connected ? 1U : 0U);  // 偏移12：是否所有节点均可达。
+  output.push_back(payload.observable ? 1U : 0U);  // 偏移13：当前协同几何是否满足可观判据。
+  output.push_back(static_cast<std::uint8_t>(payload.state));  // 偏移14：综合定位状态。
+  output.push_back(payload.reserved);  // 偏移15：v1保留位必须为0。
+  append_u32(output, payload.reason_mask);  // 偏移16：断连、不可观或过期等可组合原因位。
+  return output;  // 返回固定20字节载荷。
 }
 
 PayloadDecodeResult<NetworkPayload> decode_network_payload(
@@ -878,9 +886,9 @@ PayloadDecodeResult<NetworkPayload> decode_network_payload(
   }
   // result为固定偏移恢复的网络载荷，返回前验证布尔、状态、保留位和拓扑。
   PayloadDecodeResult<NetworkPayload> result{};
-  result.value.node_count = read_u32(bytes, 0U);
-  result.value.reachable_node_count = read_u32(bytes, 4U);
-  result.value.active_edge_count = read_u32(bytes, 8U);
+  result.value.node_count = read_u32(bytes, 0U);  // 恢复节点总数。
+  result.value.reachable_node_count = read_u32(bytes, 4U);  // 恢复可达节点数。
+  result.value.active_edge_count = read_u32(bytes, 8U);  // 恢复活动边数。
   if (!decode_boolean(bytes[12U], result.value.connected) ||
       !decode_boolean(bytes[13U], result.value.observable)) {
     return payload_failure<NetworkPayload>(
@@ -892,19 +900,19 @@ PayloadDecodeResult<NetworkPayload> decode_network_payload(
         ProtocolError::kInvalidValue,
         "network payload state is invalid");
   }
-  result.value.state = static_cast<LocalizationState>(bytes[14U]);
+  result.value.state = static_cast<LocalizationState>(bytes[14U]);  // 范围检查后恢复强类型定位状态。
   if (bytes[15U] != 0U) {
     return payload_failure<NetworkPayload>(
         ProtocolError::kInvalidReserved,
         "network reserved byte must be zero");
   }
-  result.value.reason_mask = read_u32(bytes, 16U);
+  result.value.reason_mask = read_u32(bytes, 16U);  // 恢复可同时置位的网络异常原因。
   if (!valid_network_topology(result.value)) {
     return payload_failure<NetworkPayload>(
         ProtocolError::kInvalidValue,
         "network payload topology is inconsistent");
   }
-  return result;
+  return result;  // 拓扑计数和布尔逻辑一致时才返回成功。
 }
 
 std::vector<std::uint8_t> encode_observation_payload(
@@ -913,25 +921,25 @@ std::vector<std::uint8_t> encode_observation_payload(
   require_observation_values(payload);
   // output按窗口、六个计数、四个double和尾部状态字段累计80字节。
   std::vector<std::uint8_t> output;
-  output.reserve(kObservationPayloadSize);
-  append_u64(output, payload.window_start_ns);
-  append_u64(output, payload.window_end_ns);
-  append_u32(output, payload.expected_count);
-  append_u32(output, payload.received_count);
-  append_u32(output, payload.valid_count);
-  append_u32(output, payload.nlos_count);
-  append_u32(output, payload.residual_rejected_count);
-  append_u32(output, payload.dropped_count);
-  append_double(output, payload.nlos_ratio);
-  append_double(output, payload.valid_ratio);
-  append_double(output, payload.actual_rate_hz);
-  append_double(output, payload.covariance_scale);
-  output.push_back(static_cast<std::uint8_t>(payload.state));
-  output.push_back(static_cast<std::uint8_t>(payload.action));
-  output.push_back(payload.input_overflow ? 1U : 0U);
-  output.push_back(payload.reserved);
-  append_u32(output, payload.reason_mask);
-  return output;
+  output.reserve(kObservationPayloadSize);  // 精确预留80字节边质量载荷。
+  append_u64(output, payload.window_start_ns);  // 偏移0：滑动窗口起点。
+  append_u64(output, payload.window_end_ns);  // 偏移8：滑动窗口终点。
+  append_u32(output, payload.expected_count);  // 偏移16：按名义频率预期包数。
+  append_u32(output, payload.received_count);  // 偏移20：实际收到包数。
+  append_u32(output, payload.valid_count);  // 偏移24：有效包数。
+  append_u32(output, payload.nlos_count);  // 偏移28：NLOS包数。
+  append_u32(output, payload.residual_rejected_count);  // 偏移32：被NIS残差门限拒绝的包数。
+  append_u32(output, payload.dropped_count);  // 偏移36：去重、乱序、超时等丢弃包数。
+  append_double(output, payload.nlos_ratio);  // 偏移40：NLOS比例。
+  append_double(output, payload.valid_ratio);  // 偏移48：有效率。
+  append_double(output, payload.actual_rate_hz);  // 偏移56：实际接收频率。
+  append_double(output, payload.covariance_scale);  // 偏移64：融合时采用的方差倍率。
+  output.push_back(static_cast<std::uint8_t>(payload.state));  // 偏移72：长期观测质量状态。
+  output.push_back(static_cast<std::uint8_t>(payload.action));  // 偏移73：当前融合动作。
+  output.push_back(payload.input_overflow ? 1U : 0U);  // 偏移74：统计缓存是否溢出。
+  output.push_back(payload.reserved);  // 偏移75：v1保留字节。
+  append_u32(output, payload.reason_mask);  // 偏移76：退化原因位图。
+  return output;  // 返回固定80字节载荷。
 }
 
 PayloadDecodeResult<ObservationPayload> decode_observation_payload(
@@ -943,18 +951,18 @@ PayloadDecodeResult<ObservationPayload> decode_observation_payload(
   }
   // result为固定偏移恢复的边质量载荷，成功前校验所有比率、枚举和计数关系。
   PayloadDecodeResult<ObservationPayload> result{};
-  result.value.window_start_ns = read_u64(bytes, 0U);
-  result.value.window_end_ns = read_u64(bytes, 8U);
-  result.value.expected_count = read_u32(bytes, 16U);
-  result.value.received_count = read_u32(bytes, 20U);
-  result.value.valid_count = read_u32(bytes, 24U);
-  result.value.nlos_count = read_u32(bytes, 28U);
-  result.value.residual_rejected_count = read_u32(bytes, 32U);
-  result.value.dropped_count = read_u32(bytes, 36U);
-  result.value.nlos_ratio = read_double(bytes, 40U);
-  result.value.valid_ratio = read_double(bytes, 48U);
-  result.value.actual_rate_hz = read_double(bytes, 56U);
-  result.value.covariance_scale = read_double(bytes, 64U);
+  result.value.window_start_ns = read_u64(bytes, 0U);  // 恢复滑窗起点。
+  result.value.window_end_ns = read_u64(bytes, 8U);  // 恢复滑窗终点。
+  result.value.expected_count = read_u32(bytes, 16U);  // 恢复预期包数。
+  result.value.received_count = read_u32(bytes, 20U);  // 恢复实际收包数。
+  result.value.valid_count = read_u32(bytes, 24U);  // 恢复有效包数。
+  result.value.nlos_count = read_u32(bytes, 28U);  // 恢复NLOS包数。
+  result.value.residual_rejected_count = read_u32(bytes, 32U);  // 恢复残差拒绝数。
+  result.value.dropped_count = read_u32(bytes, 36U);  // 恢复其他丢弃数。
+  result.value.nlos_ratio = read_double(bytes, 40U);  // 恢复NLOS比例。
+  result.value.valid_ratio = read_double(bytes, 48U);  // 恢复有效率。
+  result.value.actual_rate_hz = read_double(bytes, 56U);  // 恢复实际频率。
+  result.value.covariance_scale = read_double(bytes, 64U);  // 恢复方差倍率。
   if (!finite(result.value.nlos_ratio) ||
       !finite(result.value.valid_ratio) ||
       !finite(result.value.actual_rate_hz) ||
@@ -982,8 +990,8 @@ PayloadDecodeResult<ObservationPayload> decode_observation_payload(
         ProtocolError::kInvalidValue,
         "observation payload enum is invalid");
   }
-  result.value.state = static_cast<ObservationState>(bytes[72U]);
-  result.value.action = static_cast<FusionAction>(bytes[73U]);
+  result.value.state = static_cast<ObservationState>(bytes[72U]);  // 范围验证后恢复质量状态枚举。
+  result.value.action = static_cast<FusionAction>(bytes[73U]);  // 范围验证后恢复融合动作枚举。
   if (!decode_boolean(bytes[74U], result.value.input_overflow)) {
     return payload_failure<ObservationPayload>(
         ProtocolError::kInvalidBoolean,
@@ -994,8 +1002,8 @@ PayloadDecodeResult<ObservationPayload> decode_observation_payload(
         ProtocolError::kInvalidReserved,
         "observation reserved byte must be zero");
   }
-  result.value.reason_mask = read_u32(bytes, 76U);
-  return result;
+  result.value.reason_mask = read_u32(bytes, 76U);  // 恢复最后的退化原因位图。
+  return result;  // 成功结果已通过比例、计数关系、枚举和保留位检查。
 }
 
 std::vector<std::uint8_t> encode_alert_payload(
@@ -1004,21 +1012,21 @@ std::vector<std::uint8_t> encode_alert_payload(
   require_alert_values(payload);
   // output按告警标识、节点/边和首次/最近时间累计40字节。
   std::vector<std::uint8_t> output;
-  output.reserve(kAlertPayloadSize);
-  append_u32(output, static_cast<std::uint32_t>(payload.alert_code));
-  output.push_back(static_cast<std::uint8_t>(payload.level));
-  output.push_back(static_cast<std::uint8_t>(payload.lifecycle));
-  output.push_back(static_cast<std::uint8_t>(payload.source));
-  output.push_back(payload.reserved0);
-  append_u32(output, payload.reason_mask);
-  append_u16(output, payload.node_id);
-  append_u16(output, payload.from_node);
-  append_u16(output, payload.to_node);
-  append_u16(output, payload.reserved1);
-  append_u64(output, payload.first_timestamp_ns);
-  append_u64(output, payload.last_timestamp_ns);
-  append_u32(output, payload.reserved2);
-  return output;
+  output.reserve(kAlertPayloadSize);  // 精确预留40字节告警载荷。
+  append_u32(output, static_cast<std::uint32_t>(payload.alert_code));  // 偏移0：稳定告警编号，GCS据此显示文本。
+  output.push_back(static_cast<std::uint8_t>(payload.level));  // 偏移4：提示、警告、错误或严重等级。
+  output.push_back(static_cast<std::uint8_t>(payload.lifecycle));  // 偏移5：告警激活、持续或清除阶段。
+  output.push_back(static_cast<std::uint8_t>(payload.source));  // 偏移6：告警来自算法、输入还是网络。
+  output.push_back(payload.reserved0);  // 偏移7：v1保留字节。
+  append_u32(output, payload.reason_mask);  // 偏移8：同一告警可携带多个原因位。
+  append_u16(output, payload.node_id);  // 偏移12：单节点告警对象；不适用时按协议填0。
+  append_u16(output, payload.from_node);  // 偏移14：边告警起点。
+  append_u16(output, payload.to_node);  // 偏移16：边告警终点。
+  append_u16(output, payload.reserved1);  // 偏移18：用于对齐并保留扩展空间。
+  append_u64(output, payload.first_timestamp_ns);  // 偏移20：本轮告警首次出现时刻。
+  append_u64(output, payload.last_timestamp_ns);  // 偏移28：最近一次仍成立或清除的时刻。
+  append_u32(output, payload.reserved2);  // 偏移36：v1末尾保留字段。
+  return output;  // 返回固定40字节载荷。
 }
 
 PayloadDecodeResult<AlertPayload> decode_alert_payload(
@@ -1030,19 +1038,19 @@ PayloadDecodeResult<AlertPayload> decode_alert_payload(
   }
   // result为固定偏移恢复的告警，返回前检查保留位和生命周期语义。
   PayloadDecodeResult<AlertPayload> result{};
-  result.value.alert_code = static_cast<AlertCode>(read_u32(bytes, 0U));
-  result.value.level = static_cast<AlertLevel>(bytes[4U]);
-  result.value.lifecycle = static_cast<AlertLifecycle>(bytes[5U]);
-  result.value.source = static_cast<AlertSource>(bytes[6U]);
-  result.value.reserved0 = bytes[7U];
-  result.value.reason_mask = read_u32(bytes, 8U);
-  result.value.node_id = read_u16(bytes, 12U);
-  result.value.from_node = read_u16(bytes, 14U);
-  result.value.to_node = read_u16(bytes, 16U);
-  result.value.reserved1 = read_u16(bytes, 18U);
-  result.value.first_timestamp_ns = read_u64(bytes, 20U);
-  result.value.last_timestamp_ns = read_u64(bytes, 28U);
-  result.value.reserved2 = read_u32(bytes, 36U);
+  result.value.alert_code = static_cast<AlertCode>(read_u32(bytes, 0U));  // 恢复32位告警编号为强类型枚举。
+  result.value.level = static_cast<AlertLevel>(bytes[4U]);  // 恢复告警等级，valid_alert稍后验证范围。
+  result.value.lifecycle = static_cast<AlertLifecycle>(bytes[5U]);  // 恢复告警生命周期。
+  result.value.source = static_cast<AlertSource>(bytes[6U]);  // 恢复告警来源。
+  result.value.reserved0 = bytes[7U];  // 读取保留位是为了明确检查其必须为0。
+  result.value.reason_mask = read_u32(bytes, 8U);  // 恢复原因位图。
+  result.value.node_id = read_u16(bytes, 12U);  // 恢复单节点对象编号。
+  result.value.from_node = read_u16(bytes, 14U);  // 恢复边起点编号。
+  result.value.to_node = read_u16(bytes, 16U);  // 恢复边终点编号。
+  result.value.reserved1 = read_u16(bytes, 18U);  // 恢复并随后验证中间保留字段。
+  result.value.first_timestamp_ns = read_u64(bytes, 20U);  // 恢复首次告警时间。
+  result.value.last_timestamp_ns = read_u64(bytes, 28U);  // 恢复最近告警时间。
+  result.value.reserved2 = read_u32(bytes, 36U);  // 恢复并随后验证末尾保留字段。
   if (result.value.reserved0 != 0U || result.value.reserved1 != 0U ||
       result.value.reserved2 != 0U) {
     return payload_failure<AlertPayload>(
@@ -1053,7 +1061,7 @@ PayloadDecodeResult<AlertPayload> decode_alert_payload(
     return payload_failure<AlertPayload>(
         ProtocolError::kInvalidValue, "alert payload is invalid");
   }
-  return result;
+  return result;  // 只有枚举、时间和生命周期语义均一致才成功。
 }
 
 std::vector<std::uint8_t> encode_algorithm_status_payload(
@@ -1061,18 +1069,18 @@ std::vector<std::uint8_t> encode_algorithm_status_payload(
   require_algorithm_status_values(payload);
   // output按版本、模式、累计计数和运行时长累计48字节。
   std::vector<std::uint8_t> output;
-  output.reserve(kAlgorithmStatusPayloadSize);
-  append_u32(output, payload.abi_version);
-  append_u32(output, payload.software_version_packed);
-  output.push_back(static_cast<std::uint8_t>(payload.mode));
-  output.push_back(static_cast<std::uint8_t>(payload.run_state));
-  append_u16(output, payload.reserved0);
-  append_u32(output, payload.reserved1);
-  append_u64(output, payload.accepted_ranges);
-  append_u64(output, payload.rejected_ranges);
-  append_u64(output, payload.protocol_errors);
-  append_u64(output, payload.uptime_ns);
-  return output;
+  output.reserve(kAlgorithmStatusPayloadSize);  // 精确预留48字节进程状态载荷。
+  append_u32(output, payload.abi_version);  // 偏移0：算法库C ABI版本。
+  append_u32(output, payload.software_version_packed);  // 偏移4：打包后的主/次/补丁软件版本。
+  output.push_back(static_cast<std::uint8_t>(payload.mode));  // 偏移8：当前二维UWB或IMU+UWB模式。
+  output.push_back(static_cast<std::uint8_t>(payload.run_state));  // 偏移9：启动、运行、退化或停止状态。
+  append_u16(output, payload.reserved0);  // 偏移10：v1保留16位字段。
+  append_u32(output, payload.reserved1);  // 偏移12：v1保留32位字段。
+  append_u64(output, payload.accepted_ranges);  // 偏移16：累计接受的测距包数。
+  append_u64(output, payload.rejected_ranges);  // 偏移24：累计拒绝的测距包数。
+  append_u64(output, payload.protocol_errors);  // 偏移32：累计协议解析错误数。
+  append_u64(output, payload.uptime_ns);  // 偏移40：进程运行时长。
+  return output;  // 返回固定48字节载荷。
 }
 
 PayloadDecodeResult<AlgorithmStatusPayload>
@@ -1084,16 +1092,16 @@ decode_algorithm_status_payload(const std::vector<std::uint8_t>& bytes) {
   }
   // result为固定偏移恢复的进程状态，返回前检查保留位、ABI和枚举。
   PayloadDecodeResult<AlgorithmStatusPayload> result{};
-  result.value.abi_version = read_u32(bytes, 0U);
-  result.value.software_version_packed = read_u32(bytes, 4U);
-  result.value.mode = static_cast<AlgorithmMode>(bytes[8U]);
-  result.value.run_state = static_cast<AlgorithmRunState>(bytes[9U]);
-  result.value.reserved0 = read_u16(bytes, 10U);
-  result.value.reserved1 = read_u32(bytes, 12U);
-  result.value.accepted_ranges = read_u64(bytes, 16U);
-  result.value.rejected_ranges = read_u64(bytes, 24U);
-  result.value.protocol_errors = read_u64(bytes, 32U);
-  result.value.uptime_ns = read_u64(bytes, 40U);
+  result.value.abi_version = read_u32(bytes, 0U);  // 恢复算法库ABI版本。
+  result.value.software_version_packed = read_u32(bytes, 4U);  // 恢复打包软件版本。
+  result.value.mode = static_cast<AlgorithmMode>(bytes[8U]);  // 恢复运行模式，稍后验证枚举范围。
+  result.value.run_state = static_cast<AlgorithmRunState>(bytes[9U]);  // 恢复进程运行状态。
+  result.value.reserved0 = read_u16(bytes, 10U);  // 读取保留字段以便拒绝非零扩展数据。
+  result.value.reserved1 = read_u32(bytes, 12U);  // 读取第二个保留字段。
+  result.value.accepted_ranges = read_u64(bytes, 16U);  // 恢复累计接受量。
+  result.value.rejected_ranges = read_u64(bytes, 24U);  // 恢复累计拒绝量。
+  result.value.protocol_errors = read_u64(bytes, 32U);  // 恢复累计协议错误量。
+  result.value.uptime_ns = read_u64(bytes, 40U);  // 恢复运行时长。
   if (result.value.reserved0 != 0U || result.value.reserved1 != 0U) {
     return payload_failure<AlgorithmStatusPayload>(
         ProtocolError::kInvalidReserved,
@@ -1104,7 +1112,7 @@ decode_algorithm_status_payload(const std::vector<std::uint8_t>& bytes) {
         ProtocolError::kInvalidValue,
         "algorithm status payload is invalid");
   }
-  return result;
+  return result;  // ABI、模式、运行状态和保留字段全部合法后返回成功。
 }
 
 }  // namespace zju::coop::protocol

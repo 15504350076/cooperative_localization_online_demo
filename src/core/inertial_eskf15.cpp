@@ -1,6 +1,11 @@
 // 模块实现：使用ROS 2 Imu可提供的瞬时角速度和线加速度完成单节点15维ESKF名义传播。
 // 关键约定：导航系ENU、车体系FLU、加速度按比力解释；采用相邻两帧中值积分而非调用方预积分，
 // 同时生成15维误差转移Phi和离散噪声Qd，供多平台联合协方差传播。
+//
+// 初学者可把push_imu()理解为七步流水线：
+// 校验数据 → 首帧建基准/计算dt → 去零偏 → 前后帧取平均 → 更新p/v/q
+// → 计算误差传播Phi和噪声Qd → 所有结果正常后一次性提交。
+// 代码先保存旧状态，任何中途数值失败都会恢复旧值，这就是“事务式回滚”。
 #include "inertial_eskf15.hpp"
 
 #include <algorithm>
@@ -13,6 +18,7 @@
 namespace zju::coop {
 namespace {
 
+// 15个误差量在矩阵中连续排列为5个三维块；以下常量不是物理量，只是各块的起始下标。
 constexpr std::size_t kPosition = 0U;   // 15维误差状态中δp三维块的起始下标。
 constexpr std::size_t kVelocity = 3U;   // 15维误差状态中δv三维块的起始下标。
 constexpr std::size_t kAttitude = 6U;   // 15维误差状态中δθ三维块的起始下标。
@@ -33,6 +39,7 @@ Vec3 to_vec3(const std::array<double, 3>& value) {
 bool finite_array(const std::array<double, 3>& value) {
   // Lambda参数`item`是当前接受有限值检查的单个三轴分量。
   return std::all_of(value.begin(), value.end(),
+                     // `[]`为空捕获Lambda；all_of仅在每个item都让Lambda返回true时才为true。
                      [](double item) { return std::isfinite(item); });
 }
 
@@ -206,6 +213,7 @@ bool finite_matrix(const DenseMatrix& matrix) {
 
 InertialEskf15::InertialEskf15(InertialNodeInitialization initialization,
                                InertialConfig config)
+    // std::move允许成员接管按值参数内部资源；这里主要避免复制expected_frame_id字符串。
     : initialization_(std::move(initialization)),
       config_(std::move(config)) {
   // 构造阶段一次性拒绝不完整参数，运行线程不再回退到隐藏默认值。
@@ -239,6 +247,7 @@ InertialEskf15::InertialEskf15(InertialNodeInitialization initialization,
 }
 
 bool InertialEskf15::structurally_valid(const ImuPacket& packet) const {
+  // 一条return集中表达入口约束；`&&`从左到右短路，前项失败后不再检查后项。
   return packet.valid && packet.receive_timestamp_ns != 0U &&
          packet.status <= 2U && finite_array(packet.angular_velocity_rad_s) &&
          finite_array(packet.linear_acceleration_m_s2);
@@ -248,10 +257,12 @@ bool InertialEskf15::frame_matches(const ImuPacket& packet) const {
   // `terminator`指向固定长frame_id中的首个NUL，用于界定有效字符串长度。
   const auto terminator =
       std::find(packet.frame_id.begin(), packet.frame_id.end(), '\0');
+  // find返回end表示32字节内没有NUL终止符，不能安全构造C字符串语义。
   if (terminator == packet.frame_id.end()) {
     return false;
   }
   // `frame`复制NUL之前的ROS 2坐标系标识，随后与预期FLU帧名比较。
+  // 迭代器区间构造函数复制[begin,terminator)字符，不把'\0'本身放进std::string。
   const std::string frame(packet.frame_id.begin(), terminator);
   return frame == config_.expected_frame_id;
 }
@@ -300,6 +311,7 @@ ImuProcessingResult InertialEskf15::push_imu(const ImuPacket& packet) {
         state_.orientation_b_to_n = orientation;
       }
     }
+    // 结构体赋值会复制本帧全部数组和字段，传播器自持上一帧，不依赖调用者内存。
     previous_ = packet;
     has_previous_ = true;
     result.disposition = ImuDisposition::kBaselineEstablished;
@@ -311,6 +323,7 @@ ImuProcessingResult InertialEskf15::push_imu(const ImuPacket& packet) {
   const double dt = static_cast<double>(packet.timestamp_ns -
                                         previous_.timestamp_ns) *
                     1.0e-9;
+  // static_cast显式把uint64纳秒差转换成double，再乘1e-9换算为秒。
   result.dt_s = dt;
   if (!std::isfinite(dt) || dt < config_.min_imu_dt_s ||
       dt > config_.max_imu_dt_s) {
@@ -349,12 +362,14 @@ ImuProcessingResult InertialEskf15::push_imu(const ImuPacket& packet) {
   // `raw_steps`是尚未转换为整数的向上取整子步数，用于先做范围检查。
   const double raw_steps =
       std::ceil(dt / config_.max_propagation_substep_s);
+  // ceil向上取整，保证每个实际子步不大于配置上限。
   if (!std::isfinite(raw_steps) || raw_steps < 1.0 ||
       raw_steps > static_cast<double>(std::numeric_limits<std::uint32_t>::max())) {
     result.disposition = ImuDisposition::kNumericalFailure;
     return result;
   }
   // `steps`是本区间实际执行的等长传播子步数；`step_dt`是每子步时长，单位s。
+  // 已先检查范围和有限性，因此可安全窄化为uint32_t；auto推导steps就是uint32_t。
   const auto steps = static_cast<std::uint32_t>(raw_steps);
   const double step_dt = dt / static_cast<double>(steps);
   // `use_gyro_message_covariance`和`use_accel_message_covariance`分别表示两端帧的
@@ -379,10 +394,14 @@ ImuProcessingResult InertialEskf15::push_imu(const ImuPacket& packet) {
 
   // `step`遍历当前合法IMU区间内的等长传播子步。
   for (std::uint32_t step = 0U; step < steps; ++step) {
+    // 角速度(rad/s)乘时间(s)得到本子步的旋转向量(rad)。
+    // 该向量还不能直接当四元数使用，Quaternion::exp会把它转换成增量旋转。
     // `delta_theta`是本子步由车体FLU中值角速度形成的旋转向量，单位rad。
     const Vec3 delta_theta = omega_mid * step_dt;
     // 用中点姿态把车体系比力旋转到ENU，可减少姿态变化对速度积分的偏差。
     // `half_rotation`是半子步增量姿态；`mid_orientation`是归一化前的子步中点q_b_to_n。
+    // exp(delta_theta/2)得到“半个子步”的旋转，用它构造中点姿态来旋转比力；
+    // 末尾exp(delta_theta)才把完整子步旋转乘到正式姿态上。
     Quaternion half_rotation = Quaternion::exp(delta_theta * 0.5);
     Quaternion mid_orientation = state_.orientation_b_to_n * half_rotation;
     if (!mid_orientation.normalize()) {
@@ -399,6 +418,7 @@ ImuProcessingResult InertialEskf15::push_imu(const ImuPacket& packet) {
                           state_.velocity_n_mps * step_dt +
                           acceleration_n * (0.5 * step_dt * step_dt);
     state_.velocity_n_mps = state_.velocity_n_mps + acceleration_n * step_dt;
+    // 四元数乘法表示旋转复合：旧的b到n姿态右乘本子步车体系增量，得到新姿态。
     state_.orientation_b_to_n =
         state_.orientation_b_to_n * Quaternion::exp(delta_theta);
     if (!state_.orientation_b_to_n.normalize()) {
@@ -421,6 +441,8 @@ ImuProcessingResult InertialEskf15::push_imu(const ImuPacket& packet) {
     add_identity_block(f, kAttitude, kGyroBias, -1.0);
 
     // 阶段6：一阶离散化连续误差动力学，并累计整个IMU区间的Phi/Qd。
+    // 连续误差方程是δx_dot=F*δx。这里用一阶离散近似Phi≈I+F*dt，
+    // 注意它不同于上面的Quaternion::exp：前者近似传播误差，后者精确表达有限三维旋转。
     // `phi_step`是I+F*step_dt得到的15×15单子步状态转移。
     DenseMatrix phi_step = DenseMatrix::identity(kInertialErrorStateSize);
     // `row`遍历新误差状态分量，`col`遍历旧误差状态分量。
@@ -487,12 +509,14 @@ ImuProcessingResult InertialEskf15::push_imu(const ImuPacket& packet) {
   previous_ = packet;
   result.disposition = ImuDisposition::kPropagated;
   result.propagated = true;
+  // move把临时矩阵内部vector转交给返回结构，避免复制15×15元素。
   result.phi = std::move(phi_total);
   result.qd = q_total.symmetrized();
   return result;
 }
 
 const InertialNominalState& InertialEskf15::state() const noexcept {
+  // 返回const引用：调用者读取同一对象而不复制，也不能通过该引用修改内部状态。
   return state_;
 }
 
@@ -505,9 +529,11 @@ std::uint32_t InertialEskf15::node_id() const noexcept {
   return initialization_.node_id;
 }
 
+// 单行查询直接返回布尔成员，不执行预测或修改状态。
 bool InertialEskf15::has_timebase() const noexcept { return has_previous_; }
 
 std::uint64_t InertialEskf15::timestamp_ns() const noexcept {
+  // 三目运算避免在没有上一帧时把previous_默认字段误解为有效时间。
   return has_previous_ ? previous_.timestamp_ns : 0U;
 }
 
@@ -516,6 +542,7 @@ bool InertialEskf15::inject_error(
   // 测距更新得到误差状态：平移/速度/零偏直接相加，姿态用小角度右乘注入。
   // Lambda参数`value`依次检查δp/δv/δθ/δbg/δba的15个候选分量。
   if (!std::all_of(error.begin(), error.end(),
+                   // 每个误差分量都必须是有限double，任一NaN/Inf立即返回false。
                    [](double value) { return std::isfinite(value); })) {
     return false;
   }
@@ -528,6 +555,7 @@ bool InertialEskf15::inject_error(
       candidate.velocity_n_mps + Vec3{error[3], error[4], error[5]};
   candidate.orientation_b_to_n =
       candidate.orientation_b_to_n *
+      // 花括号临时构造Vec3{δθx,δθy,δθz}，exp再将其变成右乘增量四元数。
       Quaternion::exp({error[6], error[7], error[8]});
   candidate.gyro_bias_rad_s =
       candidate.gyro_bias_rad_s + Vec3{error[9], error[10], error[11]};

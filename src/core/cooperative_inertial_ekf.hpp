@@ -1,6 +1,13 @@
 // 模块职责：在各节点独立IMU名义状态之上维护15N联合协方差，并融合节点间测距。
 // 关键设计：节点编号可以不连续，状态块顺序由初始化数组确定；交叉协方差不能丢弃，
 // 否则一次平台间测距无法把约束正确传播到协同网络中的其他相关节点。
+//
+// 初学者阅读提示：
+// - N辆车各有15维误差，因此联合协方差是15N×15N；对角块描述单车不确定度，
+//   非对角块描述车辆之间“误差是否一起变化”的相关性。
+// - 每车IMU只直接传播本车名义状态，但与本车相关的协方差行列也必须一起传播。
+// - 一条测距同时涉及两车位置，Kalman增益再借助交叉协方差把修正传给相关状态。
+// 建议先读对应测试，再进入update_range()中的大矩阵计算。
 #pragma once
 
 #include "core/dense_matrix.hpp"
@@ -65,13 +72,17 @@ class CooperativeInertialEkf {
   /** `node_id`指定要查询的已初始化平台，未知编号抛出异常。 */
   [[nodiscard]] const InertialNominalState& state(
       std::uint32_t node_id) const;
+  /** 返回15N联合协方差只读引用，避免复制大矩阵。 */
   [[nodiscard]] const DenseMatrix& covariance() const noexcept;
+  /** 返回联合误差状态维数15N，不是名义状态对象数量。 */
   [[nodiscard]] std::size_t state_dimension() const noexcept;
+  /** 返回与15维状态块顺序一致的节点编号vector只读引用。 */
   [[nodiscard]] const std::vector<std::uint32_t>& node_ids() const noexcept;
 
  private:
   /** `covariance`为待检查有限值与对角下限的15N×15N联合协方差候选。 */
   [[nodiscard]] bool valid_covariance(const DenseMatrix& covariance) const;
+  /** 遍历各节点传播器并返回最大的已接纳IMU时间。 */
   [[nodiscard]] std::uint64_t latest_timestamp_ns() const noexcept;
 
   CooperativeInertialConfig config_;  ///< 构造后固定的参考节点、NIS门限和资源上限。

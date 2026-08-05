@@ -1,6 +1,12 @@
 // 模块职责：提供小规模滤波协方差和刚度矩阵所需的最小稠密矩阵运算。
 // 模块边界：不追求通用线性代数功能，所有维度、索引和有限值错误均显式失败，
 // 从而使算法库在Windows与RK3588上保持一致且不引入第三方矩阵库ABI。
+//
+// 初学者阅读提示：
+// 1. 矩阵元素实际连续保存在std::vector<double>中，operator(row,col)负责把二维下标换成一维下标。
+// 2. “行主序”表示先存完第0行，再存第1行；位置(row,col)对应row*列数+col。
+// 3. class把数据和操作放在一起；public是调用方能用的接口，private是类自己维护的实现细节。
+// 4. 本类故意功能很少，只实现当前滤波器确实需要的乘法、转置、对称化和数值秩。
 #pragma once
 
 #include <cstddef>
@@ -21,7 +27,9 @@ class DenseMatrix {
    */
   DenseMatrix(std::size_t rows, std::size_t cols, double value = 0.0);
 
+  /** 返回固定行数；const不修改对象，noexcept承诺不抛异常。 */
   [[nodiscard]] std::size_t rows() const noexcept;
+  /** 返回固定列数；std::size_t是用于数组大小和下标的无符号整数类型。 */
   [[nodiscard]] std::size_t cols() const noexcept;
 
   /** `row`为待访问的矩阵行号，`col`为列号，二者均从0开始。 */
@@ -31,6 +39,7 @@ class DenseMatrix {
 
   /** `size`同时指定单位矩阵的行数和列数。 */
   [[nodiscard]] static DenseMatrix identity(std::size_t size);
+  /** 返回新矩阵Aᵀ，不修改当前矩阵；返回值优化通常会省掉临时复制。 */
   [[nodiscard]] DenseMatrix transpose() const;
   /** 消除浮点乘加造成的微小非对称；不能修复本身非正定的协方差。 */
   [[nodiscard]] DenseMatrix symmetrized() const;

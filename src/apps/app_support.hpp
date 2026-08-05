@@ -1,6 +1,14 @@
 // 模块职责：封装在线/回放程序共用的C ABI会话，并把算法快照转换为临时演示遥测。
 // AlgorithmSession管理句柄生命周期，TelemetryEncoder维护告警激活/恢复状态；
 // 本层不实现滤波算法，也不把临时ZJCL协议带入核心库。
+//
+// C++初学者阅读提示：
+// 1. AlgorithmSession是C ABI的C++包装器：构造时create，析构时destroy，调用者不再手工管理句柄。
+// 2. push_*把一条输入交给算法；step在同一时刻取出定位、观测和网络状态的完整快照。
+// 3. TelemetryEncoder把快照变成GCS演示协议帧；它不修改滤波状态。
+// 4. 禁止复制会话对象，是为了避免两个对象同时销毁同一个底层handle。
+// 5. `~Class()`是析构函数，作用域结束时自动调用；`Class(const Class&)=delete`
+//    禁止复制；`std::vector`负责变长输出缓冲的内存分配与释放。
 #pragma once
 
 #include "config/ini_config.hpp"

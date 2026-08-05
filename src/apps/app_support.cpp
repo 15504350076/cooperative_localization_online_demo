@@ -1,6 +1,12 @@
 // 模块实现：把强类型INI配置转换为C ABI初始化结构，并将算法输出编码为临时遥测帧。
 // 关键原则：会话创建失败立即释放资源；step先查询数组容量再填充；告警按激活/恢复成对输出，
 // 使在线运行与日志回放复用完全相同的算法调用和GCS输出口径。
+//
+// C++初学者建议先读AlgorithmSession构造函数和step：
+// 构造函数把INI配置逐字段填入C结构并创建句柄；step先用空缓冲查询元素数量，
+// 再创建足够大的vector执行第二次调用。这是C API返回变长数组时常见的“两阶段读取”方式。
+// `throw std::runtime_error`把C错误码提升为C++异常；构造失败时已创建的局部vector会自动释放；
+// 析构函数中的destroy不抛异常，保证RAII清理不会在退出路径制造第二个错误。
 #include "apps/app_support.hpp"
 
 #include "zju_coop/types.hpp"
@@ -62,14 +68,14 @@ protocol::Frame output_frame(protocol::MessageType type,
                              std::uint16_t target_node,
                              std::vector<std::uint8_t> payload) {
   protocol::Frame frame{};  // 待填充公共头并接管载荷的完整协议帧。
-  frame.header.message_type = type;
-  frame.header.flags = 0U;
-  frame.header.sequence = sequence;
-  frame.header.timestamp_ns = timestamp_ns;
-  frame.header.source_node = source_node;
-  frame.header.target_node = target_node;
-  frame.payload = std::move(payload);
-  return frame;
+  frame.header.message_type = type;  // 指明payload应由哪一个固定载荷解码器解释。
+  frame.header.flags = 0U;  // v1暂未定义输出标志位，必须显式清零以便未来扩展。
+  frame.header.sequence = sequence;  // 应用层为每个输出分配可追踪的递增序号。
+  frame.header.timestamp_ns = timestamp_ns;  // 使用算法快照时间，而不是发送系统时间。
+  frame.header.source_node = source_node;  // 一般填写参考节点或产生该条结果的节点。
+  frame.header.target_node = target_node;  // 目标节点按消息类型填写，网络广播时可为0。
+  frame.payload = std::move(payload);  // 转移vector缓冲所有权，避免复制已经编码好的字节。
+  return frame;  // 返回完整主机序Frame，调用者随后再encode_frame生成线序字节。
 }
 
 }  // namespace
@@ -83,30 +89,30 @@ AlgorithmSession::AlgorithmSession(const config::DemoConfig& demo_config) {
     require_ok(zju_coop_node_initialization_init(&nodes[index]),
                "initialize node");
     const auto& source = demo_config.engine.nodes[index];
-    nodes[index].node_id = source.node_id;
-    nodes[index].x = source.x;
-    nodes[index].y = source.y;
-    nodes[index].vx = source.vx;
-    nodes[index].vy = source.vy;
-    nodes[index].position_std_m = source.position_std_m;
-    nodes[index].velocity_std_mps = source.velocity_std_mps;
+    nodes[index].node_id = source.node_id;  // 平台编号用于C库建立节点索引。
+    nodes[index].x = source.x;  // 复制二维东向初始相对位置。
+    nodes[index].y = source.y;  // 复制二维北向初始相对位置。
+    nodes[index].vx = source.vx;  // 复制东向初始相对速度。
+    nodes[index].vy = source.vy;  // 复制北向初始相对速度。
+    nodes[index].position_std_m = source.position_std_m;  // 复制x/y共用位置1σ。
+    nodes[index].velocity_std_mps = source.velocity_std_mps;  // 复制vx/vy共用速度1σ。
   }
 
   zju_coop_config_t config{};  // 创建会话所需的版本化基础C ABI配置。
   require_ok(zju_coop_config_init(&config), "initialize configuration");
-  config.reference_node_id = demo_config.engine.filter.reference_node_id;
-  config.node_count = static_cast<std::uint32_t>(nodes.size());
-  config.node_stride = sizeof(zju_coop_node_initialization_t);
-  config.nodes = nodes.data();
+  config.reference_node_id = demo_config.engine.filter.reference_node_id;  // 固定相对坐标原点节点。
+  config.node_count = static_cast<std::uint32_t>(nodes.size());  // 配置解析已限制节点数，可安全收窄。
+  config.node_stride = sizeof(zju_coop_node_initialization_t);  // 数组紧密排列，相邻元素间隔等于结构大小。
+  config.nodes = nodes.data();  // data返回首元素指针；zju_coop_create会立即深拷贝，不长期借用。
   config.process_accel_std_mps2 =
       demo_config.engine.filter.process_accel_std_mps2;
-  config.nis_gate = demo_config.engine.filter.nis_gate;
+  config.nis_gate = demo_config.engine.filter.nis_gate;  // 把异常测距统计门限传入C库。
   config.max_prediction_step_s =
       demo_config.engine.filter.max_prediction_step_s;
   config.min_covariance_diagonal =
       demo_config.engine.filter.min_covariance_diagonal;
-  config.degradation_window_ns = demo_config.engine.degradation.window_ns;
-  config.nominal_rate_hz = demo_config.engine.degradation.nominal_rate_hz;
+  config.degradation_window_ns = demo_config.engine.degradation.window_ns;  // 传入质量滑窗长度。
+  config.nominal_rate_hz = demo_config.engine.degradation.nominal_rate_hz;  // 传入每边名义测距频率。
   config.nlos_ratio_threshold =
       demo_config.engine.degradation.nlos_ratio_threshold;
   config.valid_ratio_threshold =
@@ -127,14 +133,14 @@ AlgorithmSession::AlgorithmSession(const config::DemoConfig& demo_config) {
       demo_config.engine.degradation.max_tracked_edges);
   config.duplicate_cache_per_link = static_cast<std::uint32_t>(
       demo_config.engine.duplicate_cache_per_link);
-  config.edge_timeout_ns = demo_config.engine.edge_timeout_ns;
-  config.max_future_skew_ns = demo_config.engine.max_future_skew_ns;
-  config.max_receive_delay_ns = demo_config.engine.max_receive_delay_ns;
-  config.max_nodes = static_cast<std::uint32_t>(demo_config.engine.max_nodes);
-  config.max_edges = static_cast<std::uint32_t>(demo_config.engine.max_edges);
+  config.edge_timeout_ns = demo_config.engine.edge_timeout_ns;  // 传入活动边超时阈值。
+  config.max_future_skew_ns = demo_config.engine.max_future_skew_ns;  // 传入未来时间戳容限。
+  config.max_receive_delay_ns = demo_config.engine.max_receive_delay_ns;  // 传入端到端接收延迟容限。
+  config.max_nodes = static_cast<std::uint32_t>(demo_config.engine.max_nodes);  // 解析层已做上限检查，显式收窄到ABI字段。
+  config.max_edges = static_cast<std::uint32_t>(demo_config.engine.max_edges);  // 同上，写入边资源上限。
   config.max_state_dimension =
       static_cast<std::uint32_t>(demo_config.engine.max_state_dimension);
-  config.rigidity_tolerance = demo_config.engine.rigidity_tolerance;
+  config.rigidity_tolerance = demo_config.engine.rigidity_tolerance;  // 传入几何秩判定容差。
   require_ok(zju_coop_create(&config, &handle_), "create algorithm session");
 
   // 阶段2：默认配置存在[inertial]时，在首个输入前一次性启用15维联合滤波。
@@ -148,7 +154,7 @@ AlgorithmSession::AlgorithmSession(const config::DemoConfig& demo_config) {
                  "initialize inertial node");
       const auto& source = demo_config.inertial->nodes[index];
       auto& target = inertial_nodes[index];
-      target.node_id = source.node_id;
+      target.node_id = source.node_id;  // 15维初值必须与基础二维配置使用同一节点编号。
       const double position[3]{source.position_n_m.x, source.position_n_m.y,
                                source.position_n_m.z};  // 导航系位置xyz连续源缓冲。
       const double velocity[3]{source.velocity_n_mps.x,
@@ -201,16 +207,16 @@ AlgorithmSession::AlgorithmSession(const config::DemoConfig& demo_config) {
     zju_coop_inertial_config_t inertial{};  // 首个输入前传入C ABI的版本化惯性配置。
     require_ok(zju_coop_inertial_config_init(&inertial),
                "initialize inertial configuration");
-    inertial.nodes = inertial_nodes.data();
-    inertial.node_count = static_cast<std::uint32_t>(inertial_nodes.size());
-    inertial.node_stride = sizeof(zju_coop_inertial_node_initialization_t);
+    inertial.nodes = inertial_nodes.data();  // configure_inertial在调用期间深拷贝该临时数组。
+    inertial.node_count = static_cast<std::uint32_t>(inertial_nodes.size());  // 节点数受配置硬上限约束。
+    inertial.node_stride = sizeof(zju_coop_inertial_node_initialization_t);  // 数组元素紧密排列。
     inertial.max_inertial_state_dimension = static_cast<std::uint32_t>(
         demo_config.inertial->max_inertial_state_dimension);
     const auto& source = demo_config.inertial->filter;  // 强类型惯性滤波配置来源。
-    inertial.gravity_mps2 = source.gravity_mps2;
-    inertial.min_imu_dt_s = source.min_imu_dt_s;
-    inertial.max_imu_dt_s = source.max_imu_dt_s;
-    inertial.max_propagation_substep_s = source.max_propagation_substep_s;
+    inertial.gravity_mps2 = source.gravity_mps2;  // 复制重力大小。
+    inertial.min_imu_dt_s = source.min_imu_dt_s;  // 复制最小合法IMU间隔。
+    inertial.max_imu_dt_s = source.max_imu_dt_s;  // 复制最大连续IMU间隔。
+    inertial.max_propagation_substep_s = source.max_propagation_substep_s;  // 复制积分子步上限。
     inertial.gyro_noise_density_rad_s_sqrt_hz =
         source.gyro_noise_density_rad_s_sqrt_hz;
     inertial.accel_noise_density_m_s2_sqrt_hz =
@@ -219,8 +225,8 @@ AlgorithmSession::AlgorithmSession(const config::DemoConfig& demo_config) {
         source.gyro_bias_random_walk_rad_s2_sqrt_hz;
     inertial.accel_bias_random_walk_m_s3_sqrt_hz =
         source.accel_bias_random_walk_m_s3_sqrt_hz;
-    inertial.min_covariance_diagonal = source.min_covariance_diagonal;
-    inertial.quaternion_norm_tolerance = source.quaternion_norm_tolerance;
+    inertial.min_covariance_diagonal = source.min_covariance_diagonal;  // 复制15维协方差下限。
+    inertial.quaternion_norm_tolerance = source.quaternion_norm_tolerance;  // 复制四元数单位范数容差。
     inertial.covariance_symmetry_tolerance =
         source.covariance_symmetry_tolerance;
     inertial.use_message_covariance =
@@ -250,21 +256,21 @@ zju_coop_range_processing_result_t AlgorithmSession::push_range(
   require_ok(zju_coop_range_packet_init(&packet), "initialize range packet");
   require_ok(zju_coop_range_processing_result_init(&result),
              "initialize range result");
-  packet.from_node = frame.header.source_node;
-  packet.to_node = frame.header.target_node;
-  packet.sequence = frame.header.sequence;
-  packet.timestamp_ns = frame.header.timestamp_ns;
-  packet.receive_timestamp_ns = receive_timestamp_ns;
-  packet.range_m = payload.range_m;
-  packet.range_std_m = payload.range_std_m;
-  packet.nlos_probability = payload.nlos_probability;
-  packet.nlos_flag = payload.nlos_flag ? ZJU_COOP_TRUE : ZJU_COOP_FALSE;
+  packet.from_node = frame.header.source_node;  // 测距起点来自公共帧头，避免载荷重复保存节点号。
+  packet.to_node = frame.header.target_node;  // 测距终点同样来自公共帧头。
+  packet.sequence = frame.header.sequence;  // 保留发送端序号供C库去重和乱序检查。
+  packet.timestamp_ns = frame.header.timestamp_ns;  // 这是上海交大完成同步后的测量时间。
+  packet.receive_timestamp_ns = receive_timestamp_ns;  // 这是算法主机收到帧的本地时间，用于时延检查。
+  packet.range_m = payload.range_m;  // 复制实际距离，单位米。
+  packet.range_std_m = payload.range_std_m;  // 复制该包测距标准差，决定滤波权重。
+  packet.nlos_probability = payload.nlos_probability;  // 保留设备/前端给出的NLOS概率。
+  packet.nlos_flag = payload.nlos_flag ? ZJU_COOP_TRUE : ZJU_COOP_FALSE;  // 将C++ bool显式映射到C ABI 0/1。
   packet.has_nlos_probability =
       payload.has_nlos_probability ? ZJU_COOP_TRUE : ZJU_COOP_FALSE;
-  packet.valid = payload.valid ? ZJU_COOP_TRUE : ZJU_COOP_FALSE;
-  packet.status = payload.status;
+  packet.valid = payload.valid ? ZJU_COOP_TRUE : ZJU_COOP_FALSE;  // 传入设备或协议适配层的有效性结论。
+  packet.status = payload.status;  // 传入传感器状态码，C库还会再次检查范围。
   require_ok(zju_coop_push_range(handle_, &packet, &result), "push range");
-  return result;
+  return result;  // 返回按值诊断，调用方据此累计接受/拒绝计数。
 }
 
 zju_coop_imu_processing_result_t AlgorithmSession::push_imu(
@@ -276,10 +282,10 @@ zju_coop_imu_processing_result_t AlgorithmSession::push_imu(
   require_ok(zju_coop_imu_packet_init(&packet), "initialize IMU packet");
   require_ok(zju_coop_imu_processing_result_init(&result),
              "initialize IMU result");
-  packet.node_id = frame.header.source_node;
-  packet.sequence = frame.header.sequence;
-  packet.timestamp_ns = frame.header.timestamp_ns;
-  packet.receive_timestamp_ns = receive_timestamp_ns;
+  packet.node_id = frame.header.source_node;  // 一帧IMU只属于一个平台，节点号放在公共头。
+  packet.sequence = frame.header.sequence;  // 序号用于识别重复IMU包。
+  packet.timestamp_ns = frame.header.timestamp_ns;  // 同步后的采样时刻决定积分dt。
+  packet.receive_timestamp_ns = receive_timestamp_ns;  // 接收时刻仅用于在线时延诊断，不用于积分。
   std::copy(payload.orientation_xyzw.begin(), payload.orientation_xyzw.end(),
             packet.orientation_xyzw);
   std::copy(payload.orientation_covariance.begin(),
@@ -297,13 +303,13 @@ zju_coop_imu_processing_result_t AlgorithmSession::push_imu(
   std::copy(payload.linear_acceleration_covariance.begin(),
             payload.linear_acceleration_covariance.end(),
             packet.linear_acceleration_covariance);
-  std::copy(payload.frame_id.begin(), payload.frame_id.end(), packet.frame_id);
+  std::copy(payload.frame_id.begin(), payload.frame_id.end(), packet.frame_id);  // 固定32字节完整复制，包含NUL和尾部零。
   packet.orientation_valid =
       payload.orientation_valid ? ZJU_COOP_TRUE : ZJU_COOP_FALSE;
-  packet.valid = payload.valid ? ZJU_COOP_TRUE : ZJU_COOP_FALSE;
-  packet.status = payload.status;
+  packet.valid = payload.valid ? ZJU_COOP_TRUE : ZJU_COOP_FALSE;  // 整包无效时C库不会传播状态。
+  packet.status = payload.status;  // 复制传感器状态码。
   require_ok(zju_coop_push_imu(handle_, &packet, &result), "push IMU");
-  return result;
+  return result;  // 返回基准建立、成功传播、重复、乱序等精确诊断。
 }
 
 StepSnapshot AlgorithmSession::step(std::uint64_t now_ns) {
@@ -320,8 +326,8 @@ StepSnapshot AlgorithmSession::step(std::uint64_t now_ns) {
 
   // 阶段2：按查询数量初始化每个版本化结构，再执行真正的原子step。
   StepSnapshot snapshot{};  // 按查询容量分配并由第二次step填充的原子快照。
-  snapshot.localizations.resize(localization_count);
-  snapshot.observations.resize(observation_count);
+  snapshot.localizations.resize(localization_count);  // resize实际创建指定数量的可写定位结构。
+  snapshot.observations.resize(observation_count);  // 为每条配置无向边创建质量输出结构。
   // 两个value分别是待设置版本握手字段的定位槽位和观测槽位。
   for (auto& value : snapshot.localizations) {
     require_ok(zju_coop_localization_init(&value),
@@ -344,9 +350,9 @@ StepSnapshot AlgorithmSession::step(std::uint64_t now_ns) {
           observation_count, sizeof(zju_coop_observation_t),
           &observation_count, &snapshot.network),
       "step algorithm");
-  snapshot.localizations.resize(localization_count);
-  snapshot.observations.resize(observation_count);
-  return snapshot;
+  snapshot.localizations.resize(localization_count);  // 以C库最终回填数量收紧vector逻辑长度。
+  snapshot.observations.resize(observation_count);  // 同步收紧边质量数组逻辑长度。
+  return snapshot;  // 按值返回同一算法时刻的定位、拓扑和质量原子快照。
 }
 
 std::vector<EncodedOutput> encode_snapshot(
@@ -367,18 +373,18 @@ std::vector<EncodedOutput> encode_snapshot(
       throw std::runtime_error("UWB-only algorithm claimed yaw or altitude");
     }
     protocol::LocalizationPayload payload{};  // 当前节点的临时协议定位载荷。
-    payload.x = source.x;
-    payload.y = source.y;
-    payload.vx = source.vx;
-    payload.vy = source.vy;
-    payload.cov_xx = source.cov_xx;
-    payload.cov_xy = source.cov_xy;
-    payload.cov_yy = source.cov_yy;
-    payload.state = static_cast<LocalizationState>(source.state);
-    payload.valid = source.valid == ZJU_COOP_TRUE;
-    payload.yaw_valid = false;
-    payload.z_valid = false;
-    payload.capability_mask = capabilities;
+    payload.x = source.x;  // 复制相对参考节点的东向位置。
+    payload.y = source.y;  // 复制北向位置。
+    payload.vx = source.vx;  // 复制东向速度。
+    payload.vy = source.vy;  // 复制北向速度。
+    payload.cov_xx = source.cov_xx;  // 复制x位置方差。
+    payload.cov_xy = source.cov_xy;  // 复制xy互协方差。
+    payload.cov_yy = source.cov_yy;  // 复制y位置方差。
+    payload.state = static_cast<LocalizationState>(source.state);  // C ABI值域已受控，恢复协议层强类型枚举。
+    payload.valid = source.valid == ZJU_COOP_TRUE;  // 只有规定值1才视为true。
+    payload.yaw_valid = false;  // 当前输出协议没有航向数值字段，不能误报航向有效。
+    payload.z_valid = false;  // 当前定位载荷只有平面位置，不能误报高度有效。
+    payload.capability_mask = capabilities;  // 明确告诉GCS本帧实际具备哪些能力。
     auto frame = output_frame(  // 分配序号并组装当前节点的完整定位帧。
         protocol::MessageType::kLocalization, next_sequence++,
         source.timestamp_ns, wire_node(source.node_id),
@@ -389,13 +395,13 @@ std::vector<EncodedOutput> encode_snapshot(
   }
 
   protocol::NetworkPayload network{};  // 单次快照对应的临时协议网络载荷。
-  network.node_count = snapshot.network.node_count;
-  network.reachable_node_count = snapshot.network.reachable_node_count;
-  network.active_edge_count = snapshot.network.active_edge_count;
-  network.connected = snapshot.network.connected == ZJU_COOP_TRUE;
-  network.observable = snapshot.network.observable == ZJU_COOP_TRUE;
-  network.state = static_cast<LocalizationState>(snapshot.network.state);
-  network.reason_mask = snapshot.network.reason_mask;
+  network.node_count = snapshot.network.node_count;  // 配置的总平台数。
+  network.reachable_node_count = snapshot.network.reachable_node_count;  // 当前从主参考可达的平台数。
+  network.active_edge_count = snapshot.network.active_edge_count;  // 当前有效无向协同边数。
+  network.connected = snapshot.network.connected == ZJU_COOP_TRUE;  // 转换为C++ bool供协议编码器使用。
+  network.observable = snapshot.network.observable == ZJU_COOP_TRUE;  // 转换当前几何可观结论。
+  network.state = static_cast<LocalizationState>(snapshot.network.state);  // 恢复协议层定位状态枚举。
+  network.reason_mask = snapshot.network.reason_mask;  // 原样保留可组合异常原因。
   auto network_frame = output_frame(  // 分配序号并组装本快照唯一的网络帧。
       protocol::MessageType::kNetwork, next_sequence++,
       snapshot.network.timestamp_ns, wire_node(reference_node_id), 0U,
@@ -405,22 +411,22 @@ std::vector<EncodedOutput> encode_snapshot(
 
   for (const auto& source : snapshot.observations) {  // source为待转成协议载荷的C ABI边质量项。
     protocol::ObservationPayload payload{};  // 当前无向边的临时协议观测载荷。
-    payload.window_start_ns = source.window_start_ns;
-    payload.window_end_ns = source.window_end_ns;
-    payload.expected_count = source.expected_count;
-    payload.received_count = source.received_count;
-    payload.valid_count = source.valid_count;
-    payload.nlos_count = source.nlos_count;
-    payload.residual_rejected_count = source.residual_rejected_count;
-    payload.dropped_count = source.dropped_count;
-    payload.nlos_ratio = source.nlos_ratio;
-    payload.valid_ratio = source.valid_ratio;
-    payload.actual_rate_hz = source.actual_rate_hz;
-    payload.covariance_scale = source.covariance_scale;
-    payload.state = static_cast<ObservationState>(source.state);
-    payload.action = static_cast<FusionAction>(source.fusion_action);
-    payload.input_overflow = source.input_overflow == ZJU_COOP_TRUE;
-    payload.reason_mask = source.reason_mask;
+    payload.window_start_ns = source.window_start_ns;  // 复制质量滑窗起点。
+    payload.window_end_ns = source.window_end_ns;  // 复制质量滑窗终点。
+    payload.expected_count = source.expected_count;  // 复制按名义频率推算的包数。
+    payload.received_count = source.received_count;  // 复制实际收包数。
+    payload.valid_count = source.valid_count;  // 复制有效包数。
+    payload.nlos_count = source.nlos_count;  // 复制NLOS包数。
+    payload.residual_rejected_count = source.residual_rejected_count;  // 复制NIS拒绝包数。
+    payload.dropped_count = source.dropped_count;  // 复制其他丢弃包数。
+    payload.nlos_ratio = source.nlos_ratio;  // 复制NLOS比例。
+    payload.valid_ratio = source.valid_ratio;  // 复制有效率。
+    payload.actual_rate_hz = source.actual_rate_hz;  // 复制实际观测频率。
+    payload.covariance_scale = source.covariance_scale;  // 复制量测降权倍率。
+    payload.state = static_cast<ObservationState>(source.state);  // 恢复协议层边质量状态。
+    payload.action = static_cast<FusionAction>(source.fusion_action);  // 恢复协议层融合动作。
+    payload.input_overflow = source.input_overflow == ZJU_COOP_TRUE;  // 转换缓存溢出布尔量。
+    payload.reason_mask = source.reason_mask;  // 复制退化原因位图。
     auto frame = output_frame(  // 分配序号并组装当前无向边的完整观测帧。
         protocol::MessageType::kObservation, next_sequence++,
         snapshot.network.timestamp_ns, wire_node(source.from_node),
@@ -442,12 +448,12 @@ std::vector<EncodedOutput> TelemetryEncoder::encode(
   result.reserve(2U);
 
   protocol::AlgorithmStatusPayload status{};  // 周期发布的算法模式、状态和累计计数载荷。
-  status.mode = mode;
-  status.run_state = run_state(network.state);
-  status.accepted_ranges = counters.accepted_ranges;
-  status.rejected_ranges = counters.rejected_ranges;
-  status.protocol_errors = counters.protocol_errors;
-  status.uptime_ns = uptime_ns;
+  status.mode = mode;  // 告诉GCS当前运行的是仅测距二维模式还是IMU+测距15维模式。
+  status.run_state = run_state(network.state);  // 将定位网络状态压缩为进程级运行状态。
+  status.accepted_ranges = counters.accepted_ranges;  // 累计真正进入滤波更新的测距包。
+  status.rejected_ranges = counters.rejected_ranges;  // 累计被质量、时序或NIS拒绝的测距包。
+  status.protocol_errors = counters.protocol_errors;  // 累计无法解帧或载荷非法的输入。
+  status.uptime_ns = uptime_ns;  // 从进程启动到本快照的运行时长。
   auto status_frame = output_frame(  // 使用当前序号和网络时间组装的状态帧。
       protocol::MessageType::kAlgorithmStatus, next_sequence++,
       network.timestamp_ns, wire_node(reference_node_id), 0U,
@@ -460,15 +466,15 @@ std::vector<EncodedOutput> TelemetryEncoder::encode(
       network.state == ZJU_COOP_LOCALIZATION_NORMAL;
   if (!normal && network.reason_mask != 0U) {
     if (!alert_active_) {
-      alert_active_ = true;
-      alert_first_timestamp_ns_ = network.timestamp_ns;
+      alert_active_ = true;  // 记住已经进入一个告警生命周期，后续异常不重复创建“首次”事件。
+      alert_first_timestamp_ns_ = network.timestamp_ns;  // 冻结本轮异常第一次出现的时间。
     }
     protocol::AlertPayload alert{};  // 当前异常周期的活动告警载荷。
-    alert.level = protocol::AlertLevel::kWarning;
-    alert.lifecycle = protocol::AlertLifecycle::kActive;
-    alert.reason_mask = network.reason_mask;
-    alert.first_timestamp_ns = alert_first_timestamp_ns_;
-    alert.last_timestamp_ns = network.timestamp_ns;
+    alert.level = protocol::AlertLevel::kWarning;  // 网络退化当前按警告级别上报。
+    alert.lifecycle = protocol::AlertLifecycle::kActive;  // 表示异常现在仍然成立。
+    alert.reason_mask = network.reason_mask;  // 传递本周期全部异常原因位。
+    alert.first_timestamp_ns = alert_first_timestamp_ns_;  // 保持同一生命周期的首次时间不变。
+    alert.last_timestamp_ns = network.timestamp_ns;  // 更新最近一次观测到异常的时间。
     auto alert_frame = output_frame(  // 保留首次时间并更新末次时间的活动告警帧。
         protocol::MessageType::kAlert, next_sequence++, network.timestamp_ns,
         wire_node(reference_node_id), 0U,
@@ -477,21 +483,21 @@ std::vector<EncodedOutput> TelemetryEncoder::encode(
                       protocol::encode_frame(alert_frame, max_payload_size)});
   } else if (normal && alert_active_) {
     protocol::AlertPayload alert{};  // 网络恢复正常时的一次性清除告警载荷。
-    alert.level = protocol::AlertLevel::kInfo;
-    alert.lifecycle = protocol::AlertLifecycle::kCleared;
-    alert.reason_mask = 0U;
-    alert.first_timestamp_ns = alert_first_timestamp_ns_;
-    alert.last_timestamp_ns = network.timestamp_ns;
+    alert.level = protocol::AlertLevel::kInfo;  // 恢复事件是信息级，不再是活动警告。
+    alert.lifecycle = protocol::AlertLifecycle::kCleared;  // 明确结束之前的告警生命周期。
+    alert.reason_mask = 0U;  // 当前已经正常，因此不再携带活动异常原因。
+    alert.first_timestamp_ns = alert_first_timestamp_ns_;  // 带回本轮异常开始时间，便于GCS计算持续时长。
+    alert.last_timestamp_ns = network.timestamp_ns;  // 清除时间取当前网络快照时刻。
     auto alert_frame = output_frame(  // 结束当前生命周期的清除告警帧。
         protocol::MessageType::kAlert, next_sequence++, network.timestamp_ns,
         wire_node(reference_node_id), 0U,
         protocol::encode_alert_payload(alert));
     result.push_back({protocol::MessageType::kAlert,
                       protocol::encode_frame(alert_frame, max_payload_size)});
-    alert_active_ = false;
-    alert_first_timestamp_ns_ = 0U;
+    alert_active_ = false;  // 清除后允许未来新异常建立新的生命周期。
+    alert_first_timestamp_ns_ = 0U;  // 清掉旧首次时间，防止污染下一轮告警。
   }
-  return result;
+  return result;  // 每周期至少含状态帧，状态变化时再附加一条告警帧。
 }
 
 std::uint64_t system_time_ns() {

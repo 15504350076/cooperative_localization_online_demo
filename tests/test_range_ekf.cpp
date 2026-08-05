@@ -1,4 +1,6 @@
 // 模块职责：验证无IMU二维兼容滤波的恒速预测、NIS拒绝、Joseph更新和数值极限保护。
+// C++初学者注意：这是没有IMU配置时的兼容路径，不是实机默认IMU+测距路径；
+// 用例仍按“创建滤波器->预测/更新->检查状态与协方差”的顺序阅读。
 #include "core/range_ekf.hpp"
 #include "test_support.hpp"
 

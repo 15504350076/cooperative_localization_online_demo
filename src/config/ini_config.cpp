@@ -1,6 +1,17 @@
 // 模块实现：以UTF-8读取严格INI，检查节名/键名/重复项/类型范围和跨字段约束。
 // 关键原则：未知键与非法编码直接失败，配置错误在算法、网络和日志资源创建前暴露；
 // 解析器不静默采用拼写相近的键，也不把缺失参数替换成源码中的调试值。
+//
+// C++初学者建议按“读取文本 -> 去空白/注释 -> 识别[节]和key=value
+// -> 把字符串转成数值 -> 检查范围及跨字段关系 -> 生成AppConfig”的顺序阅读。
+// 匿名namespace中的小函数只供本.cpp使用，避免把解析细节暴露给其他模块。
+//
+// 本文件常见难点语法：
+// - `std::map`保存有序键值对，`unordered_map`用哈希快速查找；
+// - 迭代器表示容器中的位置，`end()`是未找到/越过末尾的哨兵，不能解引用；
+// - Lambda是现场定义的匿名函数，`[&config]`表示按引用使用外部config；
+// - `[[noreturn]]`告诉编译器fail必定抛异常而不会正常返回；
+// - `std::optional`明确表示惯性配置可能缺失，不用空指针或特殊整数暗示。
 #include "config/ini_config.hpp"
 
 #include <algorithm>
@@ -61,11 +72,13 @@ struct NodeEntryLines {
 // code为机器错误类别，line为原始INI行号，detail为包含节/键语境的诊断文本。
 [[noreturn]] void fail(IniError code, std::size_t line,
                        const std::string& detail) {
+  // throw构造并抛出项目异常；[[noreturn]]保证调用点之后无需再写return。
   throw IniConfigError(code, line, detail);
 }
 
 // byte为待判断是否处于0x80..0xBF范围的UTF-8后续字节。
 bool continuation(unsigned char byte) {
+  // UTF-8后续字节固定为二进制10xxxxxx，对应十六进制闭区间80..BF。
   return byte >= 0x80U && byte <= 0xBFU;
 }
 
@@ -76,13 +89,14 @@ std::size_t invalid_utf8_line(const std::string& text) {
   while (index < text.size()) {
     // first识别当前码点类别并在ASCII换行时推进line；count随后保存该码点总字节数。
     const unsigned char first =
+        // char在某些平台是有符号类型，显式转unsigned char避免0x80以上字节变成负数。
         static_cast<unsigned char>(text[index]);
     if (first <= 0x7FU) {
       if (first == static_cast<unsigned char>('\n')) {
         ++line;
       }
       ++index;
-      continue;
+      continue;  // ASCII已完整处理，直接进入while下一字节。
     }
 
     std::size_t count = 0U;
@@ -114,9 +128,9 @@ std::size_t invalid_utf8_line(const std::string& text) {
         (first == 0xF4U && second > 0x8FU)) {
       return line;
     }
-    index += count;
+    index += count;  // 当前码点验证完毕，跳过其全部1/2/3/4字节。
   }
-  return 0U;
+  return 0U;  // 0不是有效源文件行号，在此专门表示整串UTF-8合法。
 }
 
 // character为待判定的INI修剪字符，仅接受四种ASCII空白。
@@ -645,65 +659,85 @@ DemoConfig parse_ini_config(const std::string& text) {
   // config为逐字段构造并最终返回的强类型值；node_entry_lines保留节点组合校验的原始行号。
   DemoConfig config{};
   std::unordered_map<std::uint32_t, NodeEntryLines> node_entry_lines;
+  // edge_timeout_ns决定多久没有新测距后把协同边从活动拓扑中移除。
   config.engine.edge_timeout_ns = unsigned_value(
       require_entry(engine_section, "edge_timeout_ns"), 1U,
       std::numeric_limits<std::uint64_t>::max(), "edge timeout");
+  // max_future_skew_ns防止时钟错误让“未来消息”污染当前滤波状态。
   config.engine.max_future_skew_ns = unsigned_value(
       require_entry(engine_section, "max_future_skew_ns"), 1U,
       std::numeric_limits<std::uint64_t>::max(), "maximum future skew");
+  // max_receive_delay_ns限制测量时刻到接收时刻的容许延迟。
   config.engine.max_receive_delay_ns = unsigned_value(
       require_entry(engine_section, "max_receive_delay_ns"), 1U,
       std::numeric_limits<std::uint64_t>::max(), "maximum receive delay");
+  // duplicate_cache_per_link限制每条有向链路保存多少个历史sequence用于去重。
   config.engine.duplicate_cache_per_link = size_value(
       require_entry(engine_section, "duplicate_cache_per_link"), 1U,
       kMaximumDuplicateCachePerLink, "duplicate cache per link");
+  // max_nodes给节点容器设置硬上限，防止错误配置造成无界内存分配。
   config.engine.max_nodes = size_value(
       require_entry(engine_section, "max_nodes"), 1U, kMaximumNodes,
       "maximum node count");
+  // max_edges给无向协同边数量设置硬上限。
   config.engine.max_edges = size_value(
       require_entry(engine_section, "max_edges"), 1U, kMaximumEdges,
       "maximum edge count");
+  // max_state_dimension限制二维滤波器4×(N-1)状态的总维数。
   config.engine.max_state_dimension = size_value(
       require_entry(engine_section, "max_state_dimension"), 1U,
       kMaximumStateDimension, "maximum state dimension");
+  // rigidity_tolerance是几何秩判断时把极小数视为零的数值容差。
   config.engine.rigidity_tolerance = positive_value(
       require_entry(engine_section, "rigidity_tolerance"),
       "rigidity tolerance");
 
+  // reference_node_id定义所有平面相对位置所使用的原点节点。
   config.engine.filter.reference_node_id = static_cast<std::uint32_t>(
       unsigned_value(require_entry(filter_section, "reference_node_id"),
                      0U, std::numeric_limits<std::uint16_t>::max(),
                      "reference node identifier"));
+  // process_accel_std_mps2控制常速度模型允许多大的随机加速度变化。
   config.engine.filter.process_accel_std_mps2 = positive_value(
       require_entry(filter_section, "process_accel_std_mps2"),
       "process acceleration standard deviation");
+  // nis_gate是创新归一化平方的统计门限，值越小越容易拒绝测距。
   config.engine.filter.nis_gate = positive_value(
       require_entry(filter_section, "nis_gate"), "NIS gate", true);
+  // max_prediction_step_s把长时间预测拆成多个较小步骤，以提高离散传播稳定性。
   config.engine.filter.max_prediction_step_s = positive_value(
       require_entry(filter_section, "max_prediction_step_s"),
       "maximum prediction step");
+  // min_covariance_diagonal防止协方差对角线因浮点误差降到零或负数。
   config.engine.filter.min_covariance_diagonal = positive_value(
       require_entry(filter_section, "min_covariance_diagonal"),
       "minimum covariance diagonal");
 
+  // window_ns定义NLOS比例、有效率和实际频率统计所覆盖的时间窗。
   config.engine.degradation.window_ns = unsigned_value(
       require_entry(degradation_section, "window_ns"), 1U,
       std::numeric_limits<std::uint64_t>::max(), "degradation window");
+  // nominal_rate_hz是判断掉频时使用的期望单边观测频率。
   config.engine.degradation.nominal_rate_hz = positive_value(
       require_entry(degradation_section, "nominal_rate_hz"),
       "nominal observation rate");
+  // nlos_ratio_threshold规定窗口内NLOS比例超过多少算退化。
   config.engine.degradation.nlos_ratio_threshold = unit_value(
       require_entry(degradation_section, "nlos_ratio_threshold"),
       "NLOS ratio threshold");
+  // valid_ratio_threshold规定窗口内有效包比例至少应达到多少。
   config.engine.degradation.valid_ratio_threshold = unit_value(
       require_entry(degradation_section, "valid_ratio_threshold"),
       "valid ratio threshold");
+  // rate_ratio_threshold比较实际频率/名义频率，用于发现掉频。
   config.engine.degradation.rate_ratio_threshold = unit_value(
       require_entry(degradation_section, "rate_ratio_threshold"),
       "rate ratio threshold");
+  // nlos_probability_threshold把单包概率转换为是否计入NLOS的布尔判断。
   config.engine.degradation.nlos_probability_threshold = unit_value(
       require_entry(degradation_section, "nlos_probability_threshold"),
       "NLOS probability threshold");
+  // nlos_covariance_scale在量测仍可用但可疑时放大方差，从而降低滤波权重。
   config.engine.degradation.nlos_covariance_scale = positive_value(
       require_entry(degradation_section, "nlos_covariance_scale"),
       "NLOS covariance scale");
@@ -712,42 +746,56 @@ DemoConfig parse_ini_config(const std::string& text) {
          require_entry(degradation_section, "nlos_covariance_scale").line,
          "NLOS covariance scale must be at least one");
   }
+  // suspend_duration_ns规定退化持续多久后进入暂缓状态。
   config.engine.degradation.suspend_duration_ns = unsigned_value(
       require_entry(degradation_section, "suspend_duration_ns"), 0U,
       std::numeric_limits<std::uint64_t>::max(), "suspend duration");
+  // reject_duration_ns规定严重退化持续多久后完全拒绝该边。
   config.engine.degradation.reject_duration_ns = unsigned_value(
       require_entry(degradation_section, "reject_duration_ns"), 0U,
       std::numeric_limits<std::uint64_t>::max(), "reject duration");
+  // recovery_duration_ns要求连续正常一段时间再恢复，避免状态来回跳变。
   config.engine.degradation.recovery_duration_ns = unsigned_value(
       require_entry(degradation_section, "recovery_duration_ns"), 0U,
       std::numeric_limits<std::uint64_t>::max(), "recovery duration");
+  // max_tracked_edges限制质量状态机能同时保存的边数。
   config.engine.degradation.max_tracked_edges = size_value(
       require_entry(degradation_section, "max_tracked_edges"), 1U,
       kMaximumTrackedEdges, "maximum tracked edges");
 
+  // input_bind_address是在线进程接收ZJCL UDP数据时绑定的本机地址。
   config.online.input_bind_address = nonempty_value(
       require_entry(online_section, "input_bind_address"),
       "input bind address");
+  // input_port是接收端口；先按64位解析和范围检查，再显式收窄为16位。
   config.online.input_port = static_cast<std::uint16_t>(unsigned_value(
       require_entry(online_section, "input_port"), 1U,
       std::numeric_limits<std::uint16_t>::max(), "input UDP port"));
+  // output_address是定位、网络、观测和告警结果的目标地址。
   config.online.output_address = nonempty_value(
       require_entry(online_section, "output_address"), "output address");
+  // output_port是发往上海交大ROS 2适配层或GCS转发端的UDP端口。
   config.online.output_port = static_cast<std::uint16_t>(unsigned_value(
       require_entry(online_section, "output_port"), 1U,
       std::numeric_limits<std::uint16_t>::max(), "output UDP port"));
+  // input_rate_hz用于在线循环调度和输入超时预期，不会改变实际传感器时间戳。
   config.online.input_rate_hz = positive_value(
       require_entry(online_section, "input_rate_hz"), "input rate");
+  // output_rate_hz规定算法快照和遥测的发布节奏。
   config.online.output_rate_hz = positive_value(
       require_entry(online_section, "output_rate_hz"), "output rate");
+  // event_log_enabled决定是否保存可供任务后回放的二进制原始帧日志。
   config.online.event_log_enabled = boolean_value(
       require_entry(online_section, "event_log_enabled"),
       "event log enabled");
+  // event_log_path给出事件日志文件位置，即使禁用日志也保持配置字段明确。
   config.online.event_log_path = nonempty_value(
       require_entry(online_section, "event_log_path"), "event log path");
+  // max_payload_size限制单个ZJCL载荷，先于分配拒绝异常大数据包。
   config.online.max_payload_size = size_value(
       require_entry(online_section, "max_payload_size"), 1U,
       kMaximumPayloadBytes, "maximum payload size");
+  // max_log_record_size限制单条回放记录，防止损坏日志声明巨大长度。
   config.online.max_log_record_size = size_value(
       require_entry(online_section, "max_log_record_size"),
       kWireHeaderBytes, static_cast<std::size_t>(
@@ -763,7 +811,7 @@ DemoConfig parse_ini_config(const std::string& text) {
     }
     // node为当前动态节点节构造的二维初值，完成全部字段校验后才追加。
     NodeInitialization node{};
-    node.node_id = section.node_id;
+    node.node_id = section.node_id;  // 节名node.<id>已经解析为唯一平台编号。
     // 六个*_entry分别提供x/y/vx/vy及位置/速度1σ的文本和值来源行。
     const Entry& x_entry = require_entry(section, "x");
     const Entry& y_entry = require_entry(section, "y");
@@ -773,10 +821,10 @@ DemoConfig parse_ini_config(const std::string& text) {
         require_entry(section, "position_std_m");
     const Entry& velocity_std_entry =
         require_entry(section, "velocity_std_mps");
-    node.x = finite_value(x_entry, "node x");
-    node.y = finite_value(y_entry, "node y");
-    node.vx = finite_value(vx_entry, "node vx");
-    node.vy = finite_value(vy_entry, "node vy");
+    node.x = finite_value(x_entry, "node x");  // 读取东向初始相对位置，允许正负但不允许NaN/Inf。
+    node.y = finite_value(y_entry, "node y");  // 读取北向初始相对位置。
+    node.vx = finite_value(vx_entry, "node vx");  // 读取东向初始相对速度。
+    node.vy = finite_value(vy_entry, "node vy");  // 读取北向初始相对速度。
     node.position_std_m = positive_value(
         position_std_entry, "node position standard deviation");
     node.velocity_std_mps = positive_value(
@@ -786,7 +834,7 @@ DemoConfig parse_ini_config(const std::string& text) {
         NodeEntryLines{x_entry.line, y_entry.line, vx_entry.line,
                        vy_entry.line, position_std_entry.line,
                        velocity_std_entry.line});
-    config.engine.nodes.push_back(node);
+    config.engine.nodes.push_back(node);  // 完整节点才追加，前面任一字段失败都不会留下半节点。
   }
   // 排序lambda不捕获外部状态；left/right为待比较节点，按node_id建立确定配置顺序。
   std::sort(config.engine.nodes.begin(), config.engine.nodes.end(),
@@ -805,45 +853,60 @@ DemoConfig parse_ini_config(const std::string& text) {
     if (enabled) {
       // inertial为完成全部时序、噪声和资源校验后才移入config.optional的候选值。
       InertialDemoConfig inertial{};
+      // max_inertial_state_dimension必须至少容纳每节点15维误差状态，并限制总内存。
       inertial.max_inertial_state_dimension = size_value(
           require_entry(section, "max_inertial_state_dimension"), 15U,
           15U * kMaximumNodes, "maximum inertial state dimension");
+      // gravity_mps2是ENU导航系中用于补偿重力的正标量大小。
       inertial.filter.gravity_mps2 = positive_value(
           require_entry(section, "gravity_mps2"), "gravity magnitude");
+      // min_imu_dt_s用于拒绝重复或几乎重复的IMU时间戳。
       inertial.filter.min_imu_dt_s = positive_value(
           require_entry(section, "min_imu_dt_s"), "minimum IMU interval");
+      // max_imu_dt_s用于发现IMU长时间断流，防止跨大间隔盲目积分。
       inertial.filter.max_imu_dt_s = positive_value(
           require_entry(section, "max_imu_dt_s"), "maximum IMU interval");
+      // max_propagation_substep_s把合法长间隔继续拆小，减小非线性积分误差。
       inertial.filter.max_propagation_substep_s = positive_value(
           require_entry(section, "max_propagation_substep_s"),
           "maximum IMU propagation substep");
+      // gyro_noise_density描述陀螺瞬时白噪声，进入姿态误差过程噪声。
       inertial.filter.gyro_noise_density_rad_s_sqrt_hz = positive_value(
           require_entry(section, "gyro_noise_density_rad_s_sqrt_hz"),
           "gyro noise density");
+      // accel_noise_density描述加速度计白噪声，进入速度/位置误差过程噪声。
       inertial.filter.accel_noise_density_m_s2_sqrt_hz = positive_value(
           require_entry(section, "accel_noise_density_m_s2_sqrt_hz"),
           "accelerometer noise density");
+      // gyro_bias_random_walk描述陀螺零偏随时间漂移的强度。
       inertial.filter.gyro_bias_random_walk_rad_s2_sqrt_hz = positive_value(
           require_entry(section, "gyro_bias_random_walk_rad_s2_sqrt_hz"),
           "gyro bias random walk");
+      // accel_bias_random_walk描述加速度计零偏随时间漂移的强度。
       inertial.filter.accel_bias_random_walk_m_s3_sqrt_hz = positive_value(
           require_entry(section, "accel_bias_random_walk_m_s3_sqrt_hz"),
           "accelerometer bias random walk");
+      // 惯性协方差下限用于抑制浮点误差造成的零/负对角项。
       inertial.filter.min_covariance_diagonal = positive_value(
           require_entry(section, "min_covariance_diagonal"),
           "inertial covariance floor");
+      // 四元数范数容差用于判断输入姿态是否足够接近单位四元数。
       inertial.filter.quaternion_norm_tolerance = positive_value(
           require_entry(section, "quaternion_norm_tolerance"),
           "quaternion norm tolerance");
+      // 协方差对称容差只吸收浮点舍入误差，不应掩盖错误的消息布局。
       inertial.filter.covariance_symmetry_tolerance = positive_value(
           require_entry(section, "covariance_symmetry_tolerance"),
           "covariance symmetry tolerance");
+      // 此开关决定是否采用ROS 2 Imu消息中的3×3协方差来调整过程噪声。
       inertial.filter.use_message_covariance = boolean_value(
           require_entry(section, "use_message_covariance"),
           "use message covariance");
+      // 此开关仅允许首包orientation初始化姿态，不把orientation当作连续姿态量测。
       inertial.filter.use_orientation_for_initialization = boolean_value(
           require_entry(section, "use_orientation_for_initialization"),
           "use orientation for initialization");
+      // expected_frame_id防止把非FLU或错误安装坐标系的IMU数据直接送进积分。
       inertial.filter.expected_frame_id = nonempty_value(
           require_entry(section, "expected_frame_id"), "IMU frame id");
       if (inertial.filter.expected_frame_id.size() >= 32U ||
@@ -872,27 +935,27 @@ DemoConfig parse_ini_config(const std::string& text) {
         fail(IniError::kInvalidConfiguration, section.line,
              "inertial time or resource limits are inconsistent");
       }
-      inertial.nodes.reserve(config.engine.nodes.size());
+      inertial.nodes.reserve(config.engine.nodes.size());  // 节点数已知，预分配可避免循环中反复扩容。
       // source遍历已排序二维节点；每项扩展成ENU/FLU约定的15维惯性初值。
       for (const auto& source : config.engine.nodes) {
         // node为当前平台的惯性初值副本，完成所有三轴块后追加到inertial.nodes。
         InertialNodeInitialization node{};
-        node.node_id = source.node_id;
-        node.position_n_m = {source.x, source.y, initial_z};
-        node.velocity_n_mps = {source.vx, source.vy, initial_vz};
+        node.node_id = source.node_id;  // 保持二维滤波与15维惯性滤波使用同一节点主键。
+        node.position_n_m = {source.x, source.y, initial_z};  // 把二维x/y和公共z扩展为ENU三维位置。
+        node.velocity_n_mps = {source.vx, source.vy, initial_vz};  // 把二维速度和公共vz扩展为ENU三维速度。
         node.position_std_m = {source.position_std_m, source.position_std_m,
                                source.position_std_m};
         node.velocity_std_mps = {source.velocity_std_mps,
                                  source.velocity_std_mps,
                                  source.velocity_std_mps};
-        node.attitude_std_rad = {attitude_std, attitude_std, attitude_std};
+        node.attitude_std_rad = {attitude_std, attitude_std, attitude_std};  // 尚无分轴标定时三轴采用同一姿态1σ。
         node.gyro_bias_std_rad_s = {gyro_bias_std, gyro_bias_std,
                                     gyro_bias_std};
         node.accel_bias_std_m_s2 = {accel_bias_std, accel_bias_std,
                                     accel_bias_std};
-        inertial.nodes.push_back(node);
+        inertial.nodes.push_back(node);  // 追加完整15维初值；默认姿态和零偏保持结构中的安全默认值。
       }
-      config.inertial = std::move(inertial);
+      config.inertial = std::move(inertial);  // optional获得配置所有权，避免复制整个节点数组。
     }
   }
 
@@ -900,7 +963,7 @@ DemoConfig parse_ini_config(const std::string& text) {
   validate_engine_config(config, engine_section, filter_section,
                          degradation_section, online_section,
                          node_entry_lines);
-  return config;
+  return config;  // 按值返回；编译器通常使用返回值优化，不会复制大型配置。
 }
 
 DemoConfig load_ini_config(const std::filesystem::path& path) {
@@ -919,13 +982,13 @@ DemoConfig load_ini_config(const std::filesystem::path& path) {
       fail(IniError::kInvalidConfiguration, 1U,
            "configuration file exceeds size limit");
     }
-    text.push_back(character);
+    text.push_back(character);  // 逐字节保留原文件内容，让解析层统一处理UTF-8、BOM和CRLF。
   }
   if (!input.eof()) {
     fail(IniError::kIoFailure, 1U,
          "configuration file could not be read");
   }
-  return parse_ini_config(text);
+  return parse_ini_config(text);  // 文件I/O与文本语义解析分离，便于单元测试直接传字符串。
 }
 
 }  // namespace zju::coop::config

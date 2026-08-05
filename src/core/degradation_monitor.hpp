@@ -1,6 +1,11 @@
 // 模块职责：按协同边维护观测质量滑窗，并把NLOS、有效率、频率、残差等证据
 // 转换为正常、降权、暂缓、剔除和试探恢复状态；该模块只决定融合动作，
 // 不直接修改滤波状态，也不承担无线链路维护。
+//
+// 初学者可把它看成“每条测距边的质量记分员”：
+// record()只保存最近一段时间的样本；evaluate()统计NLOS比例、有效率、频率和残差；
+// 状态机根据坏状态持续多久决定正常使用、降低权重、暂缓、剔除或试探恢复。
+// 它只给出建议动作，真正的Kalman更新仍由滤波器完成。
 #pragma once
 
 #include "zju_coop/types.hpp"
@@ -17,6 +22,7 @@ struct EdgeKey {
   std::uint32_t first{};   ///< 规范化后编号较小的端点。
   std::uint32_t second{};  ///< 规范化后编号较大的端点。
 
+  /** `= default`要求编译器生成默认构造函数，两个整数仍按成员后的{}初始化为0。 */
   EdgeKey() = default;
   /** @param node_a 边的任一端点；@param node_b 边的另一端点。 */
   EdgeKey(std::uint32_t node_a, std::uint32_t node_b) noexcept;
@@ -33,17 +39,17 @@ struct EdgeKeyHash {
 };
 
 enum class ReasonMask : std::uint32_t {
-  NONE = 0U,
-  NLOS_RATIO_HIGH = 1U << 0U,
-  VALID_RATIO_LOW = 1U << 1U,
-  RATE_LOW = 1U << 2U,
-  RANGE_RESIDUAL_HIGH = 1U << 3U,
-  TIME_SYNC_TIMEOUT = 1U << 4U,
-  LINK_TIMEOUT = 1U << 5U,
-  GRAPH_GEOMETRY_DEGENERATE = 1U << 6U,
-  NODE_UNREACHABLE = 1U << 7U,
-  INITIALIZATION_MISSING = 1U << 8U,
-  INPUT_OVERFLOW = 1U << 9U,
+  NONE = 0U,                         ///< 没有退化原因，所有位均为0。
+  NLOS_RATIO_HIGH = 1U << 0U,       ///< 窗口NLOS比例达到或超过阈值。
+  VALID_RATIO_LOW = 1U << 1U,       ///< 窗口有效样本数相对期望数不足。
+  RATE_LOW = 1U << 2U,              ///< 实际到达频率低于标称频率比例门限。
+  RANGE_RESIDUAL_HIGH = 1U << 3U,   ///< 窗内至少有一次测距被NIS残差门限拒绝。
+  TIME_SYNC_TIMEOUT = 1U << 4U,     ///< 外部时间同步状态超时，由上层合并。
+  LINK_TIMEOUT = 1U << 5U,          ///< 通信链路状态超时，由上层合并。
+  GRAPH_GEOMETRY_DEGENERATE = 1U << 6U, ///< 当前刚度矩阵秩不足。
+  NODE_UNREACHABLE = 1U << 7U,      ///< 至少一个节点无法从主参考沿有效边到达。
+  INITIALIZATION_MISSING = 1U << 8U,///< 必要初始状态尚未建立。
+  INPUT_OVERFLOW = 1U << 9U,        ///< 单边样本缓存超过安全上限并发生丢弃。
 };
 
 /** @param left 已有原因位；@param right 待合并的原因位。 */
@@ -55,6 +61,7 @@ enum class ReasonMask : std::uint32_t {
 
 /** @param left 原位累加原因的位图；@param right 待并入的原因位。 */
 constexpr ReasonMask& operator|=(ReasonMask& left, ReasonMask right) noexcept {
+  // left是可写引用，因此赋值会直接修改调用方原变量；返回引用支持连续组合。
   left = left | right;
   return left;
 }
@@ -62,6 +69,7 @@ constexpr ReasonMask& operator|=(ReasonMask& left, ReasonMask right) noexcept {
 /** @param mask 待检查的综合原因位图；@param reason 要求完整包含的原因位。 */
 [[nodiscard]] constexpr bool has_reason(ReasonMask mask,
                                         ReasonMask reason) noexcept {
+  // 先排除NONE，再用按位与确认reason中的所有1位都出现在mask中。
   return reason != ReasonMask::NONE &&
          (static_cast<std::uint32_t>(mask) &
           static_cast<std::uint32_t>(reason)) ==
@@ -111,6 +119,7 @@ struct ObservationQuality {
 class DegradationMonitor {
  public:
   /** @param config 退化判据、保持时长及缓存资源限制。 */
+  // explicit禁止把DegradationConfig隐式当作DegradationMonitor；`={}`允许无参时使用默认配置。
   explicit DegradationMonitor(DegradationConfig config = {});
 
   /** 预注册可能出现的无向边；超过资源上限时抛错而不是静默丢弃。
@@ -137,6 +146,7 @@ class DegradationMonitor {
 
   /** @param edge 要查询的无向边。 */
   [[nodiscard]] ObservationQuality quality(EdgeKey edge) const;
+  /** 返回只读引用避免复制配置；引用不能在监视器对象销毁后继续使用。 */
   [[nodiscard]] const DegradationConfig& config() const noexcept;
 
  private:

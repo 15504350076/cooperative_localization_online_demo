@@ -1,5 +1,7 @@
 // 模块职责：保留早期核心接口回归入口，覆盖三车节点初始化、测距输入和主参考输出。
 // 当前CMake不再编译此文件；有效回归已拆入test_engine等注册式用例，阅读时不得把它当成交付测试证据。
+// C++初学者注意：这是历史代码，只用于理解早期思路；学习和验证应从test_main.cpp、
+// test_support.hpp及当前test_*.cpp开始，不要尝试单独编译本文件来判断工程是否可用。
 #include "zju_coop/engine.hpp"
 
 #include <cmath>

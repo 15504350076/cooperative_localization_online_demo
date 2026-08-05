@@ -1,4 +1,6 @@
 // 模块职责：验证ZJCL帧及全部固定载荷的小端字节布局、CRC黄金向量和严格错误分类。
+// C++初学者阅读提示：正常用例执行“对象->encode字节->decode对象->逐字段比较”；
+// 错误用例故意改动magic、版本、长度或CRC，确认损坏数据不会进入算法。
 #include "protocol/crc32.hpp"
 #include "protocol/wire_protocol.hpp"
 #include "test_support.hpp"

@@ -1,6 +1,12 @@
 // 模块实现：维护多节点名义惯性状态和完整15N联合协方差，融合平台间三维距离观测。
 // 关键原则：IMU只传播所属节点的状态块和相关交叉块；测距更新作用于完整联合状态，
 // 误差注入或协方差数值检查失败时整次更新回滚，不留下半更新状态。
+//
+// 初学者阅读主线：
+// 构造函数建立节点顺序和初始15N协方差；push_imu()把某一节点的Phi/Qd嵌入联合矩阵；
+// update_range()计算“实测距离-预测距离”，通过NIS判断异常，再用Kalman增益修正所有相关状态；
+// estimate()最后把节点状态转换成“相对主参考节点”的输出。
+// 大矩阵循环本质仍是课本公式P=Phi*P*Phi^T+Q和K=P*H^T/(H*P*H^T+R)。
 #include "core/cooperative_inertial_ekf.hpp"
 
 #include <algorithm>
@@ -43,6 +49,7 @@ CooperativeInertialEkf::CooperativeInertialEkf(
     CooperativeInertialConfig cooperative_config,
     InertialConfig inertial_config,
     std::vector<InertialNodeInitialization> initializations)
+    // cooperative_config按值传入后移动进成员；covariance_先构造成合法0×0矩阵，校验后再分配。
     : config_(std::move(cooperative_config)), covariance_(0U, 0U) {
   if (initializations.empty() || !positive_finite(config_.nis_gate) ||
       !positive_finite(config_.min_covariance_diagonal) ||
@@ -85,12 +92,14 @@ CooperativeInertialEkf::CooperativeInertialEkf(
         !finite_nonnegative(node.accel_bias_std_m_s2.z)) {
       throw std::invalid_argument("invalid inertial initial standard deviation");
     }
+    // emplace返回pair；second=false说明键已存在，可在一次查找中完成插入和重复判断。
     if (!node_lookup_.emplace(node.node_id, index).second) {
       throw std::invalid_argument("duplicate inertial node id");
     }
     reference_found = reference_found ||
                       node.node_id == config_.reference_node_id;
     node_ids_.push_back(node.node_id);
+    // emplace_back直接在vector尾部调用InertialEskf15构造函数，避免先造临时对象再复制。
     filters_.emplace_back(node, inertial_config);
   }
   if (!reference_found) {
@@ -135,10 +144,12 @@ ImuProcessingResult CooperativeInertialEkf::push_imu(
   // `candidate_filters`是全部节点传播器的事务副本；`result`是目标节点IMU传播诊断。
   std::vector<InertialEskf15> candidate_filters = filters_;
   ImuProcessingResult result = candidate_filters[found->second].push_imu(packet);
+  // unordered_map迭代器的second是节点块序号，用它索引对应单车传播器。
   if (!result.propagated) {
     if (result.disposition == ImuDisposition::kBaselineEstablished ||
         result.disposition == ImuDisposition::kIntervalRejected) {
       filters_ = std::move(candidate_filters);
+      // 首帧和间隔拒绝都会更新该节点时间基准，因此即使没有传播也要提交传播器副本。
     }
     return result;
   }
@@ -207,6 +218,7 @@ ImuProcessingResult CooperativeInertialEkf::push_imu(
   }
 
   filters_ = std::move(candidate_filters);
+  // 名义状态和联合协方差都验证成功后才一起移动提交，形成事务边界。
   covariance_ = std::move(candidate_covariance);
   return result;
 }
@@ -355,6 +367,7 @@ UpdateResult CooperativeInertialEkf::update_range(const RangePacket& packet,
     // `node_error`按δp/δv/δθ/δbg/δba复制当前节点的15个后验误差分量。
     std::array<double, kInertialErrorStateSize> node_error{};
     std::copy_n(error.begin() +
+                    // vector迭代器支持加偏移；ptrdiff_t是迭代器差值使用的有符号整数类型。
                     static_cast<std::ptrdiff_t>(node *
                                                 kInertialErrorStateSize),
                 kInertialErrorStateSize, node_error.begin());
@@ -368,6 +381,7 @@ UpdateResult CooperativeInertialEkf::update_range(const RangePacket& packet,
     return result;
   }
   filters_ = std::move(candidate_filters);
+  // 所有节点误差注入都成功后，才把候选传播器和候选协方差同时替换在线状态。
   covariance_ = std::move(candidate_covariance);
   has_range_timebase_ = true;
   last_range_timestamp_ns_ =

@@ -1,4 +1,6 @@
 // 模块职责：验证应用适配层把算法快照编码为GCS帧，并正确维护告警激活/恢复生命周期。
+// C++初学者阅读方法：每个TEST_CASE都是一个独立场景；先构造算法快照（准备），
+// 再调用TelemetryEncoder（动作），最后decode输出帧并用EXPECT_*核对字段（结果）。
 #include "apps/app_support.hpp"
 #include "protocol/wire_protocol.hpp"
 #include "test_support.hpp"

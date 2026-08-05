@@ -2,6 +2,10 @@
 // 关键原则：长时间隔按等效分段过程噪声计算，协方差采用Joseph形式并做正定稳定化；
 // 该路径不与15维惯性路径同时运行，不能作为当前默认IMU+测距实现的替代说明。
 // 维度记号：M为非参考节点数，参考节点固定为零状态且不占四维状态块。
+//
+// 初学者阅读主线：predict_to()按匀速模型更新x/y，update_range()比较预测距离和实测距离，
+// 计算创新、NIS和Kalman增益，最后用Joseph形式更新协方差。其数学流程与15N路径相似，
+// 但状态更小、没有姿态和IMU零偏，只用于兼容回退。
 #include "core/range_ekf.hpp"
 
 #include <algorithm>
@@ -14,11 +18,13 @@
 namespace zju::coop {
 namespace {
 
+// constexpr要求编译期常量；quiet_NaN生成可传播但不会触发硬件异常的“非数字”标记。
 constexpr double kNan = std::numeric_limits<double>::quiet_NaN();  // 未知节点估计的无效数值标记。
 constexpr double kMinimumRangeForDerivative = 1.0e-12;  // 距离雅可比可线性化的最小二维基线，单位m。
 constexpr double kNanosecondsPerSecond = 1.0e9;  // 统一传感器时间由ns换算为s的倍率。
 
 // `value`是待检查能否安全进入滤波计算的标量。
+// 单行包装统一项目内写法；std::isfinite只对普通有限数返回true。
 bool finite(double value) { return std::isfinite(value); }
 
 // `factors`是需要稳定相乘的一组严格正long double因子。
@@ -31,6 +37,7 @@ long double scaled_positive_product(
   long long exponent = 0LL;
   // `factor`依次取待乘的每个严格正因子。
   for (const long double factor : factors) {
+    // initializer_list可能由花括号临时构造；范围for逐个只读取得其中因子。
     if (!std::isfinite(factor) || factor <= 0.0L) {
       throw std::overflow_error("scaled product factor is invalid");
     }
@@ -38,7 +45,9 @@ long double scaled_positive_product(
     // `factor_mantissa`是frexp分解后的规格化尾数。
     int factor_exponent = 0;
     const long double factor_mantissa =
+        // `&factor_exponent`传入变量地址，让frexp通过指针写回指数部分。
         std::frexp(factor, &factor_exponent);
+    // `*=`和`+=`都是复合赋值，分别累计尾数乘积与二进制指数和。
     mantissa *= factor_mantissa;
     exponent += factor_exponent;
 
@@ -53,6 +62,7 @@ long double scaled_positive_product(
   }
   // `product`是将累计尾数和指数重新组合后的最终正乘积。
   const long double product =
+      // static_cast<int>是显式窄化；前面的范围检查保证转换不会溢出。
       std::scalbn(mantissa, static_cast<int>(exponent));
   if (!std::isfinite(product) || product <= 0.0L) {
     throw std::overflow_error("scaled product is not representable");
@@ -64,6 +74,7 @@ long double scaled_positive_product(
 UpdateResult result(UpdateDisposition disposition, double covariance_scale) {
   // `value`是仅填充处置和降权信息的早退诊断。
   UpdateResult value{};
+  // 点号访问局部结构体成员；这两个字段赋值后，其余字段继续保持{}产生的零值。
   value.disposition = disposition;
   value.covariance_scale = covariance_scale;
   return value;
@@ -75,6 +86,7 @@ bool has_strict_cholesky_factor(const DenseMatrix& matrix,
                                 double minimum_pivot = 0.0,
                                 bool require_scaled_margin = false) {
   if (matrix.rows() != matrix.cols()) {
+    // 非方阵不存在本函数所需的Cholesky分解，直接用false报告。
     return false;
   }
   // `lower`是与输入同维的Cholesky下三角工作矩阵。
@@ -95,6 +107,7 @@ bool has_strict_cholesky_factor(const DenseMatrix& matrix,
         // `pivot_threshold`是当前对角主元必须严格超过的数值下限。
         double pivot_threshold = minimum_pivot;
         if (require_scaled_margin) {
+          // max在绝对下限与“当前尺度×机器精度”之间取更严格的一项。
           pivot_threshold = std::max(
               pivot_threshold,
               std::numeric_limits<double>::epsilon() *
@@ -105,6 +118,7 @@ bool has_strict_cholesky_factor(const DenseMatrix& matrix,
         }
         lower(row, col) = std::sqrt(residual);
       } else {
+        // 非对角元素使用已求出的对角主元L(col,col)完成标准Cholesky递推。
         lower(row, col) = residual / lower(col, col);
         if (!finite(lower(row, col))) {
           return false;
@@ -112,7 +126,7 @@ bool has_strict_cholesky_factor(const DenseMatrix& matrix,
       }
     }
   }
-  return true;
+  return true;  // 所有主元与非对角项均成功求出，说明矩阵通过严格正定检查。
 }
 
 // `covariance`是原位稳定化的状态协方差；`minimum_diagonal`是对角线与初始抖动下限。
@@ -138,6 +152,7 @@ bool stabilize_positive_definite(DenseMatrix& covariance,
       minimum_diagonal,
       std::numeric_limits<double>::epsilon() * scale * 8.0);
   if (has_strict_cholesky_factor(covariance, minimum_diagonal, true)) {
+    // 原矩阵已经满足正定和尺度裕量，不需要额外抖动。
     return true;
   }
   // `attempt`遍历最多六档、每档放大十倍的对角抖动试探。
@@ -155,10 +170,11 @@ bool stabilize_positive_definite(DenseMatrix& covariance,
       }
     }
     if (has_strict_cholesky_factor(jittered)) {
+      // std::move把候选矩阵的内部vector所有权转交给covariance，避免复制全部元素。
       covariance = std::move(jittered);
       return true;
     }
-    jitter *= 10.0;
+    jitter *= 10.0;  // 当前档仍不正定，下一轮把对角抖动扩大一个数量级。
   }
   return false;
 }
@@ -167,6 +183,7 @@ bool stabilize_positive_definite(DenseMatrix& covariance,
 
 RangeEkf::RangeEkf(FilterConfig config,
                    std::vector<NodeInitialization> initializations)
+    // config和initializations按值接收，使构造函数拥有独立副本；成员初始化列表先保存配置并建立0×0矩阵。
     : config_(config), covariance_(0U, 0U) {
   // 构造时锁定节点顺序、参考节点和状态维度，运行中不动态增加平台。
   if (!finite(config_.process_accel_std_mps2) ||
@@ -188,8 +205,10 @@ RangeEkf::RangeEkf(FilterConfig config,
   // `reference_iterator`定位定义相对坐标原点的初始化记录。
   // Lambda捕获`this`以读取固定参考编号；参数`node`借用当前候选初始化项。
   const auto reference_iterator = std::find_if(
+      // begin/end组成半开搜索区间[begin,end)，end本身不是有效元素。
       initializations.begin(), initializations.end(),
       [this](const NodeInitialization& node) {
+        // `[this]`是Lambda捕获列表，使匿名函数能读取当前对象的config_成员。
         return node.node_id == config_.reference_node_id;
       });
   if (reference_iterator == initializations.end()) {
@@ -197,6 +216,7 @@ RangeEkf::RangeEkf(FilterConfig config,
   }
   // `origin_x`、`origin_y`是参考节点初始平面位置(m)；
   // `origin_vx`、`origin_vy`是参考节点初始平面速度(m/s)。
+  // `iterator->member`等价于`(*iterator).member`，这里读取找到的参考节点字段。
   const double origin_x = reference_iterator->x;
   const double origin_y = reference_iterator->y;
   const double origin_vx = reference_iterator->vx;
@@ -210,6 +230,7 @@ RangeEkf::RangeEkf(FilterConfig config,
   std::size_t nonreference_count = 0U;
   // `initialization`依次借用每个平台初值以校验并固定节点记录顺序。
   for (const auto& initialization : initializations) {
+    // `const auto&`让编译器推导NodeInitialization只读引用，避免每轮复制整个结构。
     if (!finite(initialization.x) || !finite(initialization.y) ||
         !finite(initialization.vx) || !finite(initialization.vy) ||
         !finite(initialization.position_std_m) ||
@@ -228,12 +249,14 @@ RangeEkf::RangeEkf(FilterConfig config,
         initialization.node_id == config_.reference_node_id;
     const std::size_t offset = nonreference_count * 4U;
     node_lookup_.emplace(initialization.node_id, nodes_.size());
+    // 花括号按NodeRecord的node_id/offset/reference顺序构造记录，再追加到vector。
     nodes_.push_back({initialization.node_id, offset, is_reference});
     if (!is_reference) {
       ++nonreference_count;
     }
   }
 
+  // assign把vector长度设为4M并把每项初始化为0；参考节点不占状态元素。
   state_.assign(nonreference_count * 4U, 0.0);
   covariance_ = DenseMatrix(state_.size(), state_.size());
   // `node_index`同步遍历节点记录与原初始化数组。
@@ -241,6 +264,7 @@ RangeEkf::RangeEkf(FilterConfig config,
     // `node`借用当前节点记录；`initialization`借用同序原始初值。
     const NodeRecord& node = nodes_[node_index];
     if (node.reference) {
+      // 参考节点固定为相对零状态，没有四维块可写。
       continue;
     }
     // `initialization`借用与当前节点记录同序的初始平面状态和标准差。
@@ -276,15 +300,18 @@ RangeEkf::RangeEkf(FilterConfig config,
 }
 
 void RangeEkf::predict_to(std::uint64_t timestamp_ns) {
+  // 已建立时间基准后拒绝倒退；此void兼容接口选择保持原状态而不是抛异常。
   if (has_timebase_ && timestamp_ns < last_timestamp_ns_) {
     return;
   }
   if (!has_timebase_) {
+    // 第一帧只建立时间原点，没有时间差，因而不能执行运动预测。
     last_timestamp_ns_ = timestamp_ns;
     has_timebase_ = true;
     return;
   }
   if (timestamp_ns == last_timestamp_ns_) {
+    // 时间差为0时状态转移是单位阵，直接返回避免无意义矩阵运算。
     return;
   }
 
@@ -306,16 +333,18 @@ void RangeEkf::predict_to(std::uint64_t timestamp_ns) {
   const std::uint64_t timestamp_before = last_timestamp_ns_;
   const bool had_timebase = has_timebase_;
   try {
+    // try块内任何标准或非标准异常都由下面catch(...)回滚后重新抛出。
     predict_interval(total_seconds, required_steps);
     if (!finite_state_and_covariance()) {
       throw std::overflow_error("prediction produced a non-finite value");
     }
   } catch (...) {
+    // `catch(...)`捕获所有异常类型；恢复四份事务快照后用裸throw保留原异常继续上抛。
     state_ = state_before;
     covariance_ = covariance_before;
     last_timestamp_ns_ = timestamp_before;
     has_timebase_ = had_timebase;
-    throw;
+    throw;  // 裸throw只能在catch中使用，表示重新抛出当前正在处理的异常。
   }
   last_timestamp_ns_ = timestamp_ns;
 }
@@ -373,6 +402,7 @@ void RangeEkf::predict_interval(double total_seconds,
   // `node`依次借用节点记录，为每个非参考四维块写入状态转移并推进名义状态。
   for (const auto& node : nodes_) {
     if (node.reference) {
+      // 参考节点没有状态块，恒定保持零原点。
       continue;
     }
     transition(node.offset, node.offset + 2U) = total_seconds;
@@ -382,6 +412,7 @@ void RangeEkf::predict_interval(double total_seconds,
         state_[node.offset + 3U] * total_seconds;
   }
 
+  // 运算符从左结合：先算F*P，再右乘Fᵀ，完成P=F P Fᵀ。
   covariance_ = transition * covariance_ * transition.transpose();
   // `node`再次遍历非参考节点，为对应4×4对角块加入轴向过程噪声。
   for (const auto& node : nodes_) {
@@ -418,6 +449,7 @@ UpdateResult RangeEkf::update(const RangePacket& packet,
   try {
     predict_to(packet.timestamp_ns);
   } catch (const std::exception&) {
+    // `const std::exception&`只读借用异常基类；此处不需要具体what文本，只映射为数值失败。
     return result(UpdateDisposition::NumericalFailure, covariance_scale);
   }
 
@@ -433,9 +465,11 @@ UpdateResult RangeEkf::update(const RangePacket& packet,
   // `from`与`to`分别借用测距起点和终点节点记录；指针仅在节点表不变时有效。
   const NodeRecord* from = find_node(packet.from_node);
   const NodeRecord* to = find_node(packet.to_node);
+  // nullptr是空指针字面量；任一查找失败都不能解引用节点记录。
   if (from == nullptr || to == nullptr) {
     return result(UpdateDisposition::UnknownNode, covariance_scale);
   }
+  // 指针相等说明两端查到同一个NodeRecord，也就是自测距。
   if (from == to) {
     return result(UpdateDisposition::SelfRange, covariance_scale);
   }
@@ -445,6 +479,7 @@ UpdateResult RangeEkf::update(const RangePacket& packet,
 
   // `from_x`、`from_y`与`to_x`、`to_y`是两端相对参考节点的平面位置，单位m；
   // 参考节点不占状态块，按固定零位置参与几何计算。
+  // 三目运算符：若端点是参考节点取固定0，否则读取其状态块位置。
   const double from_x = from->reference ? 0.0 : state_[from->offset];
   const double from_y = from->reference ? 0.0 : state_[from->offset + 1U];
   const double to_x = to->reference ? 0.0 : state_[to->offset];
@@ -454,6 +489,7 @@ UpdateResult RangeEkf::update(const RangePacket& packet,
   const double delta_x = to_x - from_x;
   const double delta_y = to_y - from_y;
   const double expected_range = std::hypot(delta_x, delta_y);
+  // hypot比手写sqrt(dx*dx+dy*dy)更能避免极端数值中间溢出/下溢。
   if (!finite(expected_range) ||
       expected_range <= kMinimumRangeForDerivative) {
     return result(UpdateDisposition::NumericalFailure, covariance_scale);
@@ -530,6 +566,7 @@ UpdateResult RangeEkf::update(const RangePacket& packet,
   const double maximum_root =
       std::sqrt(std::numeric_limits<double>::max());
   update_result.nis =
+      // 多行三目表达式：残差不可平方时饱和到double最大值，否则正常平方。
       !finite(standardized_residual) || standardized_residual > maximum_root
           ? std::numeric_limits<double>::max()
           : standardized_residual * standardized_residual;
@@ -546,6 +583,7 @@ UpdateResult RangeEkf::update(const RangePacket& packet,
   std::vector<double> gain(state_.size(), 0.0);
   // `row`遍历联合状态分量，计算对应增益与后验误差修正。
   for (std::size_t row = 0U; row < state_.size(); ++row) {
+    // 一维量测的K=P Hᵀ/S；同一创新通过不同K分量修正每个相关状态。
     gain[row] = covariance_times_jacobian[row] / innovation_variance;
     candidate_state[row] += gain[row] * innovation;
   }
@@ -587,6 +625,7 @@ UpdateResult RangeEkf::update(const RangePacket& packet,
   }
 
   state_ = std::move(candidate_state);
+  // 两个候选均通过有限值和正定检查后才移动提交，前面的拒绝路径不会污染原状态。
   covariance_ = std::move(candidate_covariance);
   update_result.disposition = UpdateDisposition::Accepted;
   return update_result;
@@ -599,6 +638,7 @@ const RangeEkf::NodeRecord* RangeEkf::find_node(
   if (iterator == node_lookup_.end()) {
     return nullptr;
   }
+  // `&`取得vector元素地址；节点表构造后不再扩容，因此该指针在滤波器生命周期内稳定。
   return &nodes_[iterator->second];
 }
 
@@ -619,6 +659,7 @@ NodeEstimate RangeEkf::estimate(std::uint32_t node_id) const {
     invalid.cov_yy = kNan;
     return invalid;
   }
+  // `*node`解引用指针得到NodeRecord对象，再以const引用传给提取函数。
   return make_estimate(*node);
 }
 
@@ -628,12 +669,14 @@ std::vector<NodeEstimate> RangeEkf::estimates() const {
   values.reserve(nodes_.size());
   // `node`依次借用固定节点表中的记录。
   for (const auto& node : nodes_) {
+    // push_back把当前按值返回的NodeEstimate追加到动态数组末尾。
     values.push_back(make_estimate(node));
   }
   return values;
 }
 
 const DenseMatrix& RangeEkf::covariance() const noexcept {
+  // 返回const引用避免复制大矩阵；调用者只能读，不能直接改内部协方差。
   return covariance_;
 }
 
@@ -644,6 +687,7 @@ NodeEstimate RangeEkf::make_estimate(const NodeRecord& node) const {
   value.timestamp_ns = last_timestamp_ns_;
   value.valid = true;
   if (node.reference) {
+    // value已经是全零且valid=true，恰好表示主参考相对自身的位置与速度。
     return value;
   }
 
@@ -660,6 +704,7 @@ NodeEstimate RangeEkf::make_estimate(const NodeRecord& node) const {
 bool RangeEkf::finite_state_and_covariance() const {
   // `value`依次检查4M状态中的位置(m)与速度(m/s)分量。
   for (double value : state_) {
+    // 这里按值复制单个double成本极低，同时禁止循环体意外修改state_。
     if (!finite(value)) {
       return false;
     }

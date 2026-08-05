@@ -1,6 +1,14 @@
 // 模块职责：运行临时UDP在线闭环，接收IMU/测距帧、调用算法、发布GCS结果并记录事件日志。
-// 模块边界：仅用于无ROS 2阶段和联调冒烟测试；AIBrainBox正式部署由上交ROS 2适配节点
-// 直接调用C ABI，通信路由和时间同步仍由上交负责。
+// 模块边界：仅用于无ROS 2阶段和联调冒烟测试；AIBrainBox正式部署由上海交大ROS 2适配节点
+// 直接调用C ABI，通信路由和时间同步仍由上海交大负责。
+//
+// C++初学者可按main中的三个阶段阅读：
+// 1. 读取命令行和INI，创建算法会话、UDP收发器及可选日志文件；
+// 2. 循环接收一个完整ZJCL帧，解码后按IMU或测距类型调用对应push函数；
+// 3. 到达输出周期时调用step，把快照编码后发给GCS并写日志。
+// Ctrl+C触发信号处理函数，只把原子布尔量改为false，让主循环安全结束。
+// `std::unique_ptr`管理可选日志对象；`std::atomic<bool>`可在信号处理和主循环之间安全传递停止标志；
+// `std::chrono`类型把“时刻”和“时长”分开，减少毫秒/纳秒单位混用。
 #include "apps/app_support.hpp"
 #include "config/ini_config.hpp"
 #include "net/udp_socket.hpp"

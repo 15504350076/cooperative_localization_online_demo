@@ -1,5 +1,13 @@
 // 模块职责：定义ZJLG顺序事件日志，记录算法输入、输出及本机接收时刻供任务后回放。
 // 日志保存完整ZJCL帧而非原始图像/点云；读取时重新执行协议校验，损坏记录不能进入算法。
+//
+// C++初学者阅读提示：
+// 1. ZJLG是“日志文件容器”，每条记录内部保存一个已经编码好的ZJCL帧。
+// 2. EventLogWriter负责创建/追加文件，EventLogReader负责逐条读取；二者析构时自动关闭文件流。
+// 3. direction用于区分输入和输出，receive_timestamp_ns用于复现到达间隔，
+//    算法更新仍使用ZJCL帧内部的测量时间timestamp_ns。
+// 4. std::ofstream/std::ifstream分别是输出/输入文件流；类析构时流对象自动关闭文件。
+// 5. `= delete`禁止复制日志对象，避免两个对象共享并争用同一文件位置。
 #pragma once
 
 #include "protocol/wire_protocol.hpp"

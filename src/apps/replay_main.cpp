@@ -1,5 +1,11 @@
 // 模块职责：顺序读取ZJLG历史输入，用当前算法重新生成定位、网络、观测状态和告警。
 // 原日志中的输出记录只用于审计并跳过，避免旧结果再次作为输入；可按原速、倍速或最快速度回放。
+//
+// C++初学者阅读提示：回放不是“播放旧定位结果”，而是重新创建一个空算法会话，
+// 按原顺序把日志中的Input记录再次push进去；Output记录跳过，再由当前版本step生成新结果。
+// ReplayPacer只控制等待时间，--speed 0表示不等待、尽快完成算法回归。
+// `enum class`限制输出模式取值；`std::this_thread::sleep_until`只负责节奏等待；
+// 命令行`argv[++index]`先把下标前移，再读取紧跟在选项后的参数值。
 #include "apps/app_support.hpp"
 #include "config/ini_config.hpp"
 #include "net/udp_socket.hpp"

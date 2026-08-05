@@ -1,4 +1,6 @@
 // 模块职责：验证Engine从输入检查、重复/时间拒绝、质量动作、滤波到动态图快照的编排闭环。
+// C++初学者可把本文件当作核心集成测试：辅助函数先创建三车Engine和数据包，
+// TEST_CASE再调用process_imu/process_range/step，最后检查处理回执与输出快照。
 #include "core/engine.hpp"
 #include "test_support.hpp"
 

@@ -1,6 +1,15 @@
 // 模块实现：用三车静止IMU和3-4-5测距从公开C ABI完成创建、传播、引擎级Processed路径、
 // 输出与恢复验证；测距项不单独断言底层update_disposition为ACCEPTED。
 // 所有输入均为内存构造的确定性数据，不打开端口和硬件，因此可与后续ROS 2实机节点并存。
+//
+// C++初学者阅读顺序：
+// 1. Recorder把每个布尔判断记录为PASS/FAIL；HandleGuard保证提前返回时也能destroy句柄。
+// 2. 构造三车初值和惯性配置，创建公开C ABI会话。
+// 3. 为每辆车输入两帧静止IMU：第一帧建立时间基线，第二帧真正执行预测。
+// 4. 输入3 m、4 m、5 m三条测距，随后step检查三车输出、网络状态和恢复行为。
+// 5. 所有数据固定，因而同一程序在Windows、Ubuntu和RK3588应得到可重复结果。
+// HandleGuard使用RAII，`= delete`禁止复制句柄所有权；ostringstream把多次`<<`输出累计成字符串；
+// 所有C结构先调用init，避免初学者把零初始化误当作完整ABI版本握手。
 #include "self_check/self_check.hpp"
 
 #include "zju_coop/c_api.h"

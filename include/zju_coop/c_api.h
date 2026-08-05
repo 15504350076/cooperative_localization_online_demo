@@ -1,18 +1,31 @@
 /*
- * 模块职责：声明浙大协同定位算法库的稳定C ABI，是上交ROS 2适配层唯一必须依赖的接口。
+ * 模块职责：声明浙大协同定位算法库的稳定C ABI，是上海交大ROS 2适配层唯一必须依赖的接口。
  * 设计边界：ROS消息、通信路由和车辆控制不得进入本头文件；Windows DLL与RK3588 .so
  * 通过相同结构布局和版本检查调用。所有时间为统一时间轴纳秒，物理量采用SI单位。
+ *
+ * C/C++初学者阅读提示：
+ * 1. ABI是“编译后的二进制调用约定”。它约定函数名、参数类型、结构布局和返回值，不是网络协议。
+ * 2. 这里只使用C能表达的整数、数组、指针和结构体，避免不同C++编译器对类和异常处理不一致。
+ * 3. 正确调用顺序通常是：init结构体 -> 填业务字段 -> create句柄 -> push输入
+ *    -> step读取输出 -> destroy句柄。
+ * 4. 指针参数可能表示单个结构、数组首地址或输出位置；调用前必须阅读对应函数注释，
+ *    不能把nullptr、数组长度和stride（相邻元素字节间隔）随意填写。
+ * 5. `typedef struct {...} name_t`同时定义结构和简短类型名，是兼容C语言的常见写法。
+ * 6. `const T*`表示函数只读取指针所指内容；`T*`通常表示函数会写回结果。
+ * 7. `reserved`保留字段必须清零，为未来版本增加能力而不破坏当前结构布局。
+ * 8. 所有公开函数前的ZJU_COOP_API/ZJU_COOP_CALL分别控制动态库导出和Windows调用约定。
  */
 #ifndef ZJU_COOP_C_API_H
 #define ZJU_COOP_C_API_H
 
-/* 所有版本化结构必须先调用对应init函数；同一handle的调用由调用方串行化。 */
+/* 所有版本化结构必须先调用对应init函数；同一handle不能被多个线程同时调用。 */
 
 #include "zju_coop/export.h"
 
 #include <stdint.h>
 
 #ifdef __cplusplus
+/* C++编译器看到extern "C"后，不再改写公开函数名，C程序和ROS 2 C++节点才能找到同一符号。 */
 extern "C" {
 #endif
 
@@ -27,6 +40,7 @@ typedef int32_t zju_coop_error_code_t;
 #define ZJU_COOP_BUFFER_TOO_SMALL ((zju_coop_error_code_t)4)
 #define ZJU_COOP_OUT_OF_MEMORY ((zju_coop_error_code_t)5)
 #define ZJU_COOP_INTERNAL_ERROR ((zju_coop_error_code_t)6)
+#define ZJU_COOP_NOT_READY ((zju_coop_error_code_t)7)
 
 /* C ABI固定使用单字节0/1布尔值，禁止直接暴露编译器相关的C++ bool布局。 */
 typedef uint8_t zju_coop_bool_t;
@@ -90,7 +104,7 @@ typedef int32_t zju_coop_update_disposition_t;
 #define ZJU_COOP_UPDATE_NIS_REJECTED ((zju_coop_update_disposition_t)6)
 #define ZJU_COOP_UPDATE_NUMERICAL_FAILURE ((zju_coop_update_disposition_t)7)
 
-/* IMU处理结果；数值固定，供上交ROS 2适配层稳定映射。 */
+/* IMU处理结果；数值固定，供上海交大ROS 2适配层稳定映射。 */
 typedef int32_t zju_coop_imu_disposition_t;
 #define ZJU_COOP_IMU_BASELINE_ESTABLISHED ((zju_coop_imu_disposition_t)0)
 #define ZJU_COOP_IMU_PROPAGATED ((zju_coop_imu_disposition_t)1)
@@ -101,6 +115,59 @@ typedef int32_t zju_coop_imu_disposition_t;
 #define ZJU_COOP_IMU_INTERVAL_REJECTED ((zju_coop_imu_disposition_t)6)
 #define ZJU_COOP_IMU_FRAME_MISMATCH ((zju_coop_imu_disposition_t)7)
 #define ZJU_COOP_IMU_NUMERICAL_FAILURE ((zju_coop_imu_disposition_t)8)
+
+/*
+ * 原始视觉/点云预留入口的输入种类。
+ * 当前版本只负责验证ROS 2消息映射后的元数据和缓冲区布局，不运行视觉或点云算法。
+ */
+typedef int32_t zju_coop_raw_input_type_t;
+#define ZJU_COOP_RAW_INPUT_UNKNOWN ((zju_coop_raw_input_type_t)0)
+#define ZJU_COOP_RAW_INPUT_CAMERA_IMAGE ((zju_coop_raw_input_type_t)1)
+#define ZJU_COOP_RAW_INPUT_POINT_CLOUD ((zju_coop_raw_input_type_t)2)
+
+/*
+ * 原始输入处理结论。VALIDATED_NOT_USED明确表示“格式正确但未进入定位算法”，
+ * 调用方不能把ZJU_COOP_OK误解成已经完成目标识别、点云配准或滤波更新。
+ */
+typedef int32_t zju_coop_raw_input_disposition_t;
+#define ZJU_COOP_RAW_INPUT_UNINITIALIZED \
+  ((zju_coop_raw_input_disposition_t)0)
+#define ZJU_COOP_RAW_INPUT_VALIDATED_NOT_USED \
+  ((zju_coop_raw_input_disposition_t)1)
+
+/*
+ * 与sensor_msgs/msg/PointField.datatype数值一致的数据类型。
+ * 保持相同数值可让上海交大ROS 2适配层直接映射，但算法库头文件本身不依赖ROS 2。
+ */
+typedef uint8_t zju_coop_point_field_datatype_t;
+#define ZJU_COOP_POINT_FIELD_INT8 ((zju_coop_point_field_datatype_t)1)
+#define ZJU_COOP_POINT_FIELD_UINT8 ((zju_coop_point_field_datatype_t)2)
+#define ZJU_COOP_POINT_FIELD_INT16 ((zju_coop_point_field_datatype_t)3)
+#define ZJU_COOP_POINT_FIELD_UINT16 ((zju_coop_point_field_datatype_t)4)
+#define ZJU_COOP_POINT_FIELD_INT32 ((zju_coop_point_field_datatype_t)5)
+#define ZJU_COOP_POINT_FIELD_UINT32 ((zju_coop_point_field_datatype_t)6)
+#define ZJU_COOP_POINT_FIELD_FLOAT32 ((zju_coop_point_field_datatype_t)7)
+#define ZJU_COOP_POINT_FIELD_FLOAT64 ((zju_coop_point_field_datatype_t)8)
+
+/* 与sensor_msgs/NavSatFix.position_covariance_type的0至3数值完全一致。 */
+typedef uint8_t zju_coop_gnss_covariance_type_t;
+#define ZJU_COOP_GNSS_COVARIANCE_TYPE_UNKNOWN \
+  ((zju_coop_gnss_covariance_type_t)0)
+#define ZJU_COOP_GNSS_COVARIANCE_TYPE_APPROXIMATED \
+  ((zju_coop_gnss_covariance_type_t)1)
+#define ZJU_COOP_GNSS_COVARIANCE_TYPE_DIAGONAL_KNOWN \
+  ((zju_coop_gnss_covariance_type_t)2)
+#define ZJU_COOP_GNSS_COVARIANCE_TYPE_KNOWN \
+  ((zju_coop_gnss_covariance_type_t)3)
+
+/* 单帧NavSatFix映射进入独立GNSS上下文后的处理结论。 */
+typedef int32_t zju_coop_gnss_disposition_t;
+#define ZJU_COOP_GNSS_STORED ((zju_coop_gnss_disposition_t)0)
+#define ZJU_COOP_GNSS_INVALID_PACKET ((zju_coop_gnss_disposition_t)1)
+#define ZJU_COOP_GNSS_UNKNOWN_NODE ((zju_coop_gnss_disposition_t)2)
+#define ZJU_COOP_GNSS_DUPLICATE ((zju_coop_gnss_disposition_t)3)
+#define ZJU_COOP_GNSS_OUT_OF_ORDER ((zju_coop_gnss_disposition_t)4)
+#define ZJU_COOP_GNSS_TIME_REJECTED ((zju_coop_gnss_disposition_t)5)
 
 /* 可按位组合的退化原因；消费者必须逐位判断，不能把组合值当作单一枚举。 */
 typedef uint32_t zju_coop_reason_mask_t;
@@ -128,6 +195,8 @@ typedef uint32_t zju_coop_reason_mask_t;
 
 /* 不透明会话句柄隐藏C++对象布局，调用方只能通过本文件声明的函数访问。 */
 typedef struct zju_coop_handle zju_coop_handle_t;
+/* GNSS上下文只做初始化与真值，不持有或调用主协同定位Engine。 */
+typedef struct zju_coop_gnss_context zju_coop_gnss_context_t;
 
 /* 仅测距兼容状态的二维初值；位置单位m，速度单位m/s。 */
 typedef struct zju_coop_node_initialization {
@@ -185,7 +254,7 @@ typedef struct zju_coop_config {
 } zju_coop_config_t;
 
 /*
- * 平台间测距输入；时间为上交统一时间轴纳秒，距离和标准差单位m。
+ * 平台间测距输入；时间为上海交大提供的统一时间轴纳秒，距离和标准差单位m。
  * sequence应在同一from/to链路上单调递增；timestamp_ns是测量时刻，
  * receive_timestamp_ns是同一时基下的本机接收时刻，仅用于延迟校验。
  */
@@ -284,6 +353,175 @@ typedef struct zju_coop_imu_packet {
   uint8_t reserved1[5];  /* v1尾部保留字节，调用方必须全部置零。 */
 } zju_coop_imu_packet_t;
 
+/*
+ * PointCloud2中单个字段的普通C描述。
+ * 例如常见XYZ点使用三个FLOAT32字段，name分别为x/y/z，offset分别为0/4/8。
+ */
+typedef struct zju_coop_point_field {
+  uint32_t struct_size; /* 调用方分配的字段结构字节数，用于ABI版本检查。 */
+  uint32_t abi_version; /* 必须为ZJU_COOP_ABI_VERSION_V1。 */
+  char name[32];        /* 字段名称，必须非空并在32字节内以NUL结束。 */
+  uint32_t offset;      /* 该字段相对一个点记录起始地址的字节偏移。 */
+  zju_coop_point_field_datatype_t datatype; /* PointField兼容的1至8数据类型码。 */
+  uint8_t reserved0[3]; /* 对齐及未来扩展保留字节，v1调用方必须全部置零。 */
+  uint32_t count;       /* 每个点中该字段包含的同类型元素数量，必须大于零。 */
+  uint32_t reserved1;   /* v1尾部保留字段，调用方必须置零。 */
+} zju_coop_point_field_t;
+
+/*
+ * sensor_msgs/PointCloud2到普通C结构的零拷贝映射。
+ * fields和data均为调用期间借用的只读内存：函数返回后库不保存指针，也不释放内存。
+ */
+typedef struct zju_coop_point_cloud_packet {
+  uint32_t struct_size; /* 调用方分配的点云包结构字节数。 */
+  uint32_t abi_version; /* 必须为ZJU_COOP_ABI_VERSION_V1。 */
+  uint32_t node_id;     /* 采集点云的平台编号，必须非零。 */
+  uint32_t sensor_id;   /* 同一平台上的激光雷达编号，必须非零。 */
+  uint64_t sequence;    /* 该node_id/sensor_id数据流的生产端递增序号。 */
+  uint64_t timestamp_ns;/* 点云采样时刻的统一时间，单位ns。 */
+  uint64_t receive_timestamp_ns; /* 本机收到点云的同一统一时间，单位ns。 */
+  char frame_id[32];    /* 点云坐标系名，例如lidar_link，必须NUL结尾。 */
+  uint32_t height;      /* 点云行数；无组织点云通常为1。 */
+  uint32_t width;       /* 每行点数；height×width为逻辑点数量。 */
+  const zju_coop_point_field_t* fields; /* PointField数组首地址，仅在调用期间借用。 */
+  uint32_t field_count; /* fields数组有效元素数，必须大于零。 */
+  uint32_t field_stride;/* 相邻字段结构起始地址间的字节距离。 */
+  uint32_t point_step;  /* 相邻点记录起始地址间的字节距离。 */
+  uint32_t row_step;    /* 相邻点云行起始地址间的字节距离。 */
+  const uint8_t* data;  /* PointCloud2原始字节缓冲，只读且不由库释放。 */
+  uint64_t data_size;   /* data可读字节数，必须等于row_step×height。 */
+  zju_coop_bool_t is_bigendian; /* data内多字节数值是否采用大端序。 */
+  zju_coop_bool_t is_dense;     /* 是否声明不存在无效点，语义同PointCloud2。 */
+  zju_coop_bool_t valid;        /* 上游是否认可该点云可供后续处理。 */
+  uint8_t status;               /* 设备侧OK/DEGRADED/INVALID质量码。 */
+  uint8_t reserved0[4];         /* v1尾部保留字节，调用方必须全部置零。 */
+} zju_coop_point_cloud_packet_t;
+
+/*
+ * sensor_msgs/Image到普通C结构的零拷贝映射。
+ * 当前只校验布局；不解码、不保存、不传给视觉算法。data所有权始终归调用方。
+ */
+typedef struct zju_coop_camera_image_packet {
+  uint32_t struct_size; /* 调用方分配的图像包结构字节数。 */
+  uint32_t abi_version; /* 必须为ZJU_COOP_ABI_VERSION_V1。 */
+  uint32_t node_id;     /* 采集图像的平台编号，必须非零。 */
+  uint32_t camera_id;   /* 同一平台上的相机编号，必须非零。 */
+  uint64_t sequence;    /* 该node_id/camera_id图像流的生产端递增序号。 */
+  uint64_t timestamp_ns;/* 曝光/采样时刻的统一时间，单位ns。 */
+  uint64_t receive_timestamp_ns; /* 本机收到图像的同一统一时间，单位ns。 */
+  char frame_id[32];    /* 相机坐标系名，例如camera_front，必须NUL结尾。 */
+  char encoding[32];    /* ROS图像编码名，例如mono8、rgb8或bgr8。 */
+  uint32_t height;      /* 图像行数，必须大于零。 */
+  uint32_t width;       /* 每行像素数，必须大于零。 */
+  uint32_t step;        /* 相邻图像行起始地址间的字节距离。 */
+  uint32_t reserved0;   /* v1保留字段，调用方必须置零。 */
+  const uint8_t* data;  /* sensor_msgs/Image.data的只读首地址，仅调用期间借用。 */
+  uint64_t data_size;   /* data可读字节数，必须等于step×height。 */
+  zju_coop_bool_t is_bigendian; /* 多字节像素分量是否采用大端序。 */
+  zju_coop_bool_t valid;        /* 上游是否认可该图像可供后续处理。 */
+  uint8_t status;               /* 设备侧OK/DEGRADED/INVALID质量码。 */
+  uint8_t reserved1[5];         /* v1尾部保留字节，调用方必须全部置零。 */
+} zju_coop_camera_image_packet_t;
+
+/*
+ * 原始输入校验回执。成功并不表示执行了视觉/激光算法；
+ * disposition在当前版本只会返回VALIDATED_NOT_USED。
+ */
+typedef struct zju_coop_raw_input_result {
+  uint32_t struct_size; /* 调用方分配的回执结构字节数，返回时保留原值。 */
+  uint32_t abi_version; /* 必须为ZJU_COOP_ABI_VERSION_V1。 */
+  zju_coop_raw_input_type_t input_type; /* 本次被校验的是图像还是点云。 */
+  zju_coop_raw_input_disposition_t disposition; /* 当前版本固定为“已校验但未使用”。 */
+  uint32_t node_id;     /* 回显输入所属平台编号。 */
+  uint32_t sensor_id;   /* 回显camera_id或点云sensor_id。 */
+  uint64_t sequence;    /* 回显生产端序号，便于wrapper记录日志。 */
+  uint64_t timestamp_ns;/* 回显采样统一时间，单位ns。 */
+} zju_coop_raw_input_result_t;
+
+/*
+ * 单节点GNSS天线几何配置。杆臂定义为IMU/车体原点指向GNSS天线相位中心的FLU向量；
+ * orientation为车体FLU到最终共同ENU的xyzw姿态，用于把非零杆臂旋转到ENU。
+ */
+typedef struct zju_coop_gnss_node_config {
+  uint32_t struct_size;
+  uint32_t abi_version;
+  uint32_t node_id;
+  uint32_t reserved0;
+  double antenna_lever_arm_body_m[3];
+  double orientation_body_to_enu_xyzw[4];
+} zju_coop_gnss_node_config_t;
+
+/* 独立GNSS上下文配置；nodes在create调用期间借用，库内会深拷贝。 */
+typedef struct zju_coop_gnss_config {
+  uint32_t struct_size;
+  uint32_t abi_version;
+  uint32_t reference_node_id;
+  uint32_t node_count;
+  uint32_t node_stride;
+  uint32_t reserved0;
+  const zju_coop_gnss_node_config_t* nodes;
+  uint64_t max_epoch_skew_ns;
+  uint64_t max_truth_age_ns;
+  uint64_t max_future_skew_ns;
+  uint64_t max_receive_delay_ns;
+  double min_velocity_dt_s;
+  double max_velocity_dt_s;
+  double max_horizontal_std_m;
+  double max_vertical_std_m;
+  zju_coop_bool_t require_known_covariance;
+  uint8_t reserved1[7];
+} zju_coop_gnss_config_t;
+
+/*
+ * 标准sensor_msgs/NavSatFix的普通C映射。
+ * navsat_status保持ROS int8语义：小于0表示无定位；service为NavSatStatus位图。
+ */
+typedef struct zju_coop_gnss_fix_packet {
+  uint32_t struct_size;
+  uint32_t abi_version;
+  uint32_t node_id;
+  uint32_t reserved0;
+  uint64_t sequence;
+  uint64_t timestamp_ns;
+  uint64_t receive_timestamp_ns;
+  char frame_id[32];
+  int8_t navsat_status;
+  uint8_t reserved1;
+  uint16_t service;
+  uint32_t reserved2;
+  double latitude_deg;
+  double longitude_deg;
+  double altitude_m;
+  double position_covariance_m2[9];
+  zju_coop_gnss_covariance_type_t position_covariance_type;
+  zju_coop_bool_t valid;
+  uint8_t reserved3[6];
+} zju_coop_gnss_fix_packet_t;
+
+typedef struct zju_coop_gnss_processing_result {
+  uint32_t struct_size;
+  uint32_t abi_version;
+  zju_coop_gnss_disposition_t disposition;
+  uint32_t node_id;
+  uint64_t sequence;
+  uint64_t timestamp_ns;
+} zju_coop_gnss_processing_result_t;
+
+/* 固定共同ENU下的RTK相对位置真值；它只供日志/GCS评估，不是滤波量测。 */
+typedef struct zju_coop_gnss_relative_truth {
+  uint32_t struct_size;
+  uint32_t abi_version;
+  uint32_t node_id;
+  uint32_t reference_node_id;
+  uint64_t node_timestamp_ns;
+  uint64_t reference_timestamp_ns;
+  double position_enu_m[3];
+  double position_covariance_m2[9];
+  zju_coop_bool_t valid;
+  zju_coop_bool_t stale;
+  uint8_t reserved0[6];
+} zju_coop_gnss_relative_truth_t;
+
 typedef struct zju_coop_imu_processing_result {
   uint32_t struct_size; /* 调用方分配的诊断结构字节数，返回时保留原值。 */
   uint32_t abi_version; /* 必须为ZJU_COOP_ABI_VERSION_V1。 */
@@ -375,7 +613,7 @@ typedef struct zju_coop_observation {
   double covariance_scale; /* 当前融合动作施加到测距方差的无量纲倍率。 */
 } zju_coop_observation_t;
 
-/* 版本查询不需要创建handle，可用于上交wrapper启动时的兼容性检查。 */
+/* 版本查询不需要创建handle，可用于上海交大ROS 2 wrapper启动时的兼容性检查。 */
 ZJU_COOP_API uint32_t ZJU_COOP_CALL zju_coop_abi_version(void);
 ZJU_COOP_API const char* ZJU_COOP_CALL zju_coop_version_string(void);
 ZJU_COOP_API const char* ZJU_COOP_CALL
@@ -418,6 +656,30 @@ zju_coop_imu_packet_init(zju_coop_imu_packet_t* value);
 ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 /* value为调用方可写IMU诊断结构，初始化后才能传入push_imu。 */
 zju_coop_imu_processing_result_init(zju_coop_imu_processing_result_t* value);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+/* value为可写PointField描述，成功时建立v1头部，业务字段仍需调用方填写。 */
+zju_coop_point_field_init(zju_coop_point_field_t* value);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+/* value为可写PointCloud2映射包，成功时建立v1头部与紧密字段默认stride。 */
+zju_coop_point_cloud_packet_init(zju_coop_point_cloud_packet_t* value);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+/* value为可写Image映射包，成功时只建立v1头部和正常设备状态。 */
+zju_coop_camera_image_packet_init(zju_coop_camera_image_packet_t* value);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+/* value为原始数据校验回执，成功初始化后才能传给两个raw push入口。 */
+zju_coop_raw_input_result_init(zju_coop_raw_input_result_t* value);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_gnss_node_config_init(zju_coop_gnss_node_config_t* value);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_gnss_config_init(zju_coop_gnss_config_t* value);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_gnss_fix_packet_init(zju_coop_gnss_fix_packet_t* value);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_gnss_processing_result_init(
+    zju_coop_gnss_processing_result_t* value);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_gnss_relative_truth_init(
+    zju_coop_gnss_relative_truth_t* value);
 
 /*
  * 创建基础实例；成功时*out_handle归调用方并必须destroy一次。
@@ -431,6 +693,33 @@ zju_coop_create(const zju_coop_config_t* config,
 ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 /* handle为create返回的独占句柄；成功后地址立即失效，不得再次使用或销毁。 */
 zju_coop_destroy(zju_coop_handle_t* handle);
+
+/*
+ * GNSS上下文生命周期与主算法句柄完全独立。初始化输出可直接作为既有create/configure
+ * 的nodes数组；RTK真值查询不会读取或修改主算法状态。
+ */
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_gnss_create(const zju_coop_gnss_config_t* config,
+                     zju_coop_gnss_context_t** out_context);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_gnss_destroy(zju_coop_gnss_context_t* context);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_gnss_push_fix(zju_coop_gnss_context_t* context,
+                       const zju_coop_gnss_fix_packet_t* packet,
+                       zju_coop_gnss_processing_result_t* result);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_gnss_build_initializations(
+    zju_coop_gnss_context_t* context,
+    zju_coop_node_initialization_t* base_nodes, uint32_t base_capacity,
+    uint32_t base_stride,
+    zju_coop_inertial_node_initialization_t* inertial_nodes,
+    uint32_t inertial_capacity, uint32_t inertial_stride,
+    uint32_t* node_count);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_gnss_get_relative_truth(
+    zju_coop_gnss_context_t* context, uint64_t now_ns,
+    zju_coop_gnss_relative_truth_t* truths, uint32_t truth_capacity,
+    uint32_t truth_stride, uint32_t* truth_count);
 /* configure成功后节点集合和状态维度被冻结，处理开始后不允许重新配置。 */
 ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 /* handle为尚未开始处理的会话；config仅在调用期间借用并由库深拷贝。 */
@@ -447,6 +736,20 @@ ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 zju_coop_push_range(zju_coop_handle_t* handle,
                     const zju_coop_range_packet_t* packet,
                     zju_coop_range_processing_result_t* result);
+
+/*
+ * 原始点云/图像预留入口：仅验证ROS 2映射字段与缓冲区布局。
+ * 当前不复制大数据、不调用Engine、不改变processing_started，也不输出定位结果。
+ * 因此在成功返回后仍可配置惯性模块；真正接入配准/识别算法时将新增独立前端接口。
+ */
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_push_point_cloud(zju_coop_handle_t* handle,
+                          const zju_coop_point_cloud_packet_t* packet,
+                          zju_coop_raw_input_result_t* result);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_push_camera_image(zju_coop_handle_t* handle,
+                           const zju_coop_camera_image_packet_t* packet,
+                           zju_coop_raw_input_result_t* result);
 
 /*
  * 输出内存全部归调用方所有，两个stride均为字节步长且不得小于v1结构体大小。

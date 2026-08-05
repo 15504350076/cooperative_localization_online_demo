@@ -1,5 +1,7 @@
 // 模块职责：从调用方视角验证C ABI版本、结构步长/对齐、缓冲查询、异常转换和原子输出。
 // 关键用例故意提供坏指针跨度、错误版本和不足容量，确认失败不会推进或部分写入状态。
+// C/C++初学者注意：这里大量“错误输入”是有意构造的测试数据，不是示例用法；
+// 正确调用顺序请看examples/sdk_consumer.cpp，接口防御能力再回到本文件学习。
 #include "test_support.hpp"
 #include "zju_coop/c_api.h"
 
@@ -619,4 +621,250 @@ TEST_CASE(c_api_configures_and_pushes_standard_imu_without_ros_dependency) {
   EXPECT_EQ(zju_coop_push_imu(engine.handle, &packet, &result), ZJU_COOP_OK);
   EXPECT_EQ(result.disposition, ZJU_COOP_IMU_BASELINE_ESTABLISHED);
   EXPECT_EQ(result.propagated, ZJU_COOP_FALSE);
+}
+
+// 原始数据预留接口组证明Image/PointCloud2可以映射到C ABI，但当前不会改变Engine。
+TEST_CASE(c_api_validates_camera_image_without_consuming_it) {
+  TestEngine engine;  // 只用句柄验证公开入口，不配置或调用任何视觉算法。
+  std::array<std::uint8_t, 12U> pixels{};  // 2×2 RGB8图像恰好需要12字节。
+
+  zju_coop_camera_image_packet_t image{};  // 上海交大wrapper可从sensor_msgs/Image逐字段填充。
+  EXPECT_EQ(zju_coop_camera_image_packet_init(&image), ZJU_COOP_OK);
+  image.node_id = 2U;
+  image.camera_id = 1U;
+  image.sequence = 7U;
+  image.timestamp_ns = kTimestampNs;
+  image.receive_timestamp_ns = kTimestampNs;
+  std::memcpy(image.frame_id, "camera_front", 13U);
+  std::memcpy(image.encoding, "rgb8", 5U);
+  image.height = 2U;
+  image.width = 2U;
+  image.step = 6U;
+  image.data = pixels.data();
+  image.data_size = pixels.size();
+  image.valid = ZJU_COOP_TRUE;
+  image.status = ZJU_COOP_RANGE_STATUS_OK;
+
+  zju_coop_raw_input_result_t result{};  // 成功时应明确说明数据没有进入算法。
+  EXPECT_EQ(zju_coop_raw_input_result_init(&result), ZJU_COOP_OK);
+  EXPECT_EQ(zju_coop_push_camera_image(engine.handle, &image, &result),
+            ZJU_COOP_OK);
+  EXPECT_EQ(result.input_type, ZJU_COOP_RAW_INPUT_CAMERA_IMAGE);
+  EXPECT_EQ(result.disposition, ZJU_COOP_RAW_INPUT_VALIDATED_NOT_USED);
+  EXPECT_EQ(result.node_id, 2U);
+  EXPECT_EQ(result.sensor_id, 1U);
+  EXPECT_EQ(result.sequence, 7U);
+  EXPECT_EQ(result.timestamp_ns, kTimestampNs);
+}
+
+TEST_CASE(c_api_validates_pointcloud2_layout_without_consuming_it) {
+  TestEngine engine;  // 点云入口只做边界校验，不触碰该句柄中的滤波状态。
+  std::array<zju_coop_point_field_t, 3U> fields{};  // PointCloud2的x/y/z三个FLOAT32字段。
+  const char* names[3U]{"x", "y", "z"};
+  for (std::size_t index = 0U; index < fields.size(); ++index) {
+    EXPECT_EQ(zju_coop_point_field_init(&fields[index]), ZJU_COOP_OK);
+    std::memcpy(fields[index].name, names[index], 2U);
+    fields[index].offset = static_cast<std::uint32_t>(index * 4U);
+    fields[index].datatype = ZJU_COOP_POINT_FIELD_FLOAT32;
+    fields[index].count = 1U;
+  }
+  std::array<std::uint8_t, 24U> points{};  // 两个XYZ点，每点12字节。
+
+  zju_coop_point_cloud_packet_t cloud{};
+  EXPECT_EQ(zju_coop_point_cloud_packet_init(&cloud), ZJU_COOP_OK);
+  cloud.node_id = 3U;
+  cloud.sensor_id = 2U;
+  cloud.sequence = 9U;
+  cloud.timestamp_ns = kTimestampNs;
+  cloud.receive_timestamp_ns = kTimestampNs;
+  std::memcpy(cloud.frame_id, "lidar_link", 11U);
+  cloud.height = 1U;
+  cloud.width = 2U;
+  cloud.fields = fields.data();
+  cloud.field_count = static_cast<std::uint32_t>(fields.size());
+  cloud.field_stride = sizeof(zju_coop_point_field_t);
+  cloud.point_step = 12U;
+  cloud.row_step = 24U;
+  cloud.data = points.data();
+  cloud.data_size = points.size();
+  cloud.is_dense = ZJU_COOP_TRUE;
+  cloud.valid = ZJU_COOP_TRUE;
+  cloud.status = ZJU_COOP_RANGE_STATUS_OK;
+
+  zju_coop_raw_input_result_t result{};
+  EXPECT_EQ(zju_coop_raw_input_result_init(&result), ZJU_COOP_OK);
+  EXPECT_EQ(zju_coop_push_point_cloud(engine.handle, &cloud, &result),
+            ZJU_COOP_OK);
+  EXPECT_EQ(result.input_type, ZJU_COOP_RAW_INPUT_POINT_CLOUD);
+  EXPECT_EQ(result.disposition, ZJU_COOP_RAW_INPUT_VALIDATED_NOT_USED);
+  EXPECT_EQ(result.node_id, 3U);
+  EXPECT_EQ(result.sensor_id, 2U);
+}
+
+TEST_CASE(c_api_raw_inputs_reject_bad_layout_without_partial_result_write) {
+  TestEngine engine;
+  std::array<std::uint8_t, 4U> bytes{};  // 故意小于下面声明的2×2单字节图像行布局。
+  zju_coop_camera_image_packet_t image{};
+  EXPECT_EQ(zju_coop_camera_image_packet_init(&image), ZJU_COOP_OK);
+  image.node_id = 1U;
+  image.camera_id = 1U;
+  image.sequence = 1U;
+  image.timestamp_ns = kTimestampNs;
+  image.receive_timestamp_ns = kTimestampNs;
+  std::memcpy(image.frame_id, "camera", 7U);
+  std::memcpy(image.encoding, "mono8", 6U);
+  image.height = 2U;
+  image.width = 2U;
+  image.step = 2U;
+  image.data = bytes.data();
+  image.data_size = 3U;  // 正确长度应为step×height=4，故接口必须拒绝。
+  image.valid = ZJU_COOP_TRUE;
+
+  zju_coop_raw_input_result_t result{};
+  EXPECT_EQ(zju_coop_raw_input_result_init(&result), ZJU_COOP_OK);
+  result.sensor_id = 0xA5A5A5A5U;  // 哨兵验证失败路径没有部分覆盖调用方结果。
+  EXPECT_EQ(zju_coop_push_camera_image(engine.handle, &image, &result),
+            ZJU_COOP_INVALID_ARGUMENT);
+  EXPECT_EQ(result.sensor_id, 0xA5A5A5A5U);
+}
+
+TEST_CASE(c_api_raw_input_does_not_freeze_inertial_configuration) {
+  TestEngine engine;
+  std::array<std::uint8_t, 1U> pixel{};
+  zju_coop_camera_image_packet_t image{};
+  EXPECT_EQ(zju_coop_camera_image_packet_init(&image), ZJU_COOP_OK);
+  image.node_id = 1U;
+  image.camera_id = 1U;
+  image.sequence = 1U;
+  image.timestamp_ns = kTimestampNs;
+  image.receive_timestamp_ns = kTimestampNs;
+  std::memcpy(image.frame_id, "camera", 7U);
+  std::memcpy(image.encoding, "mono8", 6U);
+  image.height = 1U;
+  image.width = 1U;
+  image.step = 1U;
+  image.data = pixel.data();
+  image.data_size = pixel.size();
+  image.valid = ZJU_COOP_TRUE;
+  zju_coop_raw_input_result_t result{};
+  EXPECT_EQ(zju_coop_raw_input_result_init(&result), ZJU_COOP_OK);
+  EXPECT_EQ(zju_coop_push_camera_image(engine.handle, &image, &result),
+            ZJU_COOP_OK);
+
+  // 原始数据未进入Engine，所以随后仍可执行“首个算法输入前”的惯性配置。
+  std::array<zju_coop_inertial_node_initialization_t, 3U> nodes{};
+  for (std::size_t index = 0U; index < nodes.size(); ++index) {
+    EXPECT_EQ(zju_coop_inertial_node_initialization_init(&nodes[index]),
+              ZJU_COOP_OK);
+    nodes[index].node_id = static_cast<std::uint32_t>(index + 1U);
+  }
+  zju_coop_inertial_config_t config{};
+  EXPECT_EQ(zju_coop_inertial_config_init(&config), ZJU_COOP_OK);
+  config.nodes = nodes.data();
+  config.node_count = static_cast<std::uint32_t>(nodes.size());
+  EXPECT_EQ(zju_coop_configure_inertial(engine.handle, &config), ZJU_COOP_OK);
+}
+
+TEST_CASE(c_api_gnss_context_builds_existing_initialization_structures) {
+  std::array<zju_coop_gnss_node_config_t, 3U> gnss_nodes{};
+  for (std::size_t index = 0U; index < gnss_nodes.size(); ++index) {
+    EXPECT_EQ(zju_coop_gnss_node_config_init(&gnss_nodes[index]),
+              ZJU_COOP_OK);
+    gnss_nodes[index].node_id = static_cast<std::uint32_t>(index + 1U);
+  }
+  zju_coop_gnss_config_t config{};
+  EXPECT_EQ(zju_coop_gnss_config_init(&config), ZJU_COOP_OK);
+  config.reference_node_id = 1U;
+  config.nodes = gnss_nodes.data();
+  config.node_count = static_cast<std::uint32_t>(gnss_nodes.size());
+
+  zju_coop_gnss_context_t* context = nullptr;
+  EXPECT_EQ(zju_coop_gnss_create(&config, &context), ZJU_COOP_OK);
+  EXPECT_TRUE(context != nullptr);
+
+  for (std::uint64_t sequence = 1U; sequence <= 2U; ++sequence) {
+    for (std::uint32_t node_id = 1U; node_id <= 3U; ++node_id) {
+      zju_coop_gnss_fix_packet_t fix{};
+      EXPECT_EQ(zju_coop_gnss_fix_packet_init(&fix), ZJU_COOP_OK);
+      fix.node_id = node_id;
+      fix.sequence = sequence;
+      fix.timestamp_ns = sequence * 1'000'000'000ULL;
+      fix.receive_timestamp_ns = fix.timestamp_ns;
+      std::memcpy(fix.frame_id, "gnss_link", 10U);
+      fix.navsat_status = 0;
+      fix.service = 1U;
+      fix.latitude_deg = 30.0;
+      fix.longitude_deg = 120.0;
+      fix.altitude_m = 10.0;
+      fix.position_covariance_m2[0] = 0.01;
+      fix.position_covariance_m2[4] = 0.01;
+      fix.position_covariance_m2[8] = 0.04;
+      fix.position_covariance_type =
+          ZJU_COOP_GNSS_COVARIANCE_TYPE_KNOWN;
+      fix.valid = ZJU_COOP_TRUE;
+      zju_coop_gnss_processing_result_t result{};
+      EXPECT_EQ(zju_coop_gnss_processing_result_init(&result), ZJU_COOP_OK);
+      EXPECT_EQ(zju_coop_gnss_push_fix(context, &fix, &result), ZJU_COOP_OK);
+      EXPECT_EQ(result.disposition, ZJU_COOP_GNSS_STORED);
+    }
+  }
+
+  std::uint32_t count{};
+  EXPECT_EQ(zju_coop_gnss_build_initializations(
+                context, nullptr, 0U, 0U, nullptr, 0U, 0U, &count),
+            ZJU_COOP_BUFFER_TOO_SMALL);
+  EXPECT_EQ(count, 3U);
+
+  std::array<zju_coop_node_initialization_t, 3U> base{};
+  std::array<zju_coop_inertial_node_initialization_t, 3U> inertial{};
+  for (std::size_t index = 0U; index < base.size(); ++index) {
+    EXPECT_EQ(zju_coop_node_initialization_init(&base[index]), ZJU_COOP_OK);
+    EXPECT_EQ(zju_coop_inertial_node_initialization_init(&inertial[index]),
+              ZJU_COOP_OK);
+  }
+  EXPECT_EQ(zju_coop_gnss_build_initializations(
+                context, base.data(), 3U, sizeof(base[0]), inertial.data(),
+                3U, sizeof(inertial[0]), &count),
+            ZJU_COOP_OK);
+  EXPECT_EQ(count, 3U);
+  EXPECT_EQ(base[2U].node_id, 3U);
+  EXPECT_EQ(inertial[1U].node_id, 2U);
+  EXPECT_TRUE(std::abs(inertial[1U].position_n_m[0]) < 1.0e-6);
+  EXPECT_TRUE(inertial[1U].position_std_m[0] > 0.0);
+
+  EXPECT_EQ(zju_coop_gnss_destroy(context), ZJU_COOP_OK);
+}
+
+TEST_CASE(c_api_gnss_truth_is_separate_and_not_ready_is_explicit) {
+  zju_coop_gnss_node_config_t node{};
+  EXPECT_EQ(zju_coop_gnss_node_config_init(&node), ZJU_COOP_OK);
+  node.node_id = 1U;
+  zju_coop_gnss_config_t config{};
+  EXPECT_EQ(zju_coop_gnss_config_init(&config), ZJU_COOP_OK);
+  config.nodes = &node;
+  config.node_count = 1U;
+  config.reference_node_id = 1U;
+  zju_coop_gnss_context_t* context{};
+  EXPECT_EQ(zju_coop_gnss_create(&config, &context), ZJU_COOP_OK);
+
+  std::array<zju_coop_node_initialization_t, 1U> base{};
+  std::array<zju_coop_inertial_node_initialization_t, 1U> inertial{};
+  EXPECT_EQ(zju_coop_node_initialization_init(&base[0]), ZJU_COOP_OK);
+  EXPECT_EQ(zju_coop_inertial_node_initialization_init(&inertial[0]),
+            ZJU_COOP_OK);
+  std::uint32_t count{};
+  EXPECT_EQ(zju_coop_gnss_build_initializations(
+                context, base.data(), 1U, sizeof(base[0]), inertial.data(),
+                1U, sizeof(inertial[0]), &count),
+            ZJU_COOP_NOT_READY);
+
+  zju_coop_gnss_relative_truth_t truth{};
+  EXPECT_EQ(zju_coop_gnss_relative_truth_init(&truth), ZJU_COOP_OK);
+  EXPECT_EQ(zju_coop_gnss_get_relative_truth(
+                context, 1'000'000'000ULL, &truth, 1U, sizeof(truth), &count),
+            ZJU_COOP_OK);
+  EXPECT_EQ(count, 1U);
+  EXPECT_EQ(truth.valid, ZJU_COOP_FALSE);
+  EXPECT_EQ(truth.stale, ZJU_COOP_TRUE);
+  EXPECT_EQ(zju_coop_gnss_destroy(context), ZJU_COOP_OK);
 }

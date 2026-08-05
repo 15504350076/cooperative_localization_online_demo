@@ -1,6 +1,11 @@
 // 模块实现：ZJLG日志文件头、记录元数据和内部ZJCL帧的严格顺序读写。
 // 关键原则：写入前验证、读取后复验，截断或损坏文件显式失败；接收时间只控制回放节奏，
 // 算法仍使用内部帧的统一测量时间戳，保证在线与回放处理语义一致。
+//
+// C++初学者可把文件理解成“文件头 + 多条记录”：文件头说明这是ZJLG及其版本；
+// 每条记录先写方向、接收时间和帧长度，再写完整ZJCL字节。读取过程严格按同一顺序反向还原。
+// `reinterpret_cast<const char*>`是因为文件流write只接受字符指针，实际字节不发生改变；
+// `gcount()`返回上次read真正读到的字节数，用于区分正常EOF和截断文件。
 #include "protocol/event_log.hpp"
 
 #include <array>
@@ -45,11 +50,12 @@ void write_bytes(std::ostream& output,
                  const std::vector<std::uint8_t>& bytes) {
   // byte遍历待写缓冲的每个无符号线序字节。
   for (const std::uint8_t byte : bytes) {
-    output.put(static_cast<char>(byte));
+    output.put(static_cast<char>(byte));  // put逐字节写入；强转只满足ostream接口，不改变低8位位模式。
   }
 }
 
 std::vector<std::uint8_t> file_header() {
+  // 花括号直接构造8字节vector：4字节魔数、主/次版本、16位小端头长。
   return {kLogMagic[0U], kLogMagic[1U], kLogMagic[2U], kLogMagic[3U],
           kLogMajorVersion, kLogMinorVersion,
           static_cast<std::uint8_t>(kEventLogHeaderSize), 0U};
@@ -87,13 +93,13 @@ EventLogWriter::EventLogWriter(const std::filesystem::path& path,
                                std::size_t max_payload_size)
     : max_record_size_(max_record_size),
       max_payload_size_(max_payload_size) {
-  validate_limits(max_record_size_, max_payload_size_);
-  output_.open(path, std::ios::binary | std::ios::trunc);
+  validate_limits(max_record_size_, max_payload_size_);  // 在打开文件前拒绝自相矛盾的资源上限。
+  output_.open(path, std::ios::binary | std::ios::trunc);  // binary禁止文本换行转换，trunc表示新任务覆盖旧日志。
   if (!output_.is_open()) {
     throw EventLogException(EventLogError::kIoFailure,
                             "event log file could not be opened for writing");
   }
-  write_bytes(output_, file_header());
+  write_bytes(output_, file_header());  // 文件创建成功后立即写格式签名，空日志也可被识别。
   if (!output_) {
     throw EventLogException(EventLogError::kIoFailure,
                             "event log file header could not be written");
@@ -127,7 +133,7 @@ void EventLogWriter::append(const EventLogRecord& log_record) {
 
   // record暂存4字节frame长度、12字节元数据和完整frame，全部构造后一次写流。
   std::vector<std::uint8_t> record;
-  record.reserve(4U + kRecordMetadataSize + log_record.frame.size());
+  record.reserve(4U + kRecordMetadataSize + log_record.frame.size());  // 一次预留整条记录，避免多次扩容。
   // length只计内部ZJCL帧字节；固定12字节方向/接收时间元数据由ZJLG格式隐含，
   // 因而读取器可以在分配frame前先独立检查记录上限。
   // length仅表示内部ZJCL frame字节数，不包含4字节自身及12字节记录元数据。
@@ -138,8 +144,8 @@ void EventLogWriter::append(const EventLogRecord& log_record) {
     record.push_back(
         static_cast<std::uint8_t>((length >> shift) & 0xFFU));
   }
-  record.push_back(static_cast<std::uint8_t>(log_record.direction));
-  record.insert(record.end(), 3U, 0U);
+  record.push_back(static_cast<std::uint8_t>(log_record.direction));  // 写1字节输入/输出方向枚举。
+  record.insert(record.end(), 3U, 0U);  // 写3个v1保留零字节，同时让后续64位时间偏移固定。
   // shift依次遍历接收时间的八个小端字节位移。
   for (unsigned int shift = 0U; shift < 64U; shift += 8U) {
     record.push_back(static_cast<std::uint8_t>(
@@ -147,7 +153,7 @@ void EventLogWriter::append(const EventLogRecord& log_record) {
   }
   record.insert(record.end(), log_record.frame.begin(),
                 log_record.frame.end());
-  write_bytes(output_, record);
+  write_bytes(output_, record);  // 记录完整构造并验证后才真正写文件，避免主动写入半条记录。
   if (!output_) {
     throw EventLogException(EventLogError::kIoFailure,
                             "event log record could not be written");
@@ -155,7 +161,7 @@ void EventLogWriter::append(const EventLogRecord& log_record) {
 }
 
 void EventLogWriter::flush() {
-  output_.flush();
+  output_.flush();  // 请求标准库把用户态缓冲交给操作系统，便于任务中途检查日志。
   if (!output_) {
     throw EventLogException(EventLogError::kIoFailure,
                             "event log file could not be flushed");
@@ -167,8 +173,8 @@ EventLogReader::EventLogReader(const std::filesystem::path& path,
                                std::size_t max_payload_size)
     : max_record_size_(max_record_size),
       max_payload_size_(max_payload_size) {
-  validate_limits(max_record_size_, max_payload_size_);
-  input_.open(path, std::ios::binary);
+  validate_limits(max_record_size_, max_payload_size_);  // 读取端使用与写入端相同的资源上限规则。
+  input_.open(path, std::ios::binary);  // 二进制模式保证Windows不会改写0x0A等任意帧字节。
   if (!input_.is_open()) {
     throw EventLogException(EventLogError::kIoFailure,
                             "event log file could not be opened for reading");
@@ -212,7 +218,7 @@ EventLogReadResult EventLogReader::next() {
   const int first_byte = input_.get();
   if (first_byte == std::char_traits<char>::eof()) {
     if (input_.eof()) {
-      ended_ = true;
+      ended_ = true;  // 记住正常EOF，后续next无需再次触碰流状态。
       return {};
     }
     throw EventLogException(EventLogError::kIoFailure,
@@ -282,11 +288,11 @@ EventLogReadResult EventLogReader::next() {
 
   // result拥有通过验证的记录与frame，返回后不再借用读取器临时缓冲。
   EventLogReadResult result{};
-  result.status = EventLogReadStatus::kRecord;
-  result.record.direction = direction;
-  result.record.receive_timestamp_ns = receive_timestamp_ns;
-  result.record.frame = std::move(frame);
-  return result;
+  result.status = EventLogReadStatus::kRecord;  // 与默认kEnd状态区分，说明本次确实读到一条记录。
+  result.record.direction = direction;  // 回放器据此只把Input记录重新送入算法。
+  result.record.receive_timestamp_ns = receive_timestamp_ns;  // 用于保持原始接收时间间隔和时延语义。
+  result.record.frame = std::move(frame);  // 转移内部ZJCL缓冲，避免再次复制完整报文。
+  return result;  // 返回值拥有记录全部数据，不依赖reader内部临时变量。
 }
 
 }  // namespace zju::coop::protocol

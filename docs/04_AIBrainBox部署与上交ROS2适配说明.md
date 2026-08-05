@@ -110,6 +110,21 @@ wrapper 在本机回调开始时采集 `receive_timestamp_ns`，不要求通过�
 
 失同步或驱动判定不可用时，应把 `valid=false`、`status=INVALID` 的包推入 SDK，使质量窗口能够统计无效数据；采样/接收时差超限时 SDK 会拒绝该包并报告 `TIME_SYNC_TIMEOUT`。
 
+### 4.3 原始图像和点云预留接口
+
+工程已提供以下不依赖ROS 2类型的零拷贝映射入口：
+
+- `sensor_msgs/msg/Image` → `zju_coop_camera_image_packet_t`
+  → `zju_coop_push_camera_image()`；
+- `sensor_msgs/msg/PointCloud2`及其`PointField`数组
+  → `zju_coop_point_cloud_packet_t`/`zju_coop_point_field_t`
+  → `zju_coop_push_point_cloud()`。
+
+两个入口当前只校验元数据、字段布局和借用缓冲区长度，成功回执均为
+`ZJU_COOP_RAW_INPUT_VALIDATED_NOT_USED`。它们不会复制原始大数据、不会调用定位
+`Engine`、不会改变IMU＋测距状态，也不能被表述为已经完成视觉识别或点云配准。
+详细字段、所有权和扩展边界见`docs/13_原始视觉与点云预留接口说明.md`。
+
 ## 5. Wrapper 调用模型
 
 - 创建阶段从部署配置读取 A/B/C node_id、15维状态初值、参考节点和阈值；
@@ -146,8 +161,32 @@ NodeTimeSync、LinkState、NodeHealth 由上交系统产生，应与算法状态
 4. 三车IMU（目标频率按实物确认）＋三边20 Hz UWB输入、10 Hz输出在线smoke；
 5. C++/Python ZJCL 与 ZJLG golden bytes 一致；
 6. 真实 `sensor_msgs/Imu`、TLV到Range的字段、单位、坐标轴、标准差和NLOS映射；
-7. 失同步、乱序、超时、NLOS、断边和恢复；
-8. 长时间 CPU、内存、日志吞吐、磁盘轮转和 UDP 丢包；
-9. 进程自启动、退出、重启和版本查询。
+7. `sensor_msgs/Image`和`PointCloud2`到新增C ABI预留接口的字段、stride、
+   生命周期和大缓冲零拷贝映射；
+8. 失同步、乱序、超时、NLOS、断边和恢复；
+9. 长时间 CPU、内存、日志吞吐、磁盘轮转和 UDP 丢包；
+10. 进程自启动、退出、重启和版本查询。
 
 完成以上实测前，项目状态只能写“具备盒端移植步骤，ARM64 待验证”。
+
+## 9. GNSS 初始化与 RTK 真值适配
+
+当前 C ABI 已增加与主 `Engine` 隔离的 `zju_coop_gnss_context_t`，用于：
+
+1. 把标准 `sensor_msgs/msg/NavSatFix` 转换为失锁前的节点位置、速度和协方差初值；
+2. 把后续 RTK 输出转换为固定公共 ENU 下、相对主参考节点的位置真值；
+3. 保证 RTK 真值不进入 IMU＋测距 EKF。
+
+上交 wrapper 必须逐字段映射标准消息，并额外提供 `node_id`、`sequence`、
+同时间基准的 `receive_timestamp_ns` 和经过设备质量门控的 `valid`。标准
+`NavSatStatus` 无法区分 RTK Fixed/Float，所以上交必须通过专用 RTK Fixed
+topic 或独立接收机状态消息完成门控，浙大库不猜测接收机解类型。
+
+完整接口、默认门限、杆臂定义、初始化调用顺序和真值输出规则见
+`docs/14_GNSS初始化与RTK相对真值接口说明.md`。盒端验收清单还应增加：
+
+- 检查经纬高采用 WGS84，`altitude` 是椭球高而非未经说明的海拔高；
+- 检查 `position_covariance` 的 ENU 语义、单位和 `covariance_type`；
+- 实测各车最新 RTK 时刻差、回调延迟和 RTK Fixed 丢失时的 `valid/stale`；
+- 测量并配置 IMU/车体原点到 GNSS 天线相位中心的 FLU 杆臂；
+- 对比“协同定位估计”和“RTK 相对真值”两条独立数据流，确认真值未反馈到滤波器。

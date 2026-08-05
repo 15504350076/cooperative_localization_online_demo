@@ -15,6 +15,7 @@ set(ZJU_COOP_CORE_SOURCES
     src/core/dense_matrix.cpp
     src/core/degradation_monitor.cpp
     src/core/engine.cpp
+    src/core/gnss_reference.cpp
     src/core/inertial_eskf15.cpp
     src/core/quaternion.cpp
     src/core/range_ekf.cpp
@@ -195,6 +196,7 @@ if(BUILD_TESTING)
       tests/test_degradation.cpp
       tests/test_engine.cpp
       tests/test_event_log.cpp
+      tests/test_gnss_reference.cpp
       tests/test_ini_config.cpp
       tests/test_inertial_eskf15.cpp
       tests/test_protocol.cpp

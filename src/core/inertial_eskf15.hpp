@@ -1,6 +1,12 @@
 // 模块职责：定义单节点15维误差状态惯导的配置、名义状态和IMU传播接口。
 // 状态顺序固定为δp/δv/δθ/δbg/δba，每项3维；本模块只传播名义状态并返回
 // Phi/Qd，完整15N联合协方差由CooperativeInertialEkf统一维护。
+//
+// 初学者先区分两组量：
+// - 名义状态是程序当前认为的真实位置p、速度v、姿态q、陀螺零偏bg和加计零偏ba；
+// - 15维误差状态只是描述“名义状态可能错多少”，不直接代替名义状态。
+// IMU到来时，本类先更新名义状态，再给出Phi和Qd，让外层更新误差协方差。
+// 第一帧没有时间区间可积分，所以只建立时间基准；从第二帧开始才真正传播。
 #pragma once
 
 #include "dense_matrix.hpp"
@@ -14,6 +20,7 @@
 
 namespace zju::coop {
 
+// inline避免该头文件被多个.cpp包含时产生重复定义；auto由右侧15U推导为unsigned int。
 inline constexpr auto kInertialErrorStateSize = 15U;  ///< 单节点误差状态固定维数。
 
 /**
@@ -66,17 +73,17 @@ struct InertialNominalState {
   Vec3 accel_bias_m_s2{};   ///< 车体FLU加速度计名义零偏ba，单位m/s²。
 };
 
-/** IMU结果区分“未传播的合法首帧”和各种拒绝原因，便于上交侧诊断。 */
+/** IMU结果区分“未传播的合法首帧”和各种拒绝原因，便于上海交大ROS 2侧诊断。 */
 enum class ImuDisposition {
-  kBaselineEstablished,
-  kPropagated,
-  kInvalidPacket,
-  kUnknownNode,
-  kDuplicate,
-  kOutOfOrder,
-  kIntervalRejected,
-  kFrameMismatch,
-  kNumericalFailure,
+  kBaselineEstablished, ///< 合法首帧已保存，只建立时间基准，尚未执行积分。
+  kPropagated,          ///< 已使用前后两帧中值完成名义状态及Phi/Qd传播。
+  kInvalidPacket,       ///< 有效位、时间关系、状态码或数值字段不合法。
+  kUnknownNode,         ///< 包内node_id不是本传播器负责的平台。
+  kDuplicate,           ///< 时间戳与上一帧相同；不重复积分。
+  kOutOfOrder,          ///< 时间戳早于上一帧；当前实现不做历史状态重放。
+  kIntervalRejected,    ///< 相邻帧dt超出配置的最小/最大合法区间。
+  kFrameMismatch,       ///< frame_id与配置的车体FLU坐标系名称不一致。
+  kNumericalFailure,    ///< 姿态、状态、转移矩阵或噪声矩阵产生非法数值，已回滚。
 };
 
 /** 一帧IMU的处理结果；phi和qd供多节点联合协方差传播使用。 */
@@ -109,11 +116,16 @@ class InertialEskf15 {
    * 返回值明确区分重复、乱序、间隔过大、坐标系不匹配和数值失败。
    */
   [[nodiscard]] ImuProcessingResult push_imu(const ImuPacket& packet);
+  /** 返回当前名义状态的只读引用；避免复制，但引用不得超过本对象生命周期。 */
   [[nodiscard]] const InertialNominalState& state() const noexcept;
+  /** 返回构造时保存的初值和标准差只读引用。 */
   [[nodiscard]] const InertialNodeInitialization& initialization() const
       noexcept;
+  /** 返回本传播器唯一负责的平台编号。 */
   [[nodiscard]] std::uint32_t node_id() const noexcept;
+  /** true表示至少接纳了一帧IMU并可对下一帧计算dt。 */
   [[nodiscard]] bool has_timebase() const noexcept;
+  /** 返回上一帧已接纳IMU的统一测量时刻；无时间基准时为默认0。 */
   [[nodiscard]] std::uint64_t timestamp_ns() const noexcept;
 
   /**

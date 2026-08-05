@@ -1,6 +1,13 @@
 // 模块职责：实现惯导传播所需的三维向量、反对称矩阵和单位四元数运算。
 // 关键约定：内部四元数顺序为w/x/y/z，姿态方向为车体FLU到导航ENU；
 // ROS 2 Imu的x/y/z/w排列只允许在接口适配边界转换一次。
+//
+// 初学者阅读提示：
+// 1. Vec3只是保存x、y、z三个double的“小数据盒”，下面的operator+等函数让它可以写成a+b。
+// 2. Quaternion保存一个旋转。不要把w/x/y/z分别当成四个角度；四个数合起来才表示一次三维旋转。
+// 3. `const T&`表示只借用对象、不复制也不修改；`noexcept`表示函数承诺不向外抛异常；
+//    `[[nodiscard]]`提醒调用者不要无意忽略返回值。
+// 4. 初次阅读只需掌握norm、normalize、operator*、rotate和exp，其他向量运算是它们的基础工具。
 #pragma once
 
 #include <array>
@@ -48,14 +55,18 @@ struct Quaternion {
   double y{};     ///< 四元数向量部y分量，对应车体FLU的y轴旋转成分。
   double z{};     ///< 四元数向量部z分量，对应车体FLU的z轴旋转成分。
 
+  /** const表示不修改成员；返回true说明w/x/y/z都不是NaN或无穷大。 */
   [[nodiscard]] bool finite() const noexcept;
+  /** 返回四个分量的欧氏范数；单位四元数应接近1。 */
   [[nodiscard]] double norm() const noexcept;
   /** 零范数或非有限输入返回false，调用方据此拒绝整次状态提交。 */
   [[nodiscard]] bool normalize() noexcept;
+  /** 返回[w,-x,-y,-z]；对单位四元数而言共轭就是逆旋转。 */
   [[nodiscard]] Quaternion conjugate() const noexcept;
   /**
    * `right`为Hamilton积右操作数；R(*this * right)=R(*this)R(right)，
    * 因而主动旋转向量时先应用`right`，再应用`*this`。
+   * 初学者可把四元数乘法理解为“把两次旋转合成为一次旋转”，不是把四个分量逐项相乘。
    */
   [[nodiscard]] Quaternion operator*(const Quaternion& right) const noexcept;
   /** `value`为车体FLU向量；主动旋转后得到导航ENU分量，不改变其物理量。 */
@@ -63,6 +74,8 @@ struct Quaternion {
 
   /**
    * 将`rotation_vector`（方向为转轴、模长为弧度）映射为单位四元数。
+   * 这里的exp不是普通实数e^x，而是SO(3)旋转的“指数映射”：
+   * 输入例如(0,0,pi/2)表示绕z轴转90度，输出是代表这次旋转的单位四元数。
    * 小角度分支使用一阶近似，避免sin(theta/2)/theta在零附近失去数值精度。
    */
   [[nodiscard]] static Quaternion exp(const Vec3& rotation_vector) noexcept;

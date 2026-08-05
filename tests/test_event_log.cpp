@@ -1,4 +1,6 @@
 // 模块职责：验证ZJLG输入/输出记录往返、边界EOF、截断、超长记录和内部帧损坏检测。
+// C++初学者阅读提示：“往返”是先写临时文件再读回并比较；其余用例故意破坏长度或内容，
+// 期望读取器明确报错。临时文件由测试创建并清理，不会使用现场任务日志。
 #include "protocol/event_log.hpp"
 #include "protocol/wire_protocol.hpp"
 #include "test_support.hpp"

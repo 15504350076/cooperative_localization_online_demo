@@ -1,4 +1,6 @@
 // 模块职责：验证15N联合协方差传播、平台间测距更新、交叉相关和主参考相对输出。
+// C++初学者阅读方法：先看测试名称理解要证明的性质，再依次找“初始配置、输入IMU/测距、
+// 调用predict/update、EXPECT_*断言”。15N表示N辆车每辆各有15维误差状态。
 #include "core/cooperative_inertial_ekf.hpp"
 #include "test_support.hpp"
 

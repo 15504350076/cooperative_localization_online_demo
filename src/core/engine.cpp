@@ -1,6 +1,13 @@
 // 模块实现：把IMU/测距输入校验、质量监测、15维联合滤波、动态拓扑和输出状态串成闭环。
 // 关键原则：惯性模式只由真实IMU推进，测距仅做观测更新；所有时间、重复包和质量结论
 // 在进入滤波器前确定，step只生成一致快照，不承担无线协议或车辆控制。
+//
+// 初学者阅读顺序：
+// 1. validate_config()：启动前拒绝不合理参数；
+// 2. configure_inertial()：在首个输入前选择默认15维模式；
+// 3. push_imu()/push_range()：处理两类异步输入；
+// 4. step()：定时生成定位、观测质量和网络状态。
+// 看到candidate、旧状态副本或最后swap时，表示代码先在临时对象上计算，全部成功后才提交。
 #include "core/engine.hpp"
 
 #include "core/rigidity.hpp"
@@ -83,6 +90,7 @@ EngineConfig Engine::validate_config(EngineConfig config) {
 }
 
 Engine::Engine(EngineConfig config)
+    // 构造顺序按成员声明而非书写顺序：先校验并移动config，再用已保存配置构造两个子模块。
     : config_(validate_config(std::move(config))),
       filter_(config_.filter, config_.nodes),
       monitor_(config_.degradation) {
@@ -127,6 +135,7 @@ void Engine::configure_inertial(
   cooperative.min_covariance_diagonal =
       config_.filter.min_covariance_diagonal;
   cooperative.max_inertial_state_dimension = max_inertial_state_dimension;
+  // optional::emplace在其内部直接构造联合滤波器，使optional从“空”变为“有值”。
   inertial_filter_.emplace(cooperative, std::move(inertial_config),
                            std::move(initializations));
 }
@@ -149,13 +158,14 @@ ImuProcessingResult Engine::push_imu(const ImuPacket& packet) {
       packet.receive_timestamp_ns - packet.timestamp_ns >
           config_.max_receive_delay_ns;
   // 测量与接收时间必须来自同一时基：前者不能明显“来自未来”，后者也不能
-  // 晚到超过允许链路延迟。这里不尝试自行校时，校时职责属于上交平台。
+  // 晚到超过允许链路延迟。这里不尝试自行校时，校时职责属于上海交大平台侧。
   if (packet.receive_timestamp_ns == 0U || too_far_future || too_delayed) {
     ImuProcessingResult result{};  // 时间语义不合法时返回的确定性拒绝结果。
     result.disposition = ImuDisposition::kInvalidPacket;
     result.phi = DenseMatrix::identity(kInertialErrorStateSize);
     return result;
   }
+  // optional重载了operator->；前面已判定有值，因此可像指针一样调用内部对象。
   return inertial_filter_->push_imu(packet);
 }
 
@@ -188,9 +198,11 @@ std::size_t Engine::DirectedLinkHash::operator()(
 bool Engine::duplicate_and_remember(const RangePacket& packet) {
   // 重复判定按有向链路保存(sequence,timestamp)，反向合法测距不会互相覆盖。
   auto& cache =  // 当前发送端到接收端独占的近期包键FIFO。
+      // unordered_map的operator[]：键不存在时自动值初始化一个空deque并返回其引用。
       duplicate_cache_[{packet.from_node, packet.to_node}];
   const auto duplicate = std::find_if(  // 与输入序号和测量时间同时相等的缓存位置。
       cache.begin(), cache.end(), [&packet](const DuplicateKey& existing) {
+        // `[&packet]`按引用捕获当前输入，Lambda调用期间packet仍有效且不会复制整包。
         // 捕获packet以读取当前输入键；existing为逐项比较的历史包键。
         return existing.sequence == packet.sequence &&
                existing.timestamp_ns == packet.timestamp_ns;
@@ -273,6 +285,7 @@ RangeProcessingResult Engine::push_range(const RangePacket& packet) {
   // 阶段3：质量状态决定正常、降权、暂缓、剔除或试探恢复的融合动作。
   if (result.action == FusionAction::kHold ||
       result.action == FusionAction::kReject) {
+    // 多行三目运算把两种质量阻断动作分别映射到Held或Rejected。
     result.disposition = result.action == FusionAction::kHold
                              ? ProcessingDisposition::Held
                              : ProcessingDisposition::Rejected;
@@ -286,6 +299,7 @@ RangeProcessingResult Engine::push_range(const RangePacket& packet) {
       downweighted ? config_.degradation.nlos_covariance_scale : 1.0;
   // 阶段4：默认惯性路径与兼容仅测距路径二选一，绝不同时更新两套在线状态。
   result.update = inertial_filter_
+                      // optional可在布尔上下文判断是否有值；有值走15N路径，否则走4M回退路径。
                       ? inertial_filter_->update_range(packet,
                                                        covariance_scale)
                       : filter_.update(packet, covariance_scale);
@@ -303,6 +317,7 @@ RangeProcessingResult Engine::push_range(const RangePacket& packet) {
 EngineSnapshot Engine::step(std::uint64_t now_ns) {
   processing_started_ = true;
   const std::uint64_t effective_now =  // 不早于既有测距或step进度的统一step时刻。
+      // 三目运算：已有内部时间时取两者最大值，否则直接采用调用方时刻。
       has_latest_timestamp_ ? std::max(now_ns, latest_timestamp_ns_) : now_ns;
   // 惯性模式的位置只能由真实IMU推进，step不得叠加旧的恒速预测模型。
   if (!inertial_filter_) {
@@ -348,6 +363,7 @@ EngineSnapshot Engine::step(std::uint64_t now_ns) {
   }
 
   const std::vector<NodeEstimate> estimates =  // 当前唯一在线滤波路径导出的全部节点估计。
+      // 两个分支返回同一类型vector，因此可用三目运算一次初始化const结果。
       inertial_filter_ ? inertial_filter_->estimates() : filter_.estimates();
   std::vector<Point2> positions;  // 与node_ids_同序、供刚度分析使用的二维位置。
   positions.reserve(estimates.size());
@@ -404,6 +420,7 @@ EngineSnapshot Engine::step(std::uint64_t now_ns) {
     localization.valid = estimate.valid;
     localization.yaw_valid = false;
     localization.z_valid = false;
+    // 节点估计有效时继承同批网络状态，否则明确标记未初始化。
     localization.state = estimate.valid ? snapshot.network.state
                                         : LocalizationState::kUninitialized;
     snapshot.localizations.push_back(localization);
@@ -411,6 +428,7 @@ EngineSnapshot Engine::step(std::uint64_t now_ns) {
   return snapshot;
 }
 
+// 返回只读引用，不复制滤波器内部状态和协方差。
 const RangeEkf& Engine::filter() const noexcept { return filter_; }
 
 bool Engine::inertial_enabled() const noexcept {
@@ -418,9 +436,11 @@ bool Engine::inertial_enabled() const noexcept {
 }
 
 const CooperativeInertialEkf* Engine::inertial_filter() const noexcept {
+  // `*optional`取得内部对象，前缀`&`再取得地址；空optional返回nullptr。
   return inertial_filter_ ? &*inertial_filter_ : nullptr;
 }
 
+// 返回只读引用供外部查询质量快照，不允许绕过Engine直接修改状态机。
 const DegradationMonitor& Engine::monitor() const noexcept { return monitor_; }
 
 }  // namespace zju::coop

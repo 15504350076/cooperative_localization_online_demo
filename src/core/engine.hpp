@@ -1,6 +1,11 @@
 // 模块职责：编排标准化输入、时间/重复检查、质量监测、滤波更新、动态拓扑与输出快照。
 // Engine是算法核心的系统边界，但不解析ROS 2消息、不收发无线链路、不输出控制指令；
-// 上交适配层通过C ABI串行调用本引擎，GCS只消费它生成的定位/网络/观测/告警结果。
+// 上海交大适配层通过C ABI串行调用本引擎，GCS只消费它生成的定位/网络/观测/告警结果。
+//
+// 初学者可把Engine理解为“算法总调度员”，它自己不推导全部滤波公式，而是决定调用顺序：
+// push_imu()把IMU交给15维惯导；push_range()先做时间/重复/质量检查，再决定是否融合；
+// step()按当前时间淘汰过期边、分析拓扑并组装一次一致的输出快照。
+// `std::optional`表示惯性滤波器可以不存在：存在时走IMU+测距，缺省时走仅测距回退路径。
 #pragma once
 
 #include "core/cooperative_inertial_ekf.hpp"
@@ -82,13 +87,13 @@ struct EngineSnapshot {
  * RangeProcessingResult::update；Held/Rejected表示质量状态机主动阻断。
  */
 enum class ProcessingDisposition {
-  Processed,
-  InvalidPacket,
-  OutOfOrder,
-  TimeRejected,
-  Duplicate,
-  Held,
-  Rejected,
+  Processed,     ///< 已到达底层滤波入口；是否被NIS接纳还需看update.disposition。
+  InvalidPacket, ///< 端点、距离、标准差、状态码或有效位不合法。
+  OutOfOrder,    ///< 同一引擎时间轴上出现过早的测量。
+  TimeRejected, ///< 测量时间与接收时间的偏差超过配置门限。
+  Duplicate,    ///< 同一有向链路近期已见相同sequence+timestamp组合。
+  Held,         ///< 质量状态为Suspended，本包暂缓而未进入滤波器。
+  Rejected,     ///< 质量状态为Rejected，本包被剔除。
 };
 
 struct RangeProcessingResult {
@@ -130,10 +135,14 @@ class Engine {
    * @param now_ns 调用方提供的统一输出时刻。 */
   [[nodiscard]] EngineSnapshot step(std::uint64_t now_ns);
 
+  /** 返回仅测距兼容滤波器只读引用；惯性已启用时它不会继续推进。 */
   [[nodiscard]] const RangeEkf& filter() const noexcept;
+  /** optional中存在CooperativeInertialEkf时返回true。 */
   [[nodiscard]] bool inertial_enabled() const noexcept;
+  /** 返回惯性滤波器地址；未启用时返回nullptr，调用者必须先判空。 */
   [[nodiscard]] const CooperativeInertialEkf* inertial_filter() const
       noexcept;
+  /** 返回质量监视器只读引用，供诊断查询。 */
   [[nodiscard]] const DegradationMonitor& monitor() const noexcept;
 
  private:
@@ -143,6 +152,7 @@ class Engine {
 
     /** @param other 待比较的有向链路键。 */
     [[nodiscard]] bool operator==(const DirectedLinkKey& other) const noexcept {
+      // 有向链路必须起点和终点同时相等；1->2与2->1不是同一个重复缓存。
       return from == other.from && to == other.to;
     }
   };

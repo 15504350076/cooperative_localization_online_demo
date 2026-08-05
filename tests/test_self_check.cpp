@@ -1,4 +1,6 @@
 // 模块职责：把独立C ABI自检纳入CTest，确认报告、通过计数和最终状态一致。
+// C++初学者阅读提示：本用例只调用一次公开run_self_check，然后检查总状态、失败数和关键文字；
+// 具体三车数据怎样进入C ABI，请继续看src/self_check/self_check.cpp。
 #include "self_check/self_check.hpp"
 #include "test_support.hpp"
 

@@ -1,4 +1,6 @@
 // 模块职责：验证UTF-8严格INI的成功加载、未知键、重复项、行号和跨字段资源约束。
+// C++初学者阅读提示：测试先在内存中准备INI文本，再交给解析器；合法文本检查字段值，
+// 非法文本则用EXPECT_THROW确认会抛出预期异常，而不是悄悄使用错误默认值。
 #include "config/ini_config.hpp"
 #include "test_support.hpp"
 
