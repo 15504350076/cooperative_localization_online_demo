@@ -332,7 +332,7 @@ int run(const Arguments& arguments) {
 
 }  // namespace
 
-/** @param argc 进程参数数量；@param argv 进程参数字符串数组。 */
+/** @param argc 进程（命令行）参数数量；@param argv 进程参数字符串数组。 */
 int main(int argc, char** argv) {
   try {
     const auto arguments = parse_arguments(argc, argv);  // 供run使用的已解析在线参数。

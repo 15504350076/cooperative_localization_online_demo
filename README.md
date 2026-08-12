@@ -18,7 +18,7 @@
 - 输入、输出统一事件日志；回放会跳过历史输出记录，以历史输入重新计算并重新产生定位、状态和告警。
 - 严格帧长、枚举、保留位、数值范围和 CRC 校验；所有数据携带时间戳、序号和节点号。
 
-尚未实现或未验证：上交正式 ROS 2 wrapper、真实 UWB/IMU驱动、UWB PPS同步状态显式输入、激光雷达/多目视觉前端算法、绝对位置约束、真实盒端ARM64运行和性能指标。当前已增加原始`Image`/`PointCloud2`的C ABI字段映射与布局校验入口，但明确不做图像识别、点云配准或融合。内部名义状态是三维的，但当前 GCS/C ABI Localization 仍只发布二维相对位置和速度，`yaw_valid=false`、`z_valid=false`。
+尚未实现或未验证：上交正式 ROS 2 wrapper、真实 UWB/IMU驱动、UWB PPS同步状态显式输入、激光雷达/多目视觉前端、绝对位置约束、真实盒端ARM64运行和性能指标。内部名义状态是三维的，但当前 GCS/C ABI Localization 仍只发布二维相对位置和速度，`yaw_valid=false`、`z_valid=false`。
 
 ## 交付边界与分工
 
@@ -47,24 +47,24 @@
 
 ## 工程结构
 
-| 路径 | 内容 |
-|---|---|
-| `include/zju_coop/c_api.h` | 对上交交付的稳定 C ABI |
-| `src/api` | C ABI 与 C++ 核心适配 |
-| `src/core` | EKF、退化监测、动态拓扑和可观性 |
-| `src/protocol` | 临时 ZJCL 帧和 ZJLG 日志 |
-| `src/apps` | 在线程序、回放程序、C ABI 调用适配 |
-| `src/net` | 当前演示使用的跨平台 UDP 封装 |
-| `config/demo.ini` | 默认 15 维 IMU＋测距融合参数和三车初值 |
-| `config/range_only_demo.ini` | 仅测距回退模式参数和三车初值 |
-| `docs` | 算法、C API、协议、盒端适配、验收、扩展和交付验证说明 |
-| `tools/uwb_simulator.py` | 确定性 3-4-5 三角形 UWB 模拟器 |
-| `tools/imu_uwb_simulator.py` | 三车100 Hz IMU＋20 Hz UWB模拟器 |
-| `tools/gcs_dashboard.py` | 零第三方依赖的二维在线面板 |
-| `tools/online_smoke_test.py`、`tools/imu_online_smoke_test.py` | 两种模式的真实进程测试 |
-| `examples/sdk_consumer.cpp` | 直接调用 C ABI 的可编译示例 |
-| `tests`、`tools/test_*.py` | C/C++ 与 Python 自动测试 |
-| `临时UDP演示协议_v1.md` | 当前联调帧、状态、告警和日志格式 |
+| 路径                                                               | 内容                                                  |
+| ------------------------------------------------------------------ | ----------------------------------------------------- |
+| `include/zju_coop/c_api.h`                                       | 对上交交付的稳定 C ABI                                |
+| `src/api`                                                        | C ABI 与 C++ 核心适配                                 |
+| `src/core`                                                       | EKF、退化监测、动态拓扑和可观性                       |
+| `src/protocol`                                                   | 临时 ZJCL 帧和 ZJLG 日志                              |
+| `src/apps`                                                       | 在线程序、回放程序、C ABI 调用适配                    |
+| `src/net`                                                        | 当前演示使用的跨平台 UDP 封装                         |
+| `config/demo.ini`                                                | 默认 15 维 IMU＋测距融合参数和三车初值                |
+| `config/range_only_demo.ini`                                     | 仅测距回退模式参数和三车初值                          |
+| `docs`                                                           | 算法、C API、协议、盒端适配、验收、扩展和交付验证说明 |
+| `tools/uwb_simulator.py`                                         | 确定性 3-4-5 三角形 UWB 模拟器                        |
+| `tools/imu_uwb_simulator.py`                                     | 三车100 Hz IMU＋20 Hz UWB模拟器                       |
+| `tools/gcs_dashboard.py`                                         | 零第三方依赖的二维在线面板                            |
+| `tools/online_smoke_test.py`、`tools/imu_online_smoke_test.py` | 两种模式的真实进程测试                                |
+| `examples/sdk_consumer.cpp`                                      | 直接调用 C ABI 的可编译示例                           |
+| `tests`、`tools/test_*.py`                                     | C/C++ 与 Python 自动测试                              |
+| `临时UDP演示协议_v1.md`                                          | 当前联调帧、状态、告警和日志格式                      |
 
 建议第一次使用或接手开发时先阅读 [`docs/12_工程使用学习与编写思路.md`](docs/12_工程使用学习与编写思路.md)。该文档按“最小自检→完整在线演示→代码学习路线→二次开发原则”组织，并说明Windows、Ubuntu 22.04和RK3588的使用差异。
 
@@ -80,14 +80,14 @@
 
 算法源码、C 头文件、配置字段和调用顺序相同；生成的二进制不同，必须分别编译：
 
-| 项目 | Windows x64 | AIBrainBox RK3588 |
-|---|---|---|
-| 算法源码 | 同一份 `src/core`、`src/api` | 同一份 `src/core`、`src/api` |
-| 对外接口 | 同一份 `include/zju_coop/c_api.h` | 同一份 `include/zju_coop/c_api.h` |
-| 动态库 | `zju_coop.dll`＋导入库 | `libzju_coop.so` |
-| 指令集/ABI | x86-64、MSVC ABI | AArch64、GCC/Clang ELF ABI |
-| ROS 2 wrapper | 可在安装了匹配 ROS 2 的 Windows 上编译 | 上交在 Ubuntu 22.04/ROS 2 Humble 中编译 |
-| 临时在线入口 | ZJCL/UDP 独立 Demo | 可用于盒端自检，但生产链路优先 ROS 2 wrapper |
+| 项目          | Windows x64                            | AIBrainBox RK3588                            |
+| ------------- | -------------------------------------- | -------------------------------------------- |
+| 算法源码      | 同一份`src/core`、`src/api`        | 同一份`src/core`、`src/api`              |
+| 对外接口      | 同一份`include/zju_coop/c_api.h`     | 同一份`include/zju_coop/c_api.h`           |
+| 动态库        | `zju_coop.dll`＋导入库               | `libzju_coop.so`                           |
+| 指令集/ABI    | x86-64、MSVC ABI                       | AArch64、GCC/Clang ELF ABI                   |
+| ROS 2 wrapper | 可在安装了匹配 ROS 2 的 Windows 上编译 | 上交在 Ubuntu 22.04/ROS 2 Humble 中编译      |
+| 临时在线入口  | ZJCL/UDP 独立 Demo                     | 可用于盒端自检，但生产链路优先 ROS 2 wrapper |
 
 因此不能把 Windows DLL 复制到 RK3588，也不能把 ARM64 `.so` 放到 Windows。上交可以复用同一份 ROS 2 wrapper 源码，但需要在每个平台各自的 ROS 2、编译器和消息包环境中重新构建。算法库本身不包含 ROS 2 消息依赖。
 
@@ -238,20 +238,6 @@ cmake --install build --prefix install
 Windows 安装树同理，使用 `install\bin\zju_coop_online.exe --config install\share\zju_coop\config\demo.ini`。相对的日志路径仍以启动进程的当前工作目录为基准。
 
 C ABI v1 的 `zju_coop_step` 当前直接输出 `Localization`、`Observation` 和 `Network` 对应结构，不直接返回 `AlgorithmStatus` 或 `Alert` 结构。当前在线/回放程序在 ZJU 参考适配层中依据 Network 状态生成后二者。最终上交 ROS 2 适配节点应复用同一语义，还是由后续 C ABI 扩展直接提供，需在正式 ROS 2 接口评审中冻结；初版不得把演示层字段误称为现有 C ABI 输出。
-
-## GNSS 失锁前初始化与 RTK 相对真值
-
-工程已增加独立 `zju_coop_gnss_context_t`。上交 wrapper 可将标准
-`sensor_msgs/msg/NavSatFix` 逐字段映射为 `zju_coop_gnss_fix_packet_t`：
-
-- 每节点至少两帧合格 GNSS 可生成现有基础初值和 15 维惯性初值；
-- 第一次成功初始化时建立并冻结主参考节点下的公共 ENU；
-- 后续 RTK 可输出各节点相对主参考节点的位置真值；
-- 真值上下文不持有主算法 `Engine`，不会对 EKF 做量测更新；
-- 标准 `NavSatFix` 不能证明 RTK Fixed，必须由上交专用 topic 或接收机状态消息保证 `valid` 的含义。
-
-完整字段映射、门限、调用顺序和 ROS 2 topic 建议见
-[`docs/14_GNSS初始化与RTK相对真值接口说明.md`](docs/14_GNSS初始化与RTK相对真值接口说明.md)。
 
 ## 当前接口冻结点与待确认项
 

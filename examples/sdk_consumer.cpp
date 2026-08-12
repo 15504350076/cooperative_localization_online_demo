@@ -50,9 +50,9 @@ int main() {
     return 1;
   }
   config.reference_node_id = 1U;
-  config.nodes = nodes.data();
-  config.node_count = static_cast<std::uint32_t>(nodes.size());
-  config.node_stride = sizeof(zju_coop_node_initialization_t);
+  config.nodes = nodes.data(); //std::array::data() 返回数组第一个元素的指针。等价于config.nodes = &nodes[0];
+  config.node_count = static_cast<std::uint32_t>(nodes.size()); //显式类型转换static_cast<目标类型>(表达式)
+  config.node_stride = sizeof(zju_coop_node_initialization_t); //stride表示：从当前元素首地址移动到下一个元素首地址，需要跨越多少字节。
   config.nis_gate = 1.0e9;
 
   // 阶段2：create深拷贝节点数组，成功后句柄所有权归调用方。
