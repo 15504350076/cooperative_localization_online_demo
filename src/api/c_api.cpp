@@ -459,6 +459,7 @@ zju_coop_error_code_t convert_distributed_config(
   converted.max_extrapolation_ns =
       static_cast<std::uint64_t>(extrapolation_ns);
   converted.node_timeout_ns = base.edge_timeout_ns;
+  converted.range_timeout_ns = base.edge_timeout_ns;
   converted.max_future_skew_ns = base.max_future_skew_ns;
   converted.max_receive_delay_ns = base.max_receive_delay_ns;
 

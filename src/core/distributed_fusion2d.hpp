@@ -33,6 +33,7 @@ struct DistributedFusionConfig {
   double min_covariance_diagonal{1.0e-9};
   std::uint64_t max_extrapolation_ns{100'000'000ULL};
   std::uint64_t node_timeout_ns{500'000'000ULL};
+  std::uint64_t range_timeout_ns{500'000'000ULL};
   std::uint64_t max_future_skew_ns{100'000'000ULL};
   std::uint64_t max_receive_delay_ns{500'000'000ULL};
 };
@@ -84,6 +85,8 @@ class DistributedFusion2D {
                                    NodeState& output) const;
   [[nodiscard]] bool state_is_fresh(const NodeRecord& node,
                                     std::uint64_t now_ns) const;
+  [[nodiscard]] std::vector<bool> fresh_range_connectivity(
+      std::uint64_t now_ns) const;
   [[nodiscard]] Vec3 corrected_position(const NodeRecord& node,
                                         const NodeState& state,
                                         const std::vector<double>& correction)
@@ -96,6 +99,10 @@ class DistributedFusion2D {
   DenseMatrix covariance_;
   std::unordered_map<std::uint64_t, std::uint64_t>
       last_range_timestamp_by_edge_;
+  std::unordered_map<std::uint64_t, std::uint64_t>
+      last_accepted_range_timestamp_by_edge_;
+  std::unordered_map<std::uint64_t, std::uint64_t>
+      last_accepted_range_receive_timestamp_by_edge_;
   std::uint64_t last_range_timestamp_ns_{};
   bool has_range_timebase_{};
 };

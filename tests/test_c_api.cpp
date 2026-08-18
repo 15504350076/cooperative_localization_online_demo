@@ -1255,5 +1255,12 @@ TEST_CASE(c_api_distributed_mode_fuses_node_states_and_outputs_pose2d) {
   EXPECT_TRUE(std::abs(second->x_m - 3.0) < 1.0);
   EXPECT_EQ(second->position_valid, ZJU_COOP_TRUE);
   EXPECT_EQ(second->yaw_valid, ZJU_COOP_TRUE);
+  const auto third = std::find_if(
+      vehicles.begin(), vehicles.end(), [](const auto& value) {
+        return value.node_id == 3U;
+      });
+  EXPECT_TRUE(third != vehicles.end());
+  EXPECT_EQ(third->position_valid, ZJU_COOP_FALSE);
+  EXPECT_EQ(third->yaw_valid, ZJU_COOP_TRUE);
   EXPECT_EQ(zju_coop_distributed_destroy(handle), ZJU_COOP_OK);
 }

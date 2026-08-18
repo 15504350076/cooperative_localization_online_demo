@@ -76,7 +76,8 @@ DistributedFusion2D::DistributedFusion2D(DistributedFusionConfig config)
       !positive_finite(config_.process_accel_std_mps2) ||
       !positive_finite(config_.nis_gate) ||
       !positive_finite(config_.min_covariance_diagonal) ||
-      config_.max_extrapolation_ns == 0U || config_.node_timeout_ns == 0U) {
+      config_.max_extrapolation_ns == 0U || config_.node_timeout_ns == 0U ||
+      config_.range_timeout_ns == 0U) {
     throw std::invalid_argument("invalid distributed fusion configuration");
   }
 
@@ -98,8 +99,11 @@ DistributedFusion2D::DistributedFusion2D(DistributedFusionConfig config)
   }
   for (std::size_t first = 0U; first < nodes_.size(); ++first) {
     for (std::size_t second = first + 1U; second < nodes_.size(); ++second) {
-      last_range_timestamp_by_edge_.emplace(
-          range_edge_key(nodes_[first].node_id, nodes_[second].node_id), 0U);
+      const auto key =
+          range_edge_key(nodes_[first].node_id, nodes_[second].node_id);
+      last_range_timestamp_by_edge_.emplace(key, 0U);
+      last_accepted_range_timestamp_by_edge_.emplace(key, 0U);
+      last_accepted_range_receive_timestamp_by_edge_.emplace(key, 0U);
     }
   }
 
@@ -220,6 +224,42 @@ bool DistributedFusion2D::state_is_fresh(const NodeRecord& node,
   }
   const std::uint64_t received = node.history.back().receive_timestamp_ns;
   return now_ns >= received && now_ns - received <= config_.node_timeout_ns;
+}
+
+std::vector<bool> DistributedFusion2D::fresh_range_connectivity(
+    std::uint64_t now_ns) const {
+  std::vector<bool> connected(nodes_.size(), false);
+  connected[node_lookup_.at(config_.reference_node_id)] = true;
+  for (std::size_t pass = 1U; pass < nodes_.size(); ++pass) {
+    bool changed = false;
+    for (std::size_t first = 0U; first < nodes_.size(); ++first) {
+      for (std::size_t second = first + 1U; second < nodes_.size(); ++second) {
+        const auto key =
+            range_edge_key(nodes_[first].node_id, nodes_[second].node_id);
+        const auto measurement =
+            last_accepted_range_timestamp_by_edge_.find(key);
+        const auto received =
+            last_accepted_range_receive_timestamp_by_edge_.find(key);
+        if (measurement == last_accepted_range_timestamp_by_edge_.end() ||
+            received ==
+                last_accepted_range_receive_timestamp_by_edge_.end() ||
+            measurement->second == 0U || received->second == 0U ||
+            now_ns < measurement->second || now_ns < received->second ||
+            now_ns - measurement->second > config_.range_timeout_ns ||
+            now_ns - received->second > config_.range_timeout_ns ||
+            connected[first] == connected[second]) {
+          continue;
+        }
+        connected[first] = true;
+        connected[second] = true;
+        changed = true;
+      }
+    }
+    if (!changed) {
+      break;
+    }
+  }
+  return connected;
 }
 
 Vec3 DistributedFusion2D::corrected_position(
@@ -387,6 +427,9 @@ UpdateResult DistributedFusion2D::push_range(const RangePacket& packet) {
   correction_ = std::move(candidate_correction);
   covariance_ = std::move(posterior);
   last_range_timestamp_by_edge_[edge_key] = packet.timestamp_ns;
+  last_accepted_range_timestamp_by_edge_[edge_key] = packet.timestamp_ns;
+  last_accepted_range_receive_timestamp_by_edge_[edge_key] =
+      packet.receive_timestamp_ns;
   last_range_timestamp_ns_ = packet.timestamp_ns;
   has_range_timebase_ = true;
   result.disposition = UpdateDisposition::Accepted;
@@ -420,8 +463,14 @@ DistributedPose2DSnapshot DistributedFusion2D::pose2d_snapshot(
   }
 
   snapshot.timestamp_ns = common_time;
-  const bool reference_fresh = state_is_fresh(*reference, now_ns);
-  for (const auto& node : nodes_) {
+  const bool common_time_fresh =
+      now_ns >= common_time &&
+      now_ns - common_time <= config_.node_timeout_ns;
+  const bool reference_fresh =
+      common_time_fresh && state_is_fresh(*reference, now_ns);
+  const auto range_connected = fresh_range_connectivity(now_ns);
+  for (std::size_t index = 0U; index < nodes_.size(); ++index) {
+    const auto& node = nodes_[index];
     DistributedVehiclePose2D pose{};
     pose.node_id = node.node_id;
     NodeState aligned{};
@@ -432,9 +481,10 @@ DistributedPose2DSnapshot DistributedFusion2D::pose2d_snapshot(
       pose.x_m = position.x - reference_position.x;
       pose.y_m = position.y - reference_position.y;
       pose.position_valid = reference_fresh && state_is_fresh(node, now_ns) &&
+                            (node.reference || range_connected[index]) &&
                             std::isfinite(pose.x_m) &&
                             std::isfinite(pose.y_m);
-      pose.yaw_valid = state_is_fresh(node, now_ns) &&
+      pose.yaw_valid = common_time_fresh && state_is_fresh(node, now_ns) &&
                        yaw_enu_rad(aligned.orientation_flu_to_enu,
                                    pose.yaw_rad);
     }

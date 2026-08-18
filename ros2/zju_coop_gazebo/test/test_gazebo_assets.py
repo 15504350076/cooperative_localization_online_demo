@@ -15,6 +15,9 @@ class GazeboAssetTest(unittest.TestCase):
 
     def test_assets_form_one_complete_three_vehicle_pipeline(self):
         model_path = PACKAGE_ROOT / "models/zju_diff_vehicle/model.sdf"
+        reference_model_path = (
+            PACKAGE_ROOT / "models/zju_reference_vehicle/model.sdf"
+        )
         world_path = PACKAGE_ROOT / "worlds/three_vehicle.sdf"
         bridge_path = PACKAGE_ROOT / "config/bridge.yaml"
         scenario_path = PACKAGE_ROOT / "scripts/gazebo_scenario.py"
@@ -25,6 +28,7 @@ class GazeboAssetTest(unittest.TestCase):
 
         paths = (
             model_path,
+            reference_model_path,
             world_path,
             bridge_path,
             scenario_path,
@@ -54,6 +58,28 @@ class GazeboAssetTest(unittest.TestCase):
             model.find("joint[@name='caster_joint']").attrib["type"],
             "fixed",
         )
+        reference_model = (
+            ET.parse(reference_model_path).getroot().find("model")
+        )
+        self.assertIsNotNone(reference_model)
+        self.assertEqual(
+            reference_model.find(".//sensor[@type='imu']/update_rate").text,
+            "100",
+        )
+        reference_plugin_names = {
+            plugin.attrib["name"]
+            for plugin in reference_model.findall("plugin")
+        }
+        self.assertEqual(reference_plugin_names, plugin_names)
+        body_diffuse = model.find(
+            "link[@name='base_link']/visual[@name='body_visual']"
+            "/material/diffuse"
+        ).text
+        reference_diffuse = reference_model.find(
+            "link[@name='base_link']/visual[@name='body_visual']"
+            "/material/diffuse"
+        ).text
+        self.assertNotEqual(body_diffuse, reference_diffuse)
         diff_drive = next(
             plugin
             for plugin in model.findall("plugin")
@@ -80,7 +106,7 @@ class GazeboAssetTest(unittest.TestCase):
             for include in world.findall("include")
         }
         self.assertEqual(included, {
-            "vehicle_1": "model://zju_diff_vehicle",
+            "vehicle_1": "model://zju_reference_vehicle",
             "vehicle_2": "model://zju_diff_vehicle",
             "vehicle_3": "model://zju_diff_vehicle",
         })

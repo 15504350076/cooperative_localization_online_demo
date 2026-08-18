@@ -124,7 +124,7 @@ def generate_test_description():
             "reference_node_id": 1,
             "publish_rate_hz": 10.0,
             "range_std_m": 0.1,
-            "node_state_timeout_ms": 1000,
+            "node_state_timeout_ms": 300,
             "common_enu_frame_id": "common_enu",
         }],
         remappings=[
@@ -376,6 +376,41 @@ class TestDynamicPipeline(unittest.TestCase):
         )
         self.assertGreater(raw_error, 0.4)
         self.assertLess(fused_error, 0.15)
+
+        dropout_start = len(self.pose_messages)
+        dropout_samples = int(0.5 / IMU_DT_S)
+        dropout_wall = time.monotonic()
+        dropout_start_ns = self.node.get_clock().now().nanoseconds
+        for offset in range(1, dropout_samples + 1):
+            target_wall = dropout_wall + offset * IMU_DT_S
+            remaining = target_wall - time.monotonic()
+            if remaining > 0.0:
+                time.sleep(remaining)
+            timestamp_ns = dropout_start_ns + int(round(offset * IMU_DT_S * 1.0e9))
+            elapsed_s = (timestamp_ns - start_ns) * 1.0e-9
+            for node_id, publisher in self.imu_publishers.items():
+                publisher.publish(self._imu(node_id, timestamp_ns, elapsed_s))
+            for _ in range(4):
+                rclpy.spin_once(self.node, timeout_sec=0.0)
+
+        collect_deadline = time.monotonic() + 0.2
+        while time.monotonic() < collect_deadline:
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+        stale = next(
+            (
+                message for message in reversed(self.pose_messages[dropout_start:])
+                if len(message.vehicles) == 3
+                and {vehicle.node_id for vehicle in message.vehicles}
+                == set(NODE_IDS)
+            ),
+            None,
+        )
+        self.assertIsNotNone(stale)
+        stale_vehicles = {vehicle.node_id: vehicle for vehicle in stale.vehicles}
+        self.assertTrue(stale_vehicles[1].position_valid)
+        self.assertFalse(stale_vehicles[2].position_valid)
+        self.assertFalse(stale_vehicles[3].position_valid)
+        self.assertTrue(all(vehicle.yaw_valid for vehicle in stale.vehicles))
 
 
 @launch_testing.post_shutdown_test()

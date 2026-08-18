@@ -44,6 +44,10 @@ install(PROGRAMS scripts/three_vehicle_simulator.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME zju_three_vehicle_simulator)
 
+install(PROGRAMS scripts/gnss_range_fallback.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME zju_gnss_range_fallback_node)
+
 # Keep the colcon install tree self-contained. RK3588 builds must point
 # ZJU_COOP_SDK_ROOT at an aarch64 SDK produced on/for that target.
 install(FILES "${ZJU_COOP_LIBRARY}" DESTINATION lib)
@@ -58,6 +62,9 @@ if(BUILD_TESTING)
   endif()
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/test_dynamic_pipeline.launch.py")
     add_launch_test(test/test_dynamic_pipeline.launch.py TIMEOUT 60)
+  endif()
+  if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/test_gnss_range_fallback.launch.py")
+    add_launch_test(test/test_gnss_range_fallback.launch.py TIMEOUT 30)
   endif()
 endif()
 

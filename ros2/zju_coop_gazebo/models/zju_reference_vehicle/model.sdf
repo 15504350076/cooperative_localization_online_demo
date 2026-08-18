@@ -1,0 +1,155 @@
+<?xml version="1.0"?>
+<sdf version="1.8">
+  <!-- Keep physics, sensors, joints, and plugins identical to
+       zju_diff_vehicle. Only the body material is changed so vehicle_1
+       is visually identifiable in the GUI. -->
+  <model name="zju_reference_vehicle">
+    <self_collide>false</self_collide>
+
+    <link name="base_link">
+      <pose>0 0 0 0 0 0</pose>
+      <inertial>
+        <mass>20.0</mass>
+        <inertia>
+          <ixx>0.4833333333</ixx>
+          <iyy>1.1333333333</iyy>
+          <izz>1.4833333333</izz>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyz>0</iyz>
+        </inertia>
+      </inertial>
+      <collision name="body_collision">
+        <geometry>
+          <box><size>0.8 0.5 0.2</size></box>
+        </geometry>
+      </collision>
+      <visual name="body_visual">
+        <geometry>
+          <box><size>0.8 0.5 0.2</size></box>
+        </geometry>
+        <material>
+          <ambient>0.85 0.25 0.03 1</ambient>
+          <diffuse>1.0 0.38 0.04 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- The first version assumes the IMU and UWB reference point coincide
+           with base_link and are axis-aligned with vehicle FLU. -->
+      <sensor name="imu_sensor" type="imu">
+        <always_on>true</always_on>
+        <update_rate>100</update_rate>
+        <ignition_frame_id>imu_link</ignition_frame_id>
+      </sensor>
+    </link>
+
+    <link name="left_wheel">
+      <pose>0.10 0.30 -0.10 1.5707963267948966 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+        <inertia>
+          <ixx>0.0061583333</ixx>
+          <iyy>0.0061583333</iyy>
+          <izz>0.01125</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+        </inertia>
+      </inertial>
+      <collision name="collision">
+        <geometry><cylinder><radius>0.15</radius><length>0.08</length></cylinder></geometry>
+        <surface>
+          <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <geometry><cylinder><radius>0.15</radius><length>0.08</length></cylinder></geometry>
+        <material><ambient>0.05 0.05 0.05 1</ambient><diffuse>0.05 0.05 0.05 1</diffuse></material>
+      </visual>
+    </link>
+
+    <link name="right_wheel">
+      <pose>0.10 -0.30 -0.10 1.5707963267948966 0 0</pose>
+      <inertial>
+        <mass>1.0</mass>
+        <inertia>
+          <ixx>0.0061583333</ixx>
+          <iyy>0.0061583333</iyy>
+          <izz>0.01125</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+        </inertia>
+      </inertial>
+      <collision name="collision">
+        <geometry><cylinder><radius>0.15</radius><length>0.08</length></cylinder></geometry>
+        <surface>
+          <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <geometry><cylinder><radius>0.15</radius><length>0.08</length></cylinder></geometry>
+        <material><ambient>0.05 0.05 0.05 1</ambient><diffuse>0.05 0.05 0.05 1</diffuse></material>
+      </visual>
+    </link>
+
+    <link name="caster">
+      <pose>-0.30 0 -0.17 0 0 0</pose>
+      <inertial>
+        <mass>0.5</mass>
+        <inertia>
+          <ixx>0.00128</ixx><iyy>0.00128</iyy><izz>0.00128</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+        </inertia>
+      </inertial>
+      <collision name="collision">
+        <geometry><sphere><radius>0.08</radius></sphere></geometry>
+        <surface>
+          <friction><ode><mu>0.0</mu><mu2>0.0</mu2></ode></friction>
+        </surface>
+      </collision>
+      <visual name="visual">
+        <geometry><sphere><radius>0.08</radius></sphere></geometry>
+      </visual>
+    </link>
+
+    <joint name="left_wheel_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>left_wheel</child>
+      <axis>
+        <xyz expressed_in="__model__">0 1 0</xyz>
+      </axis>
+    </joint>
+    <joint name="right_wheel_joint" type="revolute">
+      <parent>base_link</parent>
+      <child>right_wheel</child>
+      <axis>
+        <xyz expressed_in="__model__">0 1 0</xyz>
+      </axis>
+    </joint>
+    <joint name="caster_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>caster</child>
+    </joint>
+
+    <plugin filename="libignition-gazebo-diff-drive-system.so"
+            name="ignition::gazebo::systems::DiffDrive">
+      <left_joint>left_wheel_joint</left_joint>
+      <right_joint>right_wheel_joint</right_joint>
+      <wheel_separation>0.60</wheel_separation>
+      <wheel_radius>0.15</wheel_radius>
+      <odom_publish_frequency>50</odom_publish_frequency>
+      <max_linear_acceleration>0.30</max_linear_acceleration>
+      <min_linear_acceleration>-0.30</min_linear_acceleration>
+      <max_angular_acceleration>0.50</max_angular_acceleration>
+      <min_angular_acceleration>-0.50</min_angular_acceleration>
+    </plugin>
+    <plugin filename="libignition-gazebo-pose-publisher-system.so"
+            name="ignition::gazebo::systems::PosePublisher">
+      <publish_link_pose>false</publish_link_pose>
+      <publish_visual_pose>false</publish_visual_pose>
+      <publish_collision_pose>false</publish_collision_pose>
+      <publish_sensor_pose>false</publish_sensor_pose>
+      <publish_model_pose>true</publish_model_pose>
+      <publish_nested_model_pose>true</publish_nested_model_pose>
+      <use_pose_vector_msg>true</use_pose_vector_msg>
+      <update_frequency>50</update_frequency>
+    </plugin>
+  </model>
+</sdf>

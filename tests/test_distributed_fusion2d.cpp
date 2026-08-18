@@ -78,6 +78,89 @@ TEST_CASE(distributed_fusion_outputs_reference_relative_enu_pose_and_yaw) {
   EXPECT_TRUE(std::abs(pose(snapshot, 2U).yaw_rad - 0.5) < 1.0e-12);
 }
 
+TEST_CASE(distributed_fusion_requires_a_fresh_accepted_range_path) {
+  DistributedFusion2D fusion(config());
+  const std::uint64_t first = 1'000'000'000ULL;
+  (void)fusion.push_node_state(state(1U, first, 0.0, 0.0));
+  (void)fusion.push_node_state(state(2U, first, 3.0, 0.0));
+  (void)fusion.push_node_state(state(3U, first, 3.0, 4.0));
+
+  const auto before_range = fusion.pose2d_snapshot(first + 2U);
+  EXPECT_TRUE(pose(before_range, 1U).position_valid);
+  EXPECT_FALSE(pose(before_range, 2U).position_valid);
+  EXPECT_FALSE(pose(before_range, 3U).position_valid);
+
+  EXPECT_EQ(fusion.push_range(range(1U, 2U, first, 100.0)).disposition,
+            zju::coop::UpdateDisposition::NisRejected);
+  EXPECT_FALSE(
+      pose(fusion.pose2d_snapshot(first + 2U), 2U).position_valid);
+
+  EXPECT_EQ(fusion.push_range(range(1U, 2U, first + 1U, 3.0)).disposition,
+            zju::coop::UpdateDisposition::Accepted);
+  const auto one_edge = fusion.pose2d_snapshot(first + 3U);
+  EXPECT_TRUE(pose(one_edge, 2U).position_valid);
+  EXPECT_FALSE(pose(one_edge, 3U).position_valid);
+
+  EXPECT_EQ(fusion.push_range(range(2U, 3U, first + 1U, 4.0)).disposition,
+            zju::coop::UpdateDisposition::Accepted);
+  EXPECT_TRUE(pose(fusion.pose2d_snapshot(first + 3U), 3U).position_valid);
+
+  const std::uint64_t later = first + config().range_timeout_ns + 1U;
+  (void)fusion.push_node_state(state(1U, later, 0.0, 0.0));
+  (void)fusion.push_node_state(state(2U, later, 3.0, 0.0));
+  (void)fusion.push_node_state(state(3U, later, 3.0, 4.0));
+  const auto stale_range = fusion.pose2d_snapshot(later + 2U);
+  EXPECT_TRUE(pose(stale_range, 1U).position_valid);
+  EXPECT_FALSE(pose(stale_range, 2U).position_valid);
+  EXPECT_FALSE(pose(stale_range, 3U).position_valid);
+}
+
+TEST_CASE(distributed_fusion_invalidates_a_stale_common_epoch) {
+  DistributedFusion2D fusion(config());
+  const std::uint64_t first = 1'000'000'000ULL;
+  (void)fusion.push_node_state(state(1U, first, 0.0, 0.0));
+  (void)fusion.push_node_state(state(2U, first, 3.0, 0.0));
+  (void)fusion.push_node_state(state(3U, first, 0.0, 4.0));
+  EXPECT_EQ(fusion.push_range(range(1U, 3U, first, 4.0)).disposition,
+            zju::coop::UpdateDisposition::Accepted);
+
+  const std::uint64_t later = first + config().node_timeout_ns + 1U;
+  (void)fusion.push_node_state(state(1U, later, 0.0, 0.0));
+  (void)fusion.push_node_state(state(3U, later, 0.0, 4.0));
+  EXPECT_EQ(fusion.push_range(range(1U, 3U, later, 4.0)).disposition,
+            zju::coop::UpdateDisposition::Accepted);
+
+  const auto stale_epoch = fusion.pose2d_snapshot(later + 2U);
+  EXPECT_EQ(stale_epoch.timestamp_ns, first);
+  for (const auto& vehicle : stale_epoch.vehicles) {
+    EXPECT_FALSE(vehicle.position_valid);
+    EXPECT_FALSE(vehicle.yaw_valid);
+  }
+}
+
+TEST_CASE(distributed_fusion_does_not_revalidate_a_stale_delayed_range) {
+  auto value = config();
+  value.node_timeout_ns = 500'000'000ULL;
+  value.range_timeout_ns = 300'000'000ULL;
+  value.max_receive_delay_ns = 500'000'000ULL;
+  DistributedFusion2D fusion(value);
+
+  const std::uint64_t measurement_time = 1'000'000'000ULL;
+  (void)fusion.push_node_state(state(1U, measurement_time, 0.0, 0.0));
+  (void)fusion.push_node_state(state(2U, measurement_time, 3.0, 0.0));
+  (void)fusion.push_node_state(state(3U, measurement_time, 0.0, 4.0));
+
+  auto delayed = range(1U, 2U, measurement_time, 3.0);
+  delayed.receive_timestamp_ns = measurement_time + 400'000'000ULL;
+  EXPECT_EQ(fusion.push_range(delayed).disposition,
+            zju::coop::UpdateDisposition::Accepted);
+
+  const auto snapshot =
+      fusion.pose2d_snapshot(delayed.receive_timestamp_ns + 1U);
+  EXPECT_TRUE(pose(snapshot, 1U).position_valid);
+  EXPECT_FALSE(pose(snapshot, 2U).position_valid);
+}
+
 TEST_CASE(distributed_fusion_uwb_correction_survives_new_node_state) {
   DistributedFusion2D fusion(config());
   const std::uint64_t first = 1'000'000'000ULL;
