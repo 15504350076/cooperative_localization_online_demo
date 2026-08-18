@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """三车静止IMU加3-4-5平台间测距的临时UDP数据源。
 
-IMU保持标准ROS 2 Imu瞬时量语义：零角速度、ENU/FLU静止比力+g、不提供温度；
+IMU保持标准ROS 2 Imu瞬时量语义：可配置瞬时z角速度、ENU/FLU静止比力+g、不提供温度；
 测距复用确定性三边发生器。该工具只用于硬件到位前联调，不模拟真实器件误差模型。
 """
 
@@ -18,8 +18,8 @@ import zjcl_protocol as zjcl
 class ImuUwbSimulator:
     """产生三个节点的标准IMU瞬时量，并复用UWB三边测距发生器。"""
 
-    def __init__(self, seed=2026):
-        """建立组合数据源；seed传给实例私有UWB伪随机流以保证复现。"""
+    def __init__(self, seed=2026, gyro_z_rad_s=0.0):
+        """建立组合数据源；seed控制测距复现，gyro_z_rad_s是各车瞬时z角速度。"""
         # 实例生命周期内独占的UWB子模拟器，由同一发送线程调用。
         self.uwb = uwb_simulator.UwbSimulator(
             seed=seed, noise_std_m=0.01, nlos_probability=0.0,
@@ -27,6 +27,8 @@ class ImuUwbSimulator:
         )
         # 三个节点各自持久递增的IMU线缆序号，仅生成线程读写。
         self.imu_sequence = {1: 0, 2: 0, 3: 0}
+        # 角速度始终作为ROS 2 Imu语义的瞬时量发送，模拟器不对其积分或伪造orientation。
+        self.gyro_z_rad_s = _finite_float("gyro_z_rad_s", gyro_z_rad_s)
 
     def generate_imu_tick(self, timestamp_ns):
         """为三个节点生成瞬时IMU；timestamp_ns是共享的uint64 Unix纪元纳秒。"""
@@ -42,7 +44,7 @@ class ImuUwbSimulator:
             payload = zjcl.encode_imu_payload(
                 zjcl.ImuPayload(
                     (0.0, 0.0, 0.0, 1.0), (0.0,) * 9,
-                    (0.0, 0.0, 0.0), (0.0,) * 9,
+                    (0.0, 0.0, self.gyro_z_rad_s), (0.0,) * 9,
                     (0.0, 0.0, 9.80665), (0.0,) * 9,
                     "imu_link", False, True, zjcl.RANGE_STATUS_OK,
                 )
@@ -68,12 +70,23 @@ def _positive(text):
     return value
 
 
+def _finite_float(name, value):
+    """把value转换为有限浮点数；name进入错误文本以区分命令行字段。"""
+    try:
+        result = float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{name} must be a number") from error
+    if not math.isfinite(result):
+        raise ValueError(f"{name} must be finite")
+    return result
+
+
 def run(args):
     """按两个独立周期向在线程序发送数据；args为已解析CLI命名空间。"""
     if args.port < 1 or args.port > 65535:
         raise ValueError("port must be in [1,65535]")
     # 本次运行独占的组合模拟器和单调时钟起点。
-    simulator = ImuUwbSimulator(args.seed)
+    simulator = ImuUwbSimulator(args.seed, args.gyro_z_rad_s)
     start = time.monotonic()
     # 两类传感器下一次应发送的单调时刻（s）。
     next_imu = start
@@ -120,6 +133,10 @@ def main(argv=None):
     parser.add_argument("--port", type=int, default=39001)
     parser.add_argument("--imu-rate-hz", type=_positive, default=100.0)
     parser.add_argument("--uwb-rate-hz", type=_positive, default=20.0)
+    parser.add_argument(
+        "--gyro-z-rad-s", type=float, default=0.0,
+        help="三个节点IMU的瞬时FLU z轴角速度；不生成orientation真值",
+    )
     parser.add_argument("--duration", type=float, default=10.0)
     parser.add_argument("--seed", type=int, default=2026)
     try:

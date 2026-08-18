@@ -46,14 +46,17 @@ struct FilterConfig {
 struct NodeEstimate {
   std::uint32_t node_id{};    ///< 本估计所属的平台编号。
   std::uint64_t timestamp_ns{};  ///< 滤波状态对应的统一传感器时间，单位ns。
+  std::uint64_t pose_timestamp_ns{}; ///< node与参考节点处于同一惯性历元时的位姿时间；否则为0。
   double x{};                 ///< 相对参考节点的平面x位置，单位m。
   double y{};                 ///< 相对参考节点的平面y位置，单位m。
+  double yaw_rad{};           ///< 本车前向轴在公共ENU中的航向，单位rad、范围[-pi,pi)。
   double vx{};                ///< 相对参考节点的x方向速度，单位m/s。
   double vy{};                ///< 相对参考节点的y方向速度，单位m/s。
   double cov_xx{};            ///< 相对位置x方差，单位m²。
   double cov_xy{};            ///< 相对位置x-y协方差，单位m²。
   double cov_yy{};            ///< 相对位置y方差，单位m²。
   bool valid{};               ///< `true`表示节点存在且所返回状态/协方差可供下游使用。
+  bool yaw_valid{};           ///< `true`表示yaw来自已建立时基的惯性姿态且与参考节点同历元。
 };
 
 /** 拒绝原因保持互斥，便于区分输入问题、统计门限和矩阵数值失败。 */

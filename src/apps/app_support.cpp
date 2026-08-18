@@ -80,7 +80,8 @@ protocol::Frame output_frame(protocol::MessageType type,
 
 }  // namespace
 
-AlgorithmSession::AlgorithmSession(const config::DemoConfig& demo_config) {
+AlgorithmSession::AlgorithmSession(const config::DemoConfig& demo_config)
+    : pose2d_enabled_(demo_config.inertial.has_value()) {
   // 阶段1：构造基础节点配置并创建句柄，C API在调用期间深拷贝临时数组。
   std::vector<zju_coop_node_initialization_t> nodes(  // C ABI创建期间引用的二维节点初始化数组。
       demo_config.engine.nodes.size());
@@ -352,16 +353,43 @@ StepSnapshot AlgorithmSession::step(std::uint64_t now_ns) {
       "step algorithm");
   snapshot.localizations.resize(localization_count);  // 以C库最终回填数量收紧vector逻辑长度。
   snapshot.observations.resize(observation_count);  // 同步收紧边质量数组逻辑长度。
-  return snapshot;  // 按值返回同一算法时刻的定位、拓扑和质量原子快照。
+  // 阶段3：惯性路径在旧step已经完成后只读查询Pose2D，不能再次调用step推进状态。
+  if (pose2d_enabled_) {
+    require_ok(zju_coop_pose2d_snapshot_v2_init(&snapshot.pose2d),
+               "initialize Pose2D snapshot");
+    std::uint32_t vehicle_count = 0U;  // 空数组查询回填本次所需的车辆元素数量。
+    const auto pose_query = zju_coop_get_pose2d_v2(
+        handle_, &snapshot.pose2d, nullptr, 0U, 0U, &vehicle_count);
+    if (pose_query != ZJU_COOP_BUFFER_TOO_SMALL) {
+      require_ok(pose_query, "query Pose2D output size");
+      throw std::runtime_error("Pose2D size query returned no size");
+    }
+    snapshot.pose2d_vehicles.resize(vehicle_count);
+    for (auto& vehicle : snapshot.pose2d_vehicles) {
+      require_ok(zju_coop_vehicle_pose2d_v2_init(&vehicle),
+                 "initialize Pose2D vehicle output");
+    }
+    require_ok(zju_coop_get_pose2d_v2(
+                   handle_, &snapshot.pose2d,
+                   snapshot.pose2d_vehicles.empty()
+                       ? nullptr
+                       : snapshot.pose2d_vehicles.data(),
+                   vehicle_count, sizeof(zju_coop_vehicle_pose2d_v2_t),
+                   &vehicle_count),
+               "get Pose2D output");
+    snapshot.pose2d_vehicles.resize(vehicle_count);
+    snapshot.has_pose2d = true;
+  }
+  return snapshot;  // 按值返回同一次step提交的v1结果及其随后只读取得的Pose2D。
 }
 
 std::vector<EncodedOutput> encode_snapshot(
     const StepSnapshot& snapshot, std::uint32_t reference_node_id,
     std::uint64_t& next_sequence, std::size_t max_payload_size) {
-  // 每个定位节点和观测边独立成帧，网络状态每个快照只发送一帧。
-  std::vector<EncodedOutput> result;  // 按定位、网络、观测顺序累积的整帧输出。
-  result.reserve(snapshot.localizations.size() + snapshot.observations.size() +
-                 1U);
+  // 每个旧定位、Pose2D节点和观测边独立成帧，网络状态每个快照只发送一帧。
+  std::vector<EncodedOutput> result;  // 按旧定位、Pose2D、网络、观测顺序累积输出。
+  result.reserve(snapshot.localizations.size() + snapshot.pose2d_vehicles.size() +
+                 snapshot.observations.size() + 1U);
   constexpr std::uint32_t capabilities =  // 当前平面输出实际声明的传感/状态能力位。
       static_cast<std::uint32_t>(Capability::kUwbRange) |
       static_cast<std::uint32_t>(Capability::kPlanarPosition) |
@@ -370,7 +398,8 @@ std::vector<EncodedOutput> encode_snapshot(
   for (const auto& source : snapshot.localizations) {  // source为待转成临时协议载荷的C ABI定位项。
     if (source.yaw_valid != ZJU_COOP_FALSE ||
         source.z_valid != ZJU_COOP_FALSE) {
-      throw std::runtime_error("UWB-only algorithm claimed yaw or altitude");
+      throw std::runtime_error(
+          "C ABI v1 Localization claimed unsupported yaw or altitude");
     }
     protocol::LocalizationPayload payload{};  // 当前节点的临时协议定位载荷。
     payload.x = source.x;  // 复制相对参考节点的东向位置。
@@ -392,6 +421,30 @@ std::vector<EncodedOutput> encode_snapshot(
         protocol::encode_localization_payload(payload));
     result.push_back({protocol::MessageType::kLocalization,
                       protocol::encode_frame(frame, max_payload_size)});
+  }
+
+  if (snapshot.has_pose2d) {
+    if (snapshot.pose2d.reference_node_id != reference_node_id) {
+      throw std::runtime_error("Pose2D reference node does not match configuration");
+    }
+    for (const auto& source : snapshot.pose2d_vehicles) {
+      protocol::Pose2DPayload payload{};
+      payload.x = source.x_m;  // 相对主参考ENU的东向位置，单位m。
+      payload.y = source.y_m;  // 相对主参考ENU的北向位置，单位m。
+      payload.yaw_rad = source.yaw_rad;  // 本车FLU前向轴在ENU平面的航向。
+      payload.position_valid = source.position_valid == ZJU_COOP_TRUE;
+      payload.yaw_valid = source.yaw_valid == ZJU_COOP_TRUE;
+      payload.capability_mask =
+          static_cast<std::uint32_t>(Capability::kPlanarPosition) |
+          static_cast<std::uint32_t>(Capability::kYaw);
+      auto frame = output_frame(
+          protocol::MessageType::kPose2D, next_sequence++,
+          snapshot.pose2d.timestamp_ns, wire_node(source.node_id),
+          wire_node(snapshot.pose2d.reference_node_id),
+          protocol::encode_pose2d_payload(payload));
+      result.push_back({protocol::MessageType::kPose2D,
+                        protocol::encode_frame(frame, max_payload_size)});
+    }
   }
 
   protocol::NetworkPayload network{};  // 单次快照对应的临时协议网络载荷。

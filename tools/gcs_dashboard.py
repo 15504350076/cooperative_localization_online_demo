@@ -56,6 +56,12 @@ _ALGORITHM_RUN_STATES = {
     protocol.ALGORITHM_RUN_STOPPED: "已停止",
 }
 
+# 算法模式数值与状态帧冻结一致，用于区分仅测距回退和默认15维惯性融合。
+_ALGORITHM_MODES = {
+    protocol.ALGORITHM_MODE_UWB_ONLY_PLANAR: "仅测距平面",
+    protocol.ALGORITHM_MODE_IMU_UWB_15_STATE: "IMU＋测距15维",
+}
+
 # 告警严重度协议枚举到GCS中文展示标签的映射，仅展示而不改变协议值。
 _ALERT_LEVELS = {
     protocol.ALERT_LEVEL_INFO: "提示",
@@ -109,15 +115,26 @@ def _reason_texts(mask):
 
 
 class DashboardState:
-    """线程安全的遥测最新值仓库；一次数据报只原子更新其对应业务对象。"""
+    """线程安全遥测仓库；普通帧逐项更新，Pose2D收齐同批车辆后整体更新。"""
 
-    def __init__(self):
+    def __init__(self, expected_pose_nodes=3):
+        """建立状态仓库；expected_pose_nodes是组成一个原子Pose2D批次的车辆数。"""
+        if (isinstance(expected_pose_nodes, bool)
+                or not isinstance(expected_pose_nodes, int)
+                or expected_pose_nodes < 1
+                or expected_pose_nodes > 64):
+            raise ValueError("expected_pose_nodes must be an integer in [1,64]")
         # 所有快照成员的唯一同步锁；UDP写线程与HTTP读线程共同遵守。
         self._lock = threading.Lock()
         # 按节点字符串ID索引的最新定位值，随DashboardState生命周期持续更新。
         self._nodes = {}
         # 按规范化“较小节点-较大节点”键索引的最新边观测值。
         self._edges = {}
+        # Pose2D按(统一时间,参考节点)暂存逐车帧；收齐期望车辆数后才原子提交。
+        self._expected_pose_nodes = expected_pose_nodes
+        self._pose_batches = {}
+        self._latest_pose_batch_timestamp = -1
+        self._latest_pose_reference = None
         # 最新网络快照；锁内由UDP接收线程整体替换，初值表示未初始化。
         self._network = {
             "node_count": 0,
@@ -187,6 +204,84 @@ class DashboardState:
             self._stats[category] += 1
             self._stats["last_receive_time_ns"] = time.time_ns()
 
+    def _commit_pose2d_batch_locked(self, timestamp_ns, reference_node_id,
+                                    batch):
+        """在已持有self._lock时，把一个完整同历元批次一次性写入全部车辆。"""
+        for source_node, (decoded, sequence, received_at) in batch.items():
+            key = str(source_node)
+            old = self._nodes.get(key, {})
+            position_valid = bool(
+                decoded.position_valid
+                and decoded.capability_mask
+                & protocol.CAPABILITY_PLANAR_POSITION
+            )
+            yaw_valid = bool(
+                decoded.yaw_valid
+                and decoded.capability_mask & protocol.CAPABILITY_YAW
+            )
+            merged = {
+                "node_id": source_node,
+                "reference_node_id": reference_node_id,
+                "vx": 0.0,
+                "vy": 0.0,
+                "cov_xx": 0.0,
+                "cov_xy": 0.0,
+                "cov_yy": 0.0,
+                "state": protocol.LOCALIZATION_UNINITIALIZED,
+                "state_text": _LOCALIZATION_STATES[
+                    protocol.LOCALIZATION_UNINITIALIZED
+                ],
+                **old,
+            }
+            # 完整批次中的航向状态总是更新；无效时前端立即隐藏方向箭头。
+            merged.update({
+                "node_id": source_node,
+                "reference_node_id": reference_node_id,
+                "yaw_rad": decoded.yaw_rad,
+                "yaw_valid": yaw_valid,
+                "capability_mask": decoded.capability_mask,
+                "pose_message_timestamp_ns": timestamp_ns,
+                "pose_message_sequence": sequence,
+                "receive_time_ns": received_at,
+            })
+            if position_valid:
+                merged.update({
+                    "x": decoded.x,
+                    "y": decoded.y,
+                    "position_valid": True,
+                    "valid": True,
+                    "timestamp_ns": timestamp_ns,
+                    "sequence": sequence,
+                    "pose_timestamp_ns": timestamp_ns,
+                    "pose_position_authoritative": True,
+                })
+            elif old.get("pose_position_authoritative", False):
+                # 已有105位置时，完整的新无效批次关闭显示并阻止旧100覆盖当前状态。
+                merged.update({
+                    "position_valid": False,
+                    "valid": False,
+                    "timestamp_ns": timestamp_ns,
+                    "sequence": sequence,
+                    "pose_timestamp_ns": timestamp_ns,
+                    "pose_position_authoritative": True,
+                })
+            else:
+                # 启动阶段尚无有效105时，允许有效100继续提供临时二维位置。
+                merged.update({
+                    "position_valid": old.get("position_valid", False),
+                    "valid": old.get("valid", False),
+                    "pose_position_authoritative": False,
+                })
+            self._nodes[key] = merged
+
+        self._latest_pose_batch_timestamp = timestamp_ns
+        self._latest_pose_reference = reference_node_id
+        # 已提交历元及其更早的不完整批次不会再有使用价值，及时释放以限制内存。
+        self._pose_batches = {
+            key: value for key, value in self._pose_batches.items()
+            if key[0] > timestamp_ns
+        }
+
     def ingest_datagram(self, data):
         """严格解码一帧；data是单个UDP数据报，坏帧/非GCS类型不覆盖有效快照。"""
         # 阶段1：公共帧CRC/长度通过后，再按消息类型解析固定载荷。
@@ -199,6 +294,7 @@ class DashboardState:
 
         if frame.message_type not in (
             protocol.MSG_LOCALIZATION,
+            protocol.MSG_POSE2D,
             protocol.MSG_NETWORK,
             protocol.MSG_OBSERVATION,
             protocol.MSG_ALGORITHM_STATUS,
@@ -212,6 +308,10 @@ class DashboardState:
                 # decoded是类型专属载荷对象，update_kind选择唯一待替换的快照。
                 decoded = protocol.decode_localization_payload(frame.payload)
                 update_kind = "localization"
+            elif frame.message_type == protocol.MSG_POSE2D:
+                # decoded是新增105二维位姿；公共头source/target分别是车辆和参考节点。
+                decoded = protocol.decode_pose2d_payload(frame.payload)
+                update_kind = "pose2d"
             elif frame.message_type == protocol.MSG_NETWORK:
                 decoded = protocol.decode_network_payload(frame.payload)
                 update_kind = "network"
@@ -233,10 +333,12 @@ class DashboardState:
         received_at = time.time_ns()
         with self._lock:
             if update_kind == "localization":
-                self._nodes[str(frame.source_node)] = {
+                # old保存同节点已有Pose2D字段；旧100帧只补充速度、协方差和状态。
+                key = str(frame.source_node)
+                old = self._nodes.get(key, {})
+                merged = dict(old)
+                merged.update({
                     "node_id": frame.source_node,
-                    "x": decoded.x,
-                    "y": decoded.y,
                     "vx": decoded.vx,
                     "vy": decoded.vy,
                     "cov_xx": decoded.cov_xx,
@@ -244,12 +346,48 @@ class DashboardState:
                     "cov_yy": decoded.cov_yy,
                     "state": decoded.state,
                     "state_text": _LOCALIZATION_STATES[decoded.state],
-                    "valid": decoded.valid,
-                    "capability_mask": decoded.capability_mask,
-                    "timestamp_ns": frame.timestamp_ns,
-                    "sequence": frame.sequence,
+                    "localization_valid": decoded.valid,
+                    "localization_capability_mask": decoded.capability_mask,
+                    "localization_timestamp_ns": frame.timestamp_ns,
+                    "localization_sequence": frame.sequence,
                     "receive_time_ns": received_at,
-                }
+                })
+                # 在尚未收到有效105位置时，沿用旧100位置并明确航向无效。
+                # 无效105只报告诊断状态，不得永久压住后续有效100位置。
+                if not old.get("pose_position_authoritative", False):
+                    merged.update({
+                        "reference_node_id": frame.target_node,
+                        "x": decoded.x,
+                        "y": decoded.y,
+                        "yaw_rad": 0.0,
+                        "position_valid": decoded.valid,
+                        "yaw_valid": False,
+                        "valid": decoded.valid,
+                        "capability_mask": decoded.capability_mask,
+                        "timestamp_ns": frame.timestamp_ns,
+                        "sequence": frame.sequence,
+                    })
+                self._nodes[key] = merged
+            elif update_kind == "pose2d":
+                batch_key = (frame.timestamp_ns, frame.target_node)
+                # 已提交时间及更早的UDP乱序帧只计作合法接收，不能回退当前三车快照。
+                if frame.timestamp_ns > self._latest_pose_batch_timestamp:
+                    batch = self._pose_batches.setdefault(batch_key, {})
+                    batch[frame.source_node] = (
+                        decoded,
+                        frame.sequence,
+                        received_at,
+                    )
+                    if len(batch) == self._expected_pose_nodes:
+                        self._commit_pose2d_batch_locked(
+                            frame.timestamp_ns,
+                            frame.target_node,
+                            batch,
+                        )
+                    elif len(self._pose_batches) > 32:
+                        # 极端丢包时仅保留最新32个候选历元，防止无界增长。
+                        oldest = min(self._pose_batches)
+                        del self._pose_batches[oldest]
             elif update_kind == "network":
                 self._network = {
                     "node_count": decoded.node_count,
@@ -306,7 +444,7 @@ class DashboardState:
                     "software_version_packed": packed,
                     "software_version": version,
                     "mode": decoded.mode,
-                    "mode_text": "UWB_ONLY_PLANAR",
+                    "mode_text": _ALGORITHM_MODES[decoded.mode],
                     "run_state": decoded.run_state,
                     "run_state_text": _ALGORITHM_RUN_STATES[decoded.run_state],
                     "accepted_ranges": decoded.accepted_ranges,
@@ -411,7 +549,7 @@ _DASHBOARD_PAGE = r"""<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>三车 UWB 协同定位在线演示</title>
+<title>三车协同定位在线演示</title>
 <style>
 :root { color-scheme: dark; font-family: "Microsoft YaHei", system-ui, sans-serif; }
 * { box-sizing: border-box; }
@@ -435,8 +573,8 @@ canvas { display: block; width: 100%; height: min(62vh, 620px); }
 </head>
 <body>
 <header>
-  <h1>三车 UWB 协同定位在线演示</h1>
-  <div class="sub">主参考平台坐标系 · 二维平面位置 · 质量状态实时刷新</div>
+  <h1>三车协同定位在线演示</h1>
+  <div class="sub">主参考平台 ENU 坐标系 · 二维位置与航向 · 质量状态实时刷新</div>
 </header>
 <section class="cards">
   <div class="card"><div class="label">网络连通</div><div class="value" id="connected">--</div></div>
@@ -449,6 +587,12 @@ canvas { display: block; width: 100%; height: min(62vh, 620px); }
   <div class="card"><div class="label">接收 / 拒绝测距</div><div class="value" id="range-counts">--</div></div>
   <div class="card"><div class="label">协议错误</div><div class="value" id="protocol-errors">--</div></div>
   <div class="card"><div class="label">运行时间</div><div class="value" id="uptime">--</div></div>
+</section>
+<section class="cards">
+  <div class="card"><div class="label">参考节点</div><div class="value" id="reference-node">--</div></div>
+  <div class="card"><div class="label">位姿快照时间</div><div class="value" id="pose-time">--</div></div>
+  <div class="card"><div class="label">坐标系</div><div class="value" id="pose-frame">--</div></div>
+  <div class="card"><div class="label">有效位姿节点</div><div class="value" id="pose-count">--</div></div>
 </section>
 <div class="reasons" id="reasons">原因：等待数据</div>
 <div class="alert-line" id="alert-line">网络告警：等待算法状态</div>
@@ -481,7 +625,8 @@ function render(model) {
   context.fillStyle = "#0b1726";
   context.fillRect(0, 0, width, height);
 
-  const nodes = Object.values(model.nodes);
+  // 只让位置有效的节点参与缩放、连边和绘图，无效占位值不污染画布范围。
+  const nodes = Object.values(model.nodes).filter(node => node.position_valid);
   if (!nodes.length) {
     context.fillStyle = "#94a3b8";
     context.font = "16px Microsoft YaHei";
@@ -527,15 +672,31 @@ function render(model) {
 
   nodes.forEach(node => {
     const current = point(node);
-    context.fillStyle = node.valid ? "#38bdf8" : "#64748b";
+    context.fillStyle = node.position_valid ? "#38bdf8" : "#64748b";
     context.beginPath(); context.arc(current.x, current.y, 14, 0, Math.PI * 2); context.fill();
     context.strokeStyle = "#e0f2fe"; context.lineWidth = 2; context.stroke();
+    if (node.yaw_valid) {
+      const arrowLength = 36;
+      const tipX = current.x + Math.cos(node.yaw_rad) * arrowLength;
+      const tipY = current.y - Math.sin(node.yaw_rad) * arrowLength;
+      context.strokeStyle = "#f8fafc";
+      context.fillStyle = "#f8fafc";
+      context.lineWidth = 3;
+      context.beginPath(); context.moveTo(current.x, current.y); context.lineTo(tipX, tipY); context.stroke();
+      const screenAngle = -node.yaw_rad;
+      context.beginPath();
+      context.moveTo(tipX, tipY);
+      context.lineTo(tipX - 9 * Math.cos(screenAngle - 0.45), tipY - 9 * Math.sin(screenAngle - 0.45));
+      context.lineTo(tipX - 9 * Math.cos(screenAngle + 0.45), tipY - 9 * Math.sin(screenAngle + 0.45));
+      context.closePath(); context.fill();
+    }
     context.fillStyle = "#f8fafc";
     context.font = "bold 13px Microsoft YaHei";
     context.textAlign = "center";
     context.fillText(String(node.node_id), current.x, current.y + 5);
     context.font = "12px Microsoft YaHei";
-    context.fillText(`节点 ${node.node_id}  (${node.x.toFixed(2)}, ${node.y.toFixed(2)}) m`, current.x, current.y + 34);
+    const yawText = node.yaw_valid ? `${(node.yaw_rad * 180 / Math.PI).toFixed(1)}°` : "--";
+    context.fillText(`节点 ${node.node_id}  (${node.x.toFixed(2)}, ${node.y.toFixed(2)}) m  航向 ${yawText}`, current.x, current.y + 34);
   });
 }
 
@@ -551,10 +712,21 @@ async function refresh() {
     document.getElementById("state").textContent = network.state_text;
     document.getElementById("counts").textContent = `${network.reachable_node_count}/${network.node_count} · ${network.active_edge_count}`;
     document.getElementById("reasons").textContent = `原因：${network.reasons.length ? network.reasons.join("、") : "无"}`;
-    document.getElementById("algorithm-version").textContent = `${algorithm_status.software_version} / ${algorithm_status.run_state_text}`;
+    document.getElementById("algorithm-version").textContent = `${algorithm_status.software_version} / ${algorithm_status.mode_text} / ${algorithm_status.run_state_text}`;
     document.getElementById("range-counts").textContent = `${algorithm_status.accepted_ranges} / ${algorithm_status.rejected_ranges}`;
     document.getElementById("protocol-errors").textContent = String(algorithm_status.protocol_errors);
     document.getElementById("uptime").textContent = `${(algorithm_status.uptime_ns / 1e9).toFixed(1)} s`;
+    const validPoses = Object.values(model.nodes).filter(
+      node => node.position_valid && node.pose_position_authoritative
+    );
+    const referenceIds = [...new Set(validPoses.map(node => node.reference_node_id))];
+    const poseTimes = [...new Set(validPoses.map(node => node.pose_timestamp_ns))];
+    const referenceId = referenceIds.length === 1 ? referenceIds[0] : null;
+    const poseTime = poseTimes.length === 1 ? poseTimes[0] : null;
+    document.getElementById("reference-node").textContent = referenceId === null ? "--" : String(referenceId);
+    document.getElementById("pose-time").textContent = poseTime === null ? "--" : `${poseTime} ns`;
+    document.getElementById("pose-frame").textContent = referenceId === null ? "--" : `coop_ref_${referenceId}_enu`;
+    document.getElementById("pose-count").textContent = String(validPoses.length);
     const alertLine = document.getElementById("alert-line");
     const alertReasons = alert.reasons.length ? alert.reasons.join("、") : "无";
     alertLine.textContent = `网络告警：${alert.lifecycle_text} / ${alert.level_text}；原因：${alertReasons}`;
@@ -652,6 +824,17 @@ def _duration(value):
     return result
 
 
+def _pose_node_count(value):
+    """把value解析为1..64的Pose2D批次车辆数。"""
+    try:
+        result = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("位姿车辆数必须是整数") from error
+    if result < 1 or result > 64:
+        raise argparse.ArgumentTypeError("位姿车辆数必须在 1 到 64 之间")
+    return result
+
+
 def _arguments(argv):
     """解析CLI；argv为可选参数序列，None表示读取sys.argv。"""
     # 面板UDP/HTTP端口、运行时长和浏览器行为的参数解析器。
@@ -666,6 +849,12 @@ def _arguments(argv):
     parser.add_argument(
         "--duration", type=_duration, default=0.0, help="运行秒数，0 表示持续运行"
     )
+    parser.add_argument(
+        "--expected-pose-nodes",
+        type=_pose_node_count,
+        default=3,
+        help="同一105快照收齐后原子显示的车辆数",
+    )
     parser.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
     return parser.parse_args(argv)
 
@@ -675,7 +864,7 @@ def main(argv=None):
     # 阶段3：先绑定全部端口再启动线程，避免页面可见但数据端口尚不可用。
     # 已解析启动参数和跨线程共享的遥测仓库。
     args = _arguments(argv)
-    state = DashboardState()
+    state = DashboardState(args.expected_pose_nodes)
     # UDP后台接收线程句柄；main发出停止请求并最多等待2秒。
     receiver = None
     # 只读HTTP服务器句柄；由main负责shutdown和server_close。

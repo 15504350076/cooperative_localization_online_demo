@@ -5,6 +5,7 @@
 #include "protocol/wire_protocol.hpp"
 #include "test_support.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -21,16 +22,19 @@ using zju::coop::protocol::MessageType;
 using zju::coop::protocol::ImuPayload;
 using zju::coop::protocol::ProtocolError;
 using zju::coop::protocol::LocalizationPayload;
+using zju::coop::protocol::Pose2DPayload;
 using zju::coop::protocol::NetworkPayload;
 using zju::coop::protocol::ObservationPayload;
 using zju::coop::protocol::RangePayload;
 using zju::coop::protocol::AlgorithmStatusPayload;
 using zju::coop::protocol::AlertPayload;
 using zju::coop::protocol::decode_localization_payload;
+using zju::coop::protocol::decode_pose2d_payload;
 using zju::coop::protocol::decode_network_payload;
 using zju::coop::protocol::decode_observation_payload;
 using zju::coop::protocol::decode_range_payload;
 using zju::coop::protocol::encode_localization_payload;
+using zju::coop::protocol::encode_pose2d_payload;
 using zju::coop::protocol::encode_network_payload;
 using zju::coop::protocol::encode_observation_payload;
 using zju::coop::protocol::encode_range_payload;
@@ -475,7 +479,7 @@ TEST_CASE(algorithm_status_payload_matches_frozen_48_byte_golden) {
   // payload/expected/decoded：版本、模式、状态和64位计数均可辨的48字节算法状态黄金往返。
   AlgorithmStatusPayload payload{};
   payload.abi_version = 0x00010000U;
-  payload.software_version_packed = 0x00000100U;
+  payload.software_version_packed = 0x00000300U;
   payload.mode = zju::coop::protocol::AlgorithmMode::kUwbOnlyPlanar;
   payload.run_state = zju::coop::protocol::AlgorithmRunState::kDegraded;
   payload.accepted_ranges = 0x0102030405060708ULL;
@@ -483,7 +487,7 @@ TEST_CASE(algorithm_status_payload_matches_frozen_48_byte_golden) {
   payload.protocol_errors = 0x2122232425262728ULL;
   payload.uptime_ns = 0x3132333435363738ULL;
   const std::vector<std::uint8_t> expected{
-      0x00U, 0x00U, 0x01U, 0x00U, 0x00U, 0x01U, 0x00U, 0x00U,
+      0x00U, 0x00U, 0x01U, 0x00U, 0x00U, 0x03U, 0x00U, 0x00U,
       0x01U, 0x02U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
       0x08U, 0x07U, 0x06U, 0x05U, 0x04U, 0x03U, 0x02U, 0x01U,
       0x18U, 0x17U, 0x16U, 0x15U, 0x14U, 0x13U, 0x12U, 0x11U,
@@ -493,7 +497,7 @@ TEST_CASE(algorithm_status_payload_matches_frozen_48_byte_golden) {
   const auto decoded = decode_algorithm_status_payload(expected);
   EXPECT_TRUE(decoded.ok());
   EXPECT_EQ(decoded.value.abi_version, 0x00010000U);
-  EXPECT_EQ(decoded.value.software_version_packed, 0x00000100U);
+  EXPECT_EQ(decoded.value.software_version_packed, 0x00000300U);
   EXPECT_EQ(decoded.value.mode,
             zju::coop::protocol::AlgorithmMode::kUwbOnlyPlanar);
   EXPECT_EQ(decoded.value.run_state,
@@ -615,6 +619,73 @@ TEST_CASE(localization_covariance_is_psd_on_encode_and_decode) {
   write_double_le(bytes, 40U, 2.0);
   EXPECT_EQ(decode_localization_payload(bytes).error,
             ProtocolError::kInvalidValue);
+}
+
+TEST_CASE(pose2d_payload_matches_frozen_32_byte_layout_and_strict_fields) {
+  // payload覆盖三个double、两个独立有效位、零保留位和非对称能力位图。
+  Pose2DPayload payload{};
+  payload.x = 1.0;
+  payload.y = -2.0;
+  payload.yaw_rad = 0.5;
+  payload.position_valid = true;
+  payload.yaw_valid = true;
+  payload.capability_mask = 0x0A0B0C0FU;
+
+  // expected冻结小端线序：x/y/yaw占前24字节，有效位和保留位占4字节，能力位占末4字节。
+  const std::vector<std::uint8_t> expected{
+      0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0xF0U, 0x3FU,
+      0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0xC0U,
+      0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0xE0U, 0x3FU,
+      0x01U, 0x01U, 0x00U, 0x00U, 0x0FU, 0x0CU, 0x0BU, 0x0AU};
+  EXPECT_EQ(encode_pose2d_payload(payload), expected);
+  const auto decoded = decode_pose2d_payload(expected);
+  EXPECT_TRUE(decoded.ok());
+  EXPECT_EQ(decoded.value.x, 1.0);
+  EXPECT_EQ(decoded.value.y, -2.0);
+  EXPECT_EQ(decoded.value.yaw_rad, 0.5);
+  EXPECT_TRUE(decoded.value.position_valid);
+  EXPECT_TRUE(decoded.value.yaw_valid);
+  EXPECT_EQ(decoded.value.capability_mask, 0x0A0B0C0FU);
+
+  // 完整帧必须接受新增类型105，并继续执行固定载荷长度和CRC校验。
+  Frame frame{};
+  frame.header.message_type = MessageType::kPose2D;
+  frame.header.sequence = 9U;
+  frame.header.timestamp_ns = 123U;
+  frame.header.source_node = 2U;
+  frame.header.target_node = 1U;
+  frame.payload = expected;
+  const auto decoded_frame = decode_frame(encode_frame(frame));
+  EXPECT_TRUE(decoded_frame.ok());
+  EXPECT_EQ(decoded_frame.value.header.message_type, MessageType::kPose2D);
+  EXPECT_EQ(decoded_frame.value.payload.size(), 32U);
+
+  // 布尔值只允许0/1，两个保留字节必须全零，三个浮点量必须有限。
+  auto invalid_boolean = expected;
+  invalid_boolean[24U] = 2U;
+  EXPECT_EQ(decode_pose2d_payload(invalid_boolean).error,
+            ProtocolError::kInvalidBoolean);
+  auto invalid_reserved = expected;
+  invalid_reserved[26U] = 1U;
+  EXPECT_EQ(decode_pose2d_payload(invalid_reserved).error,
+            ProtocolError::kInvalidReserved);
+  auto invalid_number = expected;
+  write_u64_le(invalid_number, 16U, 0x7FF8000000000000ULL);
+  EXPECT_EQ(decode_pose2d_payload(invalid_number).error,
+            ProtocolError::kNonFiniteValue);
+  auto missing_capability = expected;
+  write_u32_le(missing_capability, 28U, 0U);
+  EXPECT_EQ(decode_pose2d_payload(missing_capability).error,
+            ProtocolError::kInvalidValue);
+  payload.x = std::numeric_limits<double>::infinity();
+  EXPECT_TRUE(throws_invalid_argument(
+      [&]() { static_cast<void>(encode_pose2d_payload(payload)); }));
+  payload.x = 0.0;
+  payload.yaw_rad = -3.14159265358979323846;
+  EXPECT_TRUE(decode_pose2d_payload(encode_pose2d_payload(payload)).ok());
+  payload.yaw_rad = 3.14159265358979323846;
+  EXPECT_TRUE(throws_invalid_argument(
+      [&]() { static_cast<void>(encode_pose2d_payload(payload)); }));
 }
 
 TEST_CASE(network_topology_invariants_are_symmetric_and_overflow_safe) {

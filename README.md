@@ -1,8 +1,8 @@
 # 多车协同定位在线演示系统
 
-本工程默认运行“标准 ROS 2 IMU 瞬时量驱动的每节点 15 维 ESKF＋平台间测距联合更新”。同时保留仅测距兼容配置，供 IMU 暂不可用时回退和自动回归测试。算法核心与 ROS 2 解耦，可由上交适配节点通过稳定 C ABI 调用，也可使用临时 ZJCL/UDP 完成独立在线联调、GCS 输出、日志记录和任务后回放。
+本工程默认运行“标准 ROS 2 IMU 瞬时量驱动的每节点 15 维 ESKF＋平台间测距联合更新”。同时保留仅测距兼容配置，供 IMU 暂不可用时回退和自动回归测试。当前已落地纯 C++ 算法核心、稳定 C ABI、临时 ZJCL/UDP＋浏览器 GCS，以及每车本地惯导、紧凑 NodeState、参考车二维 UWB 修正、ROS 2 消息/节点/bringup 和 Gazebo 三车闭环。算法核心继续与 ROS 2 消息解耦，原集中式 15N 实现保留为回归基线。
 
-当前结论：只使用三条车间测距可以跑通在线演示，但输出是**主参考车坐标系内的二维相对位置**，不是经纬度或地固系绝对位置。三边测距只能确定三角形形状，整体平移、旋转和镜像仍有自由度；本初版通过参考节点 1 和配置中的初始位置固定这些自由度。因此当前输出明确标记 `yaw_valid=false`、`z_valid=false`，不得在 GCS 中解释为航向、高度或绝对位置。
+当前结论：只使用三条车间测距可以跑通在线演示。位置输出为**各节点相对参考节点的二维 x/y，坐标轴与公共 ENU 平行**，不代表经纬度或地固系绝对位置。三边测距只能确定三角形形状，整体平移、旋转和镜像仍有自由度；默认惯性演示通过参考节点 1、三车初始位置和三车公共 ENU 初始航向固定这些自由度。C ABI v2、临时 UDP Pose2D 和 GCS 当前可输出各车 ENU 航向；C ABI v1 的旧 `Localization` 仍固定 `yaw_valid=false`、`z_valid=false`。
 
 ## 已实现范围
 
@@ -14,20 +14,23 @@
 - 网络连通性、二维几何可观性、边超时和节点可达性判断。
 - UWB NLOS、有效率、频率、残差的滑窗质量评估，以及正常使用、降权、暂缓、剔除和试探恢复。
 - 稳定 C ABI 动态库 `zju_coop`；核心接口只使用普通 C 结构体，不依赖 ROS 2 消息。
-- 在线程序 `zju_coop_online`、回放程序 `zju_coop_replay`、UWB/IMU＋UWB模拟器和浏览器 GCS 面板；在线/回放适配层根据库的网络结果生成状态和告警帧。
+- 分布式首版：每车本地 15 维惯导输出紧凑 NodeState，参考车按 UWB 时刻对齐三车状态并维护独立二维修正；协同修正不覆盖本地惯导。
+- ROS 2 Humble 首版：`cooperative_localization_msgs`、`zju_coop_ros2`、`zju_coop_bringup` 和可选 `zju_coop_gazebo`，输出 GCS 所需 `CooperativePose2DArray`。
+- C ABI v1 保留定位/观测/网络输出；Pose2D C ABI v2 通过只读 `zju_coop_get_pose2d_v2()` 输出公共快照时间、参考节点、frame 和各车 x/y/yaw，不会重复推进滤波。
+- 在线程序 `zju_coop_online`、回放程序 `zju_coop_replay`、UWB/IMU＋UWB模拟器和浏览器 GCS 面板；临时 UDP 类型 105 输出 Pose2D，面板按共同时间与参考节点收齐三车后原子更新，按有效位显示位置/航向，并显示参考节点、快照时间和坐标系；在线/回放适配层还根据库的网络结果生成状态和告警帧。
 - 输入、输出统一事件日志；回放会跳过历史输出记录，以历史输入重新计算并重新产生定位、状态和告警。
 - 严格帧长、枚举、保留位、数值范围和 CRC 校验；所有数据携带时间戳、序号和节点号。
 
-尚未实现或未验证：上交正式 ROS 2 wrapper、真实 UWB/IMU驱动、UWB PPS同步状态显式输入、激光雷达/多目视觉前端、绝对位置约束、真实盒端ARM64运行和性能指标。内部名义状态是三维的，但当前 GCS/C ABI Localization 仍只发布二维相对位置和速度，`yaw_valid=false`、`z_valid=false`。
+尚未实现或未验证：上交正式 UWB 消息包替换、真实 UWB/IMU 驱动与时间同步、三盒 DDS/5G Mesh、激光雷达/多目视觉前端、绝对位置约束，以及 RK3588/ARM64 真实盒端构建、运行和性能指标。当前 Ubuntu 22.04 x86-64 同机 ROS 2/Gazebo 结果不能替代上述验证。C ABI v1 `Localization` 仍只发布二维相对位置和速度，`yaw_valid=false`、`z_valid=false`；GCS 航向由 Pose2D v2 链路提供。
 
 ## 交付边界与分工
 
 ```text
-上交 AIBrainBox 驱动与时间同步
-  标准IMU + 原始UWB + 统一时间戳 + 本机接收时间
+上交 AIBrainBox 驱动、统一时间与输入消息
+  标准IMU + 自定义UWB + 统一时间戳 + DDS/盒端运行环境
                 │
                 ▼
-上交 ROS 2 适配节点（待双方定消息）
+浙大 ROS 2 适配节点（首版已实现，RK3588待验证）
   ROS 2 消息 ↔ zju_coop C 结构体
                 │
                 ▼
@@ -35,15 +38,15 @@
   校验 → 每节点15维预测 → UWB联合更新 → 质量/拓扑 → 相对结果
                 │
                 ▼
-浙大参考输出语义 / 上交 ROS 2 输出适配 → 交大 GCS
+同一浙大 ROS 2 适配节点发布结果 → DDS → 交大 GCS
 ```
 
-- 上交负责 AIBrainBox 内外设驱动、单平台与多平台时间同步、UWB 原始数据形成、ROS 2 消息、无线转发/路由，以及调用算法库的适配节点。
-- 浙大负责 `libzju_coop.so`、`c_api.h` 所定义的算法接口、UWB 协同定位、质量处理、动态拓扑、定位/观测/网络结果，以及演示层状态/告警语义和算法级回放能力。
+- 浙大已实现并计划交付 `libzju_coop.so`、`c_api.h`、调用算法库的 ROS 2 适配节点、最小结果消息定义与发布逻辑；同时负责 UWB 协同定位、质量处理、动态拓扑、定位/观测/网络结果，以及演示层状态/告警语义和算法级回放能力。
+- 上交负责 AIBrainBox 内外设驱动、单平台与多平台统一时间、UWB 原始数据形成、标准/自定义输入 ROS 2 消息、DDS 与盒端构建运行环境、无线转发/路由，以及向浙大适配节点提供冻结后的输入 topic、消息和 QoS。
 - 交大 GCS 负责展示定位结果、拓扑、状态和告警；GCS 不承担传感器前端、时间同步、协同定位求解或车辆控制。
-- `ZJCL/UDP` 是当前不依赖 ROS 2 的联调与演示适配层，**不是最终上交 ROS 2 接口协议**。最终部署优先由上交 ROS 2 节点直接调用 C ABI；不得把 UDP 演示封装误写为浙大承担无线协议或底层路由。
+- `ZJCL/UDP` 是当前不依赖 ROS 2 的临时联调与演示适配层。正式部署计划由浙大 ROS 2 适配节点在 AIBrainBox 上调用 C ABI 并发布结果消息，经上交提供的 DDS/盒端环境交给 GCS；UDP 演示协议不作为正式 ROS 2/DDS 接口。
 
-上交适配时，`timestamp_ns` 必须来自其统一时间轴，`receive_timestamp_ns` 必须是同一时间基准下的本机接收时刻；两者单位均为纳秒。算法会用二者检查未来时间偏差和传输延迟。时间同步无效时，上交不得伪造时间戳，应在双方确认的 ROS 2 状态接口中报告同步失效并停止或标记对应测距无效。
+正式适配时，`timestamp_ns` 必须来自上交统一时间轴，`receive_timestamp_ns` 必须是同一时间基准下的本机接收时刻；两者单位均为纳秒。算法会用二者检查未来时间偏差和传输延迟。时间同步无效时，上交应在双方确认的输入状态接口中报告同步失效，并停止发布或标记对应测距无效；浙大适配节点不得补造测量时间。
 
 ## 工程结构
 
@@ -70,7 +73,7 @@
 
 ## 三车演示数据
 
-`config/demo.ini` 的初始相对坐标为：节点 1 `(0,0,0)`、节点 2 `(3,0,0)`、节点 3 `(0,4,0)`。默认模拟器发送三车 100 Hz 静止 IMU 和 20 Hz 的 3-4-5 m 测距；节点 1 是主参考节点，算法按有效观测动态激活边。
+`config/demo.ini` 的初始相对坐标为：节点 1 `(0,0,0)`、节点 2 `(3,0,0)`、节点 3 `(0,4,0)`；公共 ENU 初始航向分别为 `0`、`π/2`、`-3π/4` rad。默认模拟器发送三车 100 Hz 静止 IMU 和 20 Hz 的 3-4-5 m 测距；节点 1 是参考节点，算法按有效观测动态激活边。理想初始对准必须为每辆车提供公共 ENU 下的初始航向，后续航向仅由瞬时 IMU 角速度递推。UWB 标量测距不直接观测航向，静止或缺少运动激励时不能依靠测距校正初始航向误差。
 
 若实际三车只有车间 UWB 而没有固定锚点，系统可维持该主参考坐标系中的相对队形。若要得到地图/地理绝对位置，至少还需引入已知锚点、短时有效 GNSS、地图匹配或其他绝对约束；若要消除镜像和获得可靠航向，还需 IMU、运动激励或视觉/激光方向约束。
 
@@ -86,10 +89,10 @@
 | 对外接口      | 同一份`include/zju_coop/c_api.h`     | 同一份`include/zju_coop/c_api.h`           |
 | 动态库        | `zju_coop.dll`＋导入库               | `libzju_coop.so`                           |
 | 指令集/ABI    | x86-64、MSVC ABI                       | AArch64、GCC/Clang ELF ABI                   |
-| ROS 2 wrapper | 可在安装了匹配 ROS 2 的 Windows 上编译 | 上交在 Ubuntu 22.04/ROS 2 Humble 中编译      |
-| 临时在线入口  | ZJCL/UDP 独立 Demo                     | 可用于盒端自检，但生产链路优先 ROS 2 wrapper |
+| ROS 2 适配节点 | 已在 Ubuntu 22.04/ROS 2 Humble x86-64 实现和测试 | 使用同一源码在 RK3588/AArch64 重建；当前未验证 |
+| 临时在线入口  | ZJCL/UDP 独立 Demo                     | 可用于盒端自检；生产链路计划采用浙大 ROS 2 适配节点 |
 
-因此不能把 Windows DLL 复制到 RK3588，也不能把 ARM64 `.so` 放到 Windows。上交可以复用同一份 ROS 2 wrapper 源码，但需要在每个平台各自的 ROS 2、编译器和消息包环境中重新构建。算法库本身不包含 ROS 2 消息依赖。
+因此不能把 Windows DLL 复制到 RK3588，也不能把 ARM64 `.so` 放到 Windows。浙大 ROS 2 适配节点源码需要在每个平台各自的 ROS 2、编译器和消息包环境中重新构建。算法库本身不包含 ROS 2 消息依赖；当前仓库已有首版节点与消息包，但尚未取得 RK3588 和上交正式 UWB 包的部署证据。
 
 ### Windows 本机
 
@@ -101,7 +104,7 @@ cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-本机已实际使用 Visual Studio 17 2022、CMake 和 Python 3.11.9 完成 Release 编译；UWB-only与IMU＋UWB两条真实 UDP 在线/日志/回放进程链均通过。最终数量以本次交付记录和实际测试输出为准。
+本机已实际使用 Visual Studio 17 2022、CMake 和 Python 3.11.9 完成 Release 编译；仅测距与IMU＋测距两条真实 UDP 在线/日志/回放进程链均通过。最终数量以本次交付记录和实际测试输出为准。
 
 ### 独立自动自检
 
@@ -117,7 +120,7 @@ Linux/RK3588 单配置构建对应为：
 ./build/zju_coop_self_check
 ```
 
-全部检查通过时输出 `SELF_CHECK PASS` 并返回退出码 0。详细验证项、安装树命令和适用边界见 `docs/11_独立自检程序说明.md`；自检不能替代真实传感器、ROS 2 和定位精度验收。
+当前版本全部检查通过时输出 `SELF_CHECK PASS (passed=14, failed=0)` 并返回退出码 0；新增 `[PASS] pose2d_snapshot`，旧 v1 有效位检查仍保留。详细验证项、安装树命令和适用边界见 `docs/11_独立自检程序说明.md`；自检不能替代真实传感器、ROS 2 和定位精度验收。
 
 ### AIBrainBox Ubuntu 22.04 / ARM64
 
@@ -130,7 +133,7 @@ ctest --test-dir build --output-on-failure
 cmake --install build --prefix install
 ```
 
-工程没有 ROS 2 编译依赖，便于先独立验证算法库。Ubuntu 22.04 ARM64/AArch64 尚未在实际 AIBrainBox 上编译和压力测试，以上仅为目标构建命令；上盒后必须重新记录编译、测试、时钟源、CPU 占用和连续运行结果，不能沿用 Windows 结果代替。
+根目录算法库构建没有 ROS 2 编译依赖，便于先独立验证 SDK；`ros2/` 下的适配包再由 colcon 单独构建。Ubuntu 22.04 ARM64/AArch64 尚未在实际 AIBrainBox 上编译和压力测试，以上仅为目标构建命令；上盒后必须重新记录编译、测试、时钟源、CPU 占用和连续运行结果，不能沿用 x86-64 结果代替。
 
 ## 启动在线演示
 
@@ -154,7 +157,7 @@ python3 -B tools/gcs_dashboard.py --udp-port 39002 --http-port 8080
 python3 -B tools/imu_uwb_simulator.py --host 127.0.0.1 --port 39001
 ```
 
-浏览器访问 `http://127.0.0.1:8080/`。停止模拟器后等待超过 `edge_timeout_ns=500000000`，面板应由正常转为降级/数据陈旧，并显示活动网络告警；重新发送有效测距后会输出一次已清除告警。
+浏览器访问 `http://127.0.0.1:8080/`。默认惯性演示中，面板应显示三车相对 x/y 和按 `yaw_valid` 绘制的 ENU 航向箭头。停止模拟器后等待超过 `edge_timeout_ns=500000000`，面板应由正常转为降级/数据陈旧，并显示活动网络告警；重新发送有效测距后会输出一次已清除告警。
 
 完整自动烟雾测试：
 
@@ -213,10 +216,11 @@ python3 -B tools/online_smoke_test.py \
 3. 惯性模式在任何输入前调用 `zju_coop_configure_inertial`；
 4. 将 `sensor_msgs/Imu` 映射为 `zju_coop_imu_packet_t` 并调用 `zju_coop_push_imu`，将UWB消息映射为 `zju_coop_range_packet_t` 并调用 `zju_coop_push_range`；
 5. 先用空数组调用 `zju_coop_step` 查询输出数量，再准备调用方拥有的数组并取得定位、观测和网络结果；
-6. 同一个 handle 不支持并发调用，上交 ROS 2 适配节点必须串行化；
-7. 退出时调用 `zju_coop_destroy`。
+6. 惯性模式在同一次 `step` 完成后调用只读 `zju_coop_get_pose2d_v2`，先查询车辆数量，再取得公共快照和各车 x/y/yaw；该查询不推进滤波；
+7. 同一个 handle 不支持并发调用，浙大 ROS 2 适配节点必须串行化；
+8. 退出时调用 `zju_coop_destroy`。
 
-库会深拷贝初始化数据；输出内存由调用方管理。ABI 版本为 `0x00010000`，当前软件版本为 `0.1.0`。安装：
+库会深拷贝初始化数据；输出内存由调用方管理。基础 C ABI v1 版本为 `0x00010000`，Pose2D 扩展 ABI v2 版本为 `0x00020000`，当前软件版本为 `0.3.0`。软件发布版本与结构体 ABI 版本相互独立。安装：
 
 ```bash
 cmake --install build --prefix install
@@ -237,13 +241,13 @@ cmake --install build --prefix install
 
 Windows 安装树同理，使用 `install\bin\zju_coop_online.exe --config install\share\zju_coop\config\demo.ini`。相对的日志路径仍以启动进程的当前工作目录为基准。
 
-C ABI v1 的 `zju_coop_step` 当前直接输出 `Localization`、`Observation` 和 `Network` 对应结构，不直接返回 `AlgorithmStatus` 或 `Alert` 结构。当前在线/回放程序在 ZJU 参考适配层中依据 Network 状态生成后二者。最终上交 ROS 2 适配节点应复用同一语义，还是由后续 C ABI 扩展直接提供，需在正式 ROS 2 接口评审中冻结；初版不得把演示层字段误称为现有 C ABI 输出。
+C ABI v1 的 `zju_coop_step` 当前直接输出 `Localization`、`Observation` 和 `Network` 对应结构，其中旧 `Localization` 的 `yaw_valid=false`。Pose2D C ABI v2 由 `zju_coop_get_pose2d_v2` 只读返回二维位置与各车 ENU 航向。`AlgorithmStatus` 和 `Alert` 当前由在线/回放参考适配层依据 Network 状态生成，正式 ROS 2 节点是否复用这套语义或由后续 C ABI 扩展直接提供，需在接口评审中冻结。
 
 ## 当前接口冻结点与待确认项
 
 - C ABI v1 的字段顺序、枚举值、`struct_size/abi_version/stride` 握手和调用语义已由 C/C++ 消费者测试保护；C 结构体不是网络字节格式，ARM64 上的实际大小和 ABI 仍须上盒验证。
-- 临时 ZJCL v1 的 6 类消息及 ZJLG v1 日志已冻结，详见协议说明；改变布局必须升级协议版本并同时修改 C++、Python 黄金测试。
-- AlgorithmStatus/Alert 已在在线、GCS 和回放演示链路实现，但尚未进入 C ABI v1；正式 ROS 2 映射仍为待确认项。
-- 最终 ROS 2 包名、话题名、QoS、UWB 厂商字段、同步状态消息以及 GCS 的正式传输方式仍需上交/浙大/交大三方书面确认。
+- 临时 ZJCL v1 已在既有遥测之外增加类型 105 Pose2D 帧；其 32 字节载荷、`[-π,π)` 航向范围和能力/有效位语义由 C++、Python 测试保护。改变布局必须升级协议版本并同步修改两端测试。
+- AlgorithmStatus/Alert 已在在线、GCS 和回放演示链路实现，但尚未进入 C ABI v1 或首版 ROS 2 GCS 消息；正式映射仍为待确认项。
+- 首版 ROS 2 适配节点、NodeState、GCS 结果消息和发布代码已实现；上交正式 UWB 包名、输入 topic/QoS、同步状态消息以及跨盒 GCS 的 DDS 接入方式仍需三方书面确认。
 - 第一阶段建议上交至少提供：源/目标节点号、单调递增序号、统一测量时间、同时间基准接收时间、距离、标准差、NLOS 标志/概率、有效标志和设备状态。禁止仅给无时间戳的距离值。
 - Python 以 `-B` 运行可避免生成 `__pycache__`；不带 `-B` 运行时 Python 可能创建该缓存目录，它不是运行依赖。

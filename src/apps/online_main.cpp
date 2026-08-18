@@ -100,6 +100,7 @@ struct Statistics {
   std::uint64_t type_rejected{};           ///< 在线入口不接受的消息类型或模式不匹配数。
   std::uint64_t api_rejected{};            ///< C ABI未处置为Processed的测距调用数。
   std::uint64_t published_localization{};  ///< 已发送的定位输出帧数。
+  std::uint64_t published_pose2d{};        ///< 已发送的最小二维位姿输出帧数。
   std::uint64_t published_network{};       ///< 已发送的网络输出帧数。
   std::uint64_t published_observation{};   ///< 已发送的观测输出帧数。
   std::uint64_t published_status{};        ///< 已发送的算法状态帧数。
@@ -140,6 +141,9 @@ void count_output(zju::coop::protocol::MessageType type, Statistics& stats) {
       return;
     case MessageType::kAlgorithmStatus:
       ++stats.published_status;
+      return;
+    case MessageType::kPose2D:
+      ++stats.published_pose2d;
       return;
     case MessageType::kAlert:
       ++stats.published_alert;
@@ -260,7 +264,7 @@ int run(const Arguments& arguments) {
       const std::uint64_t step_time_ns =  // 传入算法并写入快照的统一系统墙上时间。
           apps::system_time_ns();
       const auto snapshot = algorithm.step(step_time_ns);  // 该统一时刻的原子算法输出。
-      const auto frames = apps::encode_snapshot(  // 定位、网络和观测协议帧集合。
+      const auto frames = apps::encode_snapshot(  // 旧定位、Pose2D、网络和观测协议帧集合。
           snapshot, demo_config.engine.filter.reference_node_id,
           next_output_sequence, demo_config.online.max_payload_size);
       apps::TelemetryCounters counters{};  // 本周期状态帧使用的累计计数副本。
@@ -320,6 +324,7 @@ int run(const Arguments& arguments) {
             << " type_rejected=" << stats.type_rejected
             << " api_rejected=" << stats.api_rejected
             << " published_localization=" << stats.published_localization
+            << " published_pose2d=" << stats.published_pose2d
             << " published_network=" << stats.published_network
             << " published_observation=" << stats.published_observation
             << " published_status=" << stats.published_status

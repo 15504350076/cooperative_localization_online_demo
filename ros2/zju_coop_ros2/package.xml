@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>zju_coop_ros2</name>
+  <version>0.3.0</version>
+  <description>ROS 2 adapters for the ZJU distributed cooperative localization library.</description>
+  <maintainer email="pdq@zju.edu.cn">Zhejiang University</maintainer>
+  <license>Proprietary</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>cooperative_localization_msgs</depend>
+  <depend>zju_coop_test_msgs</depend>
+  <exec_depend>rclpy</exec_depend>
+
+  <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>rclpy</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

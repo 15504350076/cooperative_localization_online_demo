@@ -8,9 +8,11 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <string>
 #include <vector>
 
 namespace {
@@ -21,6 +23,35 @@ constexpr std::uint32_t kLocalizationStride =
     static_cast<std::uint32_t>(sizeof(zju_coop_localization_t));
 constexpr std::uint32_t kObservationStride =
     static_cast<std::uint32_t>(sizeof(zju_coop_observation_t));
+
+// Windows x64交付基线的v1结构尺寸与关键字段偏移。使用硬编码常量，确保头文件和
+// 动态库同时发生布局漂移时测试仍会失败；ARM64必须另做目标ABI实测记录。
+static_assert(sizeof(zju_coop_localization_t) == 88U);
+static_assert(offsetof(zju_coop_localization_t, timestamp_ns) == 8U);
+static_assert(offsetof(zju_coop_localization_t, x) == 24U);
+static_assert(offsetof(zju_coop_localization_t, valid) == 80U);
+static_assert(offsetof(zju_coop_localization_t, state) == 84U);
+static_assert(sizeof(zju_coop_network_t) == 40U);
+static_assert(offsetof(zju_coop_network_t, timestamp_ns) == 8U);
+static_assert(offsetof(zju_coop_network_t, reason_mask) == 32U);
+static_assert(offsetof(zju_coop_network_t, state) == 36U);
+static_assert(sizeof(zju_coop_observation_t) == 104U);
+static_assert(offsetof(zju_coop_observation_t, window_start_ns) == 16U);
+static_assert(offsetof(zju_coop_observation_t, nlos_ratio) == 56U);
+static_assert(offsetof(zju_coop_observation_t, state) == 80U);
+static_assert(offsetof(zju_coop_observation_t, covariance_scale) == 96U);
+static_assert(sizeof(zju_coop_vehicle_pose2d_v2_t) == 48U);
+static_assert(sizeof(zju_coop_pose2d_snapshot_v2_t) == 56U);
+static_assert(sizeof(zju_coop_node_state_t) == 120U);
+static_assert(alignof(zju_coop_node_state_t) == 8U);
+static_assert(offsetof(zju_coop_node_state_t, timestamp_ns) == 16U);
+static_assert(offsetof(zju_coop_node_state_t, receive_timestamp_ns) == 24U);
+static_assert(offsetof(zju_coop_node_state_t, position_enu_m) == 32U);
+static_assert(offsetof(zju_coop_node_state_t, velocity_enu_mps) == 56U);
+static_assert(offsetof(zju_coop_node_state_t,
+                       orientation_flu_to_enu_xyzw) == 80U);
+static_assert(offsetof(zju_coop_node_state_t, valid) == 112U);
+static_assert(offsetof(zju_coop_node_state_t, reserved1) == 113U);
 
 struct ExtendedNode {
   // value是ABI可见前缀，tail是验证自定义大步长不会被库越界改写的调用方扩展区。
@@ -123,7 +154,7 @@ void initialize_outputs(std::vector<zju_coop_localization_t>& localizations,
 TEST_CASE(c_api_exposes_stable_version_defaults_and_error_strings) {
   EXPECT_EQ(zju_coop_abi_version(), ZJU_COOP_ABI_VERSION_V1);
   EXPECT_TRUE(zju_coop_version_string() != nullptr);
-  EXPECT_TRUE(std::strlen(zju_coop_version_string()) != 0U);
+  EXPECT_EQ(std::string(zju_coop_version_string()), std::string("0.3.0"));
   EXPECT_TRUE(std::strlen(zju_coop_error_string(ZJU_COOP_OK)) != 0U);
   EXPECT_TRUE(std::strlen(zju_coop_error_string(
                   static_cast<zju_coop_error_code_t>(999))) != 0U);
@@ -623,6 +654,248 @@ TEST_CASE(c_api_configures_and_pushes_standard_imu_without_ros_dependency) {
   EXPECT_EQ(result.propagated, ZJU_COOP_FALSE);
 }
 
+TEST_CASE(c_api_pose2d_v2_queries_inertial_pose_without_advancing_filter) {
+  TestEngine engine;
+  EXPECT_EQ(zju_coop_pose2d_abi_version(), ZJU_COOP_POSE2D_ABI_VERSION_V2);
+
+  // nodes：节点1/2/3分别以0、+90、-45度ENU航向初始化；位置沿用0、(3,0)、(0,4)。
+  std::array<zju_coop_inertial_node_initialization_t, 3U> nodes{};
+  for (std::size_t index = 0U; index < nodes.size(); ++index) {
+    EXPECT_EQ(zju_coop_inertial_node_initialization_init(&nodes[index]),
+              ZJU_COOP_OK);
+    nodes[index].node_id = static_cast<std::uint32_t>(index + 1U);
+  }
+  nodes[1U].position_n_m[0] = 3.0;
+  nodes[2U].position_n_m[1] = 4.0;
+  const double pi = std::acos(-1.0);
+  nodes[1U].orientation_xyzw[2] = std::sin(pi / 4.0);
+  nodes[1U].orientation_xyzw[3] = std::cos(pi / 4.0);
+  nodes[2U].orientation_xyzw[2] = std::sin(-pi / 8.0);
+  nodes[2U].orientation_xyzw[3] = std::cos(-pi / 8.0);
+
+  zju_coop_inertial_config_t inertial{};
+  EXPECT_EQ(zju_coop_inertial_config_init(&inertial), ZJU_COOP_OK);
+  inertial.nodes = nodes.data();
+  inertial.node_count = static_cast<std::uint32_t>(nodes.size());
+  EXPECT_EQ(zju_coop_configure_inertial(engine.handle, &inertial),
+            ZJU_COOP_OK);
+
+  // 三车同一采样历元的首帧只建立惯导时间基准，不需要调用step即可只读查询。
+  for (std::uint32_t node_id = 1U; node_id <= 3U; ++node_id) {
+    zju_coop_imu_packet_t packet{};
+    EXPECT_EQ(zju_coop_imu_packet_init(&packet), ZJU_COOP_OK);
+    packet.node_id = node_id;
+    packet.sequence = 1U;
+    packet.timestamp_ns = kTimestampNs;
+    packet.receive_timestamp_ns = kTimestampNs;
+    packet.linear_acceleration_m_s2[2] = 9.80665;
+    std::memcpy(packet.frame_id, "imu_link", 9U);
+    packet.valid = ZJU_COOP_TRUE;
+    zju_coop_imu_processing_result_t result{};
+    EXPECT_EQ(zju_coop_imu_processing_result_init(&result), ZJU_COOP_OK);
+    EXPECT_EQ(zju_coop_push_imu(engine.handle, &packet, &result), ZJU_COOP_OK);
+  }
+
+  zju_coop_pose2d_snapshot_v2_t snapshot{};
+  EXPECT_EQ(zju_coop_pose2d_snapshot_v2_init(&snapshot), ZJU_COOP_OK);
+  std::uint32_t count{};
+  EXPECT_EQ(zju_coop_get_pose2d_v2(engine.handle, &snapshot, nullptr, 0U, 0U,
+                                   &count),
+            ZJU_COOP_BUFFER_TOO_SMALL);
+  EXPECT_EQ(count, 3U);
+
+  std::array<zju_coop_vehicle_pose2d_v2_t, 3U> vehicles{};
+  for (auto& vehicle : vehicles) {
+    EXPECT_EQ(zju_coop_vehicle_pose2d_v2_init(&vehicle), ZJU_COOP_OK);
+  }
+  EXPECT_EQ(zju_coop_get_pose2d_v2(
+                engine.handle, &snapshot, vehicles.data(),
+                static_cast<std::uint32_t>(vehicles.size()),
+                static_cast<std::uint32_t>(sizeof(vehicles[0])), &count),
+            ZJU_COOP_OK);
+  EXPECT_EQ(snapshot.timestamp_ns, kTimestampNs);
+  EXPECT_EQ(snapshot.reference_node_id, 1U);
+  EXPECT_TRUE(std::strcmp(snapshot.frame_id, "coop_ref_1_enu") == 0);
+  EXPECT_EQ(count, 3U);
+
+  const auto second = std::find_if(
+      vehicles.begin(), vehicles.end(), [](const auto& vehicle) {
+        return vehicle.node_id == 2U;
+      });
+  EXPECT_TRUE(second != vehicles.end());
+  EXPECT_TRUE(std::abs(second->x_m - 3.0) < 1.0e-12);
+  EXPECT_TRUE(std::abs(second->y_m) < 1.0e-12);
+  EXPECT_TRUE(std::abs(second->yaw_rad - pi / 2.0) < 1.0e-12);
+  EXPECT_EQ(second->position_valid, ZJU_COOP_TRUE);
+  EXPECT_EQ(second->yaw_valid, ZJU_COOP_TRUE);
+
+  // 再次完整查询必须返回相同快照；随后10 ms IMU仍应得到精确dt，证明查询未改时间基准。
+  zju_coop_pose2d_snapshot_v2_t repeated_snapshot{};
+  EXPECT_EQ(zju_coop_pose2d_snapshot_v2_init(&repeated_snapshot), ZJU_COOP_OK);
+  std::array<zju_coop_vehicle_pose2d_v2_t, 3U> repeated_vehicles{};
+  for (auto& vehicle : repeated_vehicles) {
+    EXPECT_EQ(zju_coop_vehicle_pose2d_v2_init(&vehicle), ZJU_COOP_OK);
+  }
+  std::uint32_t repeated_count =
+      static_cast<std::uint32_t>(repeated_vehicles.size());
+  EXPECT_EQ(zju_coop_get_pose2d_v2(
+                engine.handle, &repeated_snapshot, repeated_vehicles.data(),
+                repeated_count,
+                static_cast<std::uint32_t>(sizeof(repeated_vehicles[0])),
+                &repeated_count),
+            ZJU_COOP_OK);
+  EXPECT_EQ(repeated_snapshot.timestamp_ns, snapshot.timestamp_ns);
+  EXPECT_EQ(repeated_count, count);
+  EXPECT_TRUE(std::memcmp(repeated_vehicles.data(), vehicles.data(),
+                          sizeof(vehicles)) == 0);
+
+  zju_coop_imu_packet_t next_imu{};
+  EXPECT_EQ(zju_coop_imu_packet_init(&next_imu), ZJU_COOP_OK);
+  next_imu.node_id = 2U;
+  next_imu.sequence = 2U;
+  next_imu.timestamp_ns = kTimestampNs + 10'000'000ULL;
+  next_imu.receive_timestamp_ns = next_imu.timestamp_ns;
+  next_imu.linear_acceleration_m_s2[2] = 9.80665;
+  std::memcpy(next_imu.frame_id, "imu_link", 9U);
+  next_imu.valid = ZJU_COOP_TRUE;
+  zju_coop_imu_processing_result_t next_result{};
+  EXPECT_EQ(zju_coop_imu_processing_result_init(&next_result), ZJU_COOP_OK);
+  EXPECT_EQ(zju_coop_push_imu(engine.handle, &next_imu, &next_result),
+            ZJU_COOP_OK);
+  EXPECT_EQ(next_result.disposition, ZJU_COOP_IMU_PROPAGATED);
+  EXPECT_TRUE(std::abs(next_result.dt_s - 0.01) < 1.0e-12);
+}
+
+TEST_CASE(c_api_pose2d_v2_keeps_range_only_yaw_invalid) {
+  TestEngine engine;
+  zju_coop_pose2d_snapshot_v2_t snapshot{};
+  EXPECT_EQ(zju_coop_pose2d_snapshot_v2_init(&snapshot), ZJU_COOP_OK);
+  std::array<zju_coop_vehicle_pose2d_v2_t, 3U> vehicles{};
+  for (auto& vehicle : vehicles) {
+    EXPECT_EQ(zju_coop_vehicle_pose2d_v2_init(&vehicle), ZJU_COOP_OK);
+  }
+  std::uint32_t count{};
+  EXPECT_EQ(zju_coop_get_pose2d_v2(
+                engine.handle, &snapshot, vehicles.data(),
+                static_cast<std::uint32_t>(vehicles.size()),
+                static_cast<std::uint32_t>(sizeof(vehicles[0])), &count),
+            ZJU_COOP_OK);
+  EXPECT_EQ(count, 3U);
+  for (const auto& vehicle : vehicles) {
+    EXPECT_EQ(vehicle.yaw_valid, ZJU_COOP_FALSE);
+  }
+}
+
+TEST_CASE(c_api_pose2d_v2_rejects_bad_snapshot_headers_atomically) {
+  TestEngine engine;
+  std::array<zju_coop_vehicle_pose2d_v2_t, 3U> vehicles{};
+  for (auto& vehicle : vehicles) {
+    EXPECT_EQ(zju_coop_vehicle_pose2d_v2_init(&vehicle), ZJU_COOP_OK);
+    vehicle.x_m = 71.0;  // 哨兵值：失败返回后仍为71可证明查询没有部分写入数组。
+  }
+
+  zju_coop_pose2d_snapshot_v2_t snapshot{};
+  EXPECT_EQ(zju_coop_pose2d_snapshot_v2_init(&snapshot), ZJU_COOP_OK);
+  snapshot.timestamp_ns = 999U;
+  snapshot.struct_size = sizeof(snapshot) - 1U;
+  std::uint32_t count = 77U;
+  EXPECT_EQ(zju_coop_get_pose2d_v2(
+                engine.handle, &snapshot, vehicles.data(),
+                static_cast<std::uint32_t>(vehicles.size()),
+                static_cast<std::uint32_t>(sizeof(vehicles[0])), &count),
+            ZJU_COOP_STRUCT_SIZE_MISMATCH);
+  EXPECT_EQ(snapshot.timestamp_ns, 999U);
+  EXPECT_EQ(vehicles[0U].x_m, 71.0);
+  EXPECT_EQ(count, 77U);
+
+  EXPECT_EQ(zju_coop_pose2d_snapshot_v2_init(&snapshot), ZJU_COOP_OK);
+  snapshot.timestamp_ns = 998U;
+  snapshot.abi_version = ZJU_COOP_ABI_VERSION_V1;
+  EXPECT_EQ(zju_coop_get_pose2d_v2(
+                engine.handle, &snapshot, vehicles.data(),
+                static_cast<std::uint32_t>(vehicles.size()),
+                static_cast<std::uint32_t>(sizeof(vehicles[0])), &count),
+            ZJU_COOP_ABI_MISMATCH);
+  EXPECT_EQ(snapshot.timestamp_ns, 998U);
+  EXPECT_EQ(vehicles[0U].x_m, 71.0);
+  EXPECT_EQ(count, 77U);
+}
+
+TEST_CASE(c_api_pose2d_v2_rejects_bad_vehicle_headers_atomically) {
+  TestEngine engine;
+  zju_coop_pose2d_snapshot_v2_t snapshot{};
+  EXPECT_EQ(zju_coop_pose2d_snapshot_v2_init(&snapshot), ZJU_COOP_OK);
+  snapshot.timestamp_ns = 997U;
+  std::array<zju_coop_vehicle_pose2d_v2_t, 3U> vehicles{};
+  for (auto& vehicle : vehicles) {
+    EXPECT_EQ(zju_coop_vehicle_pose2d_v2_init(&vehicle), ZJU_COOP_OK);
+    vehicle.x_m = 72.0;
+  }
+  vehicles[1U].abi_version = ZJU_COOP_ABI_VERSION_V1;
+  std::uint32_t count = 76U;
+  EXPECT_EQ(zju_coop_get_pose2d_v2(
+                engine.handle, &snapshot, vehicles.data(),
+                static_cast<std::uint32_t>(vehicles.size()),
+                static_cast<std::uint32_t>(sizeof(vehicles[0])), &count),
+            ZJU_COOP_ABI_MISMATCH);
+  EXPECT_EQ(snapshot.timestamp_ns, 997U);
+  EXPECT_EQ(vehicles[0U].x_m, 72.0);
+  EXPECT_EQ(vehicles[2U].x_m, 72.0);
+  EXPECT_EQ(count, 76U);
+
+  EXPECT_EQ(zju_coop_vehicle_pose2d_v2_init(&vehicles[1U]), ZJU_COOP_OK);
+  vehicles[1U].x_m = 72.0;
+  vehicles[1U].reserved[2U] = 1U;
+  EXPECT_EQ(zju_coop_get_pose2d_v2(
+                engine.handle, &snapshot, vehicles.data(),
+                static_cast<std::uint32_t>(vehicles.size()),
+                static_cast<std::uint32_t>(sizeof(vehicles[0])), &count),
+            ZJU_COOP_INVALID_ARGUMENT);
+  EXPECT_EQ(snapshot.timestamp_ns, 997U);
+  EXPECT_EQ(vehicles[0U].x_m, 72.0);
+  EXPECT_EQ(vehicles[2U].x_m, 72.0);
+  EXPECT_EQ(count, 76U);
+}
+
+TEST_CASE(c_api_pose2d_v2_enforces_capacity_and_stride_without_partial_write) {
+  TestEngine engine;
+  zju_coop_pose2d_snapshot_v2_t snapshot{};
+  EXPECT_EQ(zju_coop_pose2d_snapshot_v2_init(&snapshot), ZJU_COOP_OK);
+  snapshot.timestamp_ns = 996U;
+  std::array<zju_coop_vehicle_pose2d_v2_t, 3U> vehicles{};
+  for (auto& vehicle : vehicles) {
+    EXPECT_EQ(zju_coop_vehicle_pose2d_v2_init(&vehicle), ZJU_COOP_OK);
+    vehicle.y_m = 73.0;
+  }
+
+  std::uint32_t count = 75U;
+  EXPECT_EQ(zju_coop_get_pose2d_v2(
+                engine.handle, &snapshot, vehicles.data(), 2U,
+                static_cast<std::uint32_t>(sizeof(vehicles[0])), &count),
+            ZJU_COOP_BUFFER_TOO_SMALL);
+  EXPECT_EQ(count, 3U);
+  EXPECT_EQ(snapshot.timestamp_ns, 996U);
+  EXPECT_EQ(vehicles[0U].y_m, 73.0);
+
+  count = 75U;
+  EXPECT_EQ(zju_coop_get_pose2d_v2(
+                engine.handle, &snapshot, vehicles.data(),
+                static_cast<std::uint32_t>(vehicles.size()),
+                static_cast<std::uint32_t>(sizeof(vehicles[0]) - 1U), &count),
+            ZJU_COOP_INVALID_ARGUMENT);
+  EXPECT_EQ(count, 75U);
+  EXPECT_EQ(snapshot.timestamp_ns, 996U);
+  EXPECT_EQ(vehicles[0U].y_m, 73.0);
+
+  // NULL容量查询的三元组固定为vehicles=NULL、capacity=0、stride=0，非零stride属于调用错误。
+  EXPECT_EQ(zju_coop_get_pose2d_v2(
+                engine.handle, &snapshot, nullptr, 0U,
+                static_cast<std::uint32_t>(sizeof(vehicles[0])), &count),
+            ZJU_COOP_INVALID_ARGUMENT);
+  EXPECT_EQ(count, 75U);
+  EXPECT_EQ(snapshot.timestamp_ns, 996U);
+}
+
 // 原始数据预留接口组证明Image/PointCloud2可以映射到C ABI，但当前不会改变Engine。
 TEST_CASE(c_api_validates_camera_image_without_consuming_it) {
   TestEngine engine;  // 只用句柄验证公开入口，不配置或调用任何视觉算法。
@@ -867,4 +1140,120 @@ TEST_CASE(c_api_gnss_truth_is_separate_and_not_ready_is_explicit) {
   EXPECT_EQ(truth.valid, ZJU_COOP_FALSE);
   EXPECT_EQ(truth.stale, ZJU_COOP_TRUE);
   EXPECT_EQ(zju_coop_gnss_destroy(context), ZJU_COOP_OK);
+}
+
+TEST_CASE(c_api_single_node_inertial_exports_absolute_node_state) {
+  zju_coop_node_initialization_t base_node{};
+  EXPECT_EQ(zju_coop_node_initialization_init(&base_node), ZJU_COOP_OK);
+  base_node.node_id = 2U;
+  base_node.position_std_m = 0.1;
+  base_node.velocity_std_mps = 0.1;
+  zju_coop_config_t base{};
+  EXPECT_EQ(zju_coop_config_init(&base), ZJU_COOP_OK);
+  base.reference_node_id = 2U;
+  base.nodes = &base_node;
+  base.node_count = 1U;
+  zju_coop_handle_t* handle{};
+  EXPECT_EQ(zju_coop_create(&base, &handle), ZJU_COOP_OK);
+
+  zju_coop_inertial_node_initialization_t initial{};
+  EXPECT_EQ(zju_coop_inertial_node_initialization_init(&initial),
+            ZJU_COOP_OK);
+  initial.node_id = 2U;
+  initial.position_n_m[0] = 3.0;
+  initial.position_n_m[1] = 4.0;
+  zju_coop_inertial_config_t inertial{};
+  EXPECT_EQ(zju_coop_inertial_config_init(&inertial), ZJU_COOP_OK);
+  inertial.nodes = &initial;
+  inertial.node_count = 1U;
+  EXPECT_EQ(zju_coop_configure_inertial(handle, &inertial), ZJU_COOP_OK);
+
+  zju_coop_imu_packet_t imu{};
+  EXPECT_EQ(zju_coop_imu_packet_init(&imu), ZJU_COOP_OK);
+  imu.node_id = 2U;
+  imu.sequence = 1U;
+  imu.timestamp_ns = kTimestampNs;
+  imu.receive_timestamp_ns = kTimestampNs;
+  imu.linear_acceleration_m_s2[2] = 9.80665;
+  std::memcpy(imu.frame_id, "imu_link", 9U);
+  imu.valid = ZJU_COOP_TRUE;
+  zju_coop_imu_processing_result_t imu_result{};
+  EXPECT_EQ(zju_coop_imu_processing_result_init(&imu_result), ZJU_COOP_OK);
+  EXPECT_EQ(zju_coop_push_imu(handle, &imu, &imu_result), ZJU_COOP_OK);
+
+  zju_coop_node_state_t state{};
+  EXPECT_EQ(zju_coop_node_state_init(&state), ZJU_COOP_OK);
+  EXPECT_EQ(zju_coop_get_node_state(handle, 2U, &state), ZJU_COOP_OK);
+  EXPECT_EQ(state.node_id, 2U);
+  EXPECT_EQ(state.timestamp_ns, kTimestampNs);
+  EXPECT_TRUE(std::abs(state.position_enu_m[0] - 3.0) < 1.0e-12);
+  EXPECT_TRUE(std::abs(state.position_enu_m[1] - 4.0) < 1.0e-12);
+  EXPECT_EQ(state.valid, ZJU_COOP_TRUE);
+  EXPECT_EQ(zju_coop_destroy(handle), ZJU_COOP_OK);
+}
+
+TEST_CASE(c_api_distributed_mode_fuses_node_states_and_outputs_pose2d) {
+  std::array<zju_coop_node_initialization_t, 3U> nodes{};
+  for (std::size_t index = 0U; index < nodes.size(); ++index) {
+    EXPECT_EQ(zju_coop_node_initialization_init(&nodes[index]), ZJU_COOP_OK);
+    nodes[index].node_id = static_cast<std::uint32_t>(index + 1U);
+    nodes[index].position_std_m = 1.0;
+    nodes[index].velocity_std_mps = 0.1;
+  }
+  zju_coop_config_t config{};
+  EXPECT_EQ(zju_coop_config_init(&config), ZJU_COOP_OK);
+  config.reference_node_id = 1U;
+  config.nodes = nodes.data();
+  config.node_count = static_cast<std::uint32_t>(nodes.size());
+  config.nis_gate = 100.0;
+  config.max_prediction_step_s = 0.1;
+
+  zju_coop_distributed_handle_t* handle{};
+  EXPECT_EQ(zju_coop_distributed_create(&config, &handle), ZJU_COOP_OK);
+  for (std::uint32_t node_id = 1U; node_id <= 3U; ++node_id) {
+    zju_coop_node_state_t state{};
+    EXPECT_EQ(zju_coop_node_state_init(&state), ZJU_COOP_OK);
+    state.node_id = node_id;
+    state.timestamp_ns = kTimestampNs;
+    state.receive_timestamp_ns = kTimestampNs;
+    state.orientation_flu_to_enu_xyzw[3] = 1.0;
+    state.valid = ZJU_COOP_TRUE;
+    if (node_id == 2U) {
+      state.position_enu_m[0] = 4.0;
+    } else if (node_id == 3U) {
+      state.position_enu_m[1] = 4.0;
+    }
+    EXPECT_EQ(zju_coop_distributed_push_node_state(handle, &state),
+              ZJU_COOP_OK);
+  }
+
+  auto packet = range_packet(1U, 2U, 3.0, kTimestampNs);
+  auto range_result = initialized_push_result();
+  EXPECT_EQ(zju_coop_distributed_push_range(handle, &packet, &range_result),
+            ZJU_COOP_OK);
+  EXPECT_EQ(range_result.update_disposition, ZJU_COOP_UPDATE_ACCEPTED);
+
+  zju_coop_pose2d_snapshot_v2_t snapshot{};
+  EXPECT_EQ(zju_coop_pose2d_snapshot_v2_init(&snapshot), ZJU_COOP_OK);
+  std::array<zju_coop_vehicle_pose2d_v2_t, 3U> vehicles{};
+  for (auto& vehicle : vehicles) {
+    EXPECT_EQ(zju_coop_vehicle_pose2d_v2_init(&vehicle), ZJU_COOP_OK);
+  }
+  std::uint32_t count{};
+  EXPECT_EQ(zju_coop_distributed_get_pose2d_v2(
+                handle, kTimestampNs, &snapshot, vehicles.data(),
+                static_cast<std::uint32_t>(vehicles.size()),
+                static_cast<std::uint32_t>(sizeof(vehicles[0])), &count),
+            ZJU_COOP_OK);
+  EXPECT_EQ(count, 3U);
+  EXPECT_EQ(snapshot.reference_node_id, 1U);
+  const auto second = std::find_if(
+      vehicles.begin(), vehicles.end(), [](const auto& value) {
+        return value.node_id == 2U;
+      });
+  EXPECT_TRUE(second != vehicles.end());
+  EXPECT_TRUE(std::abs(second->x_m - 3.0) < 1.0);
+  EXPECT_EQ(second->position_valid, ZJU_COOP_TRUE);
+  EXPECT_EQ(second->yaw_valid, ZJU_COOP_TRUE);
+  EXPECT_EQ(zju_coop_distributed_destroy(handle), ZJU_COOP_OK);
 }

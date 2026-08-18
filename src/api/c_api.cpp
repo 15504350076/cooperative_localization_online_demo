@@ -17,6 +17,7 @@
 // - `try/catch (...)`：把任何C++异常拦在ABI内部，再转换成稳定整数错误码。
 #include "zju_coop/c_api.h"
 
+#include "core/distributed_fusion2d.hpp"
 #include "core/engine.hpp"
 #include "core/gnss_reference.hpp"
 
@@ -29,10 +30,11 @@
 #include <memory>
 #include <new>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
-// 每个句柄拥有一个独立算法会话；C ABI本身不加锁，由上海交大ROS 2适配层保证串行调用。
+// 每个句柄拥有一个独立算法会话；C ABI本身不加锁，由调用方ROS 2适配层保证串行调用。
 struct zju_coop_handle {
   // config移交给独占Engine；configured_node_count/configured_edge_count冻结v1输出数组所需元素数。
   zju_coop_handle(zju::coop::EngineConfig config,
@@ -49,6 +51,18 @@ struct zju_coop_handle {
   std::uint32_t observation_count{};  /* 每次step必须输出的完全图无向边质量条数。 */
   bool processing_started{}; /* true表示已有输入或step，之后禁止惯性重配置。 */
   bool inertial_configured{}; /* true表示15N状态、节点初值和IMU参数已冻结。 */
+};
+
+// 分布式句柄只持有低带宽二维修正器，与既有集中式Engine状态完全隔离。
+struct zju_coop_distributed_handle {
+  zju_coop_distributed_handle(zju::coop::DistributedFusionConfig config,
+                              std::uint32_t configured_vehicle_count)
+      : fusion(std::make_unique<zju::coop::DistributedFusion2D>(
+            std::move(config))),
+        vehicle_count(configured_vehicle_count) {}
+
+  std::unique_ptr<zju::coop::DistributedFusion2D> fusion;
+  std::uint32_t vehicle_count{};
 };
 
 // GNSS上下文与主Engine分开分配，类型结构本身保证RTK真值不能调用滤波更新。
@@ -89,13 +103,28 @@ zju_coop_error_code_t validate_header(const Structure* value) {
   return ZJU_COOP_OK;
 }
 
+template <typename Structure>
+// Pose2D采用独立v2版本域，不能复用上面的v1头部校验，否则会把合法v2结构误判为版本不匹配。
+zju_coop_error_code_t validate_pose2d_header(const Structure* value) {
+  if (value == nullptr) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+  if (value->struct_size < sizeof(Structure)) {
+    return ZJU_COOP_STRUCT_SIZE_MISMATCH;
+  }
+  if (value->abi_version != ZJU_COOP_POSE2D_ABI_VERSION_V2) {
+    return ZJU_COOP_ABI_MISMATCH;
+  }
+  return ZJU_COOP_OK;
+}
+
 // value为跨C ABI传入的单字节布尔编码，仅0和1合法。
 bool valid_boolean(zju_coop_bool_t value) {
   return value == ZJU_COOP_FALSE || value == ZJU_COOP_TRUE;
 }
 
 // value为进入算法前待排除NaN/Inf的浮点字段。
-bool finite(double value) { return std::isfinite(value); }
+bool is_finite_value(double value) { return std::isfinite(value); }
 
 template <std::size_t Size>
 // values是字段布局确定的Size个浮点量；无捕获lambda的value逐项排除NaN/Inf。
@@ -103,7 +132,7 @@ bool finite_array(const double (&values)[Size]) {
   // `const double (&)[Size]`是固定长C数组的只读引用，调用时Size可自动从数组长度推导。
   return std::all_of(std::begin(values), std::end(values),
                      // 空捕获Lambda逐项调用本文件finite包装函数。
-                     [](double value) { return finite(value); });
+                     [](double value) { return is_finite_value(value); });
 }
 
 // value为固定容量字符缓冲首地址；capacity为可搜索NUL的最大字节数，内存由调用方持有。
@@ -294,23 +323,25 @@ void fill_raw_input_result(zju_coop_raw_input_result_t& destination,
 
 // node为待进入二维状态初始化的C ABI节点，检查所有物理量均有限。
 bool finite_node(const zju_coop_node_initialization_t& node) {
-  return finite(node.x) && finite(node.y) && finite(node.vx) &&
-         finite(node.vy) && finite(node.position_std_m) &&
-         finite(node.velocity_std_mps);
+  return is_finite_value(node.x) && is_finite_value(node.y) &&
+         is_finite_value(node.vx) && is_finite_value(node.vy) &&
+         is_finite_value(node.position_std_m) &&
+         is_finite_value(node.velocity_std_mps);
 }
 
 // config为待转换的基础配置，仅检查其中全部浮点阈值和噪声参数有限。
 bool finite_config(const zju_coop_config_t& config) {
-  return finite(config.process_accel_std_mps2) && finite(config.nis_gate) &&
-         finite(config.max_prediction_step_s) &&
-         finite(config.min_covariance_diagonal) &&
-         finite(config.nominal_rate_hz) &&
-         finite(config.nlos_ratio_threshold) &&
-         finite(config.valid_ratio_threshold) &&
-         finite(config.rate_ratio_threshold) &&
-         finite(config.nlos_probability_threshold) &&
-         finite(config.nlos_covariance_scale) &&
-         finite(config.rigidity_tolerance);
+  return is_finite_value(config.process_accel_std_mps2) &&
+         is_finite_value(config.nis_gate) &&
+         is_finite_value(config.max_prediction_step_s) &&
+         is_finite_value(config.min_covariance_diagonal) &&
+         is_finite_value(config.nominal_rate_hz) &&
+         is_finite_value(config.nlos_ratio_threshold) &&
+         is_finite_value(config.valid_ratio_threshold) &&
+         is_finite_value(config.rate_ratio_threshold) &&
+         is_finite_value(config.nlos_probability_threshold) &&
+         is_finite_value(config.nlos_covariance_scale) &&
+         is_finite_value(config.rigidity_tolerance);
 }
 
 // input为已通过v1头校验的调用方配置；output为成功时才完整覆盖的内部配置目标。
@@ -395,6 +426,58 @@ zju_coop_error_code_t convert_config(const zju_coop_config_t& input,
   return ZJU_COOP_OK;  // 到这里说明所有字段均已验证并完成深拷贝。
 }
 
+// 分布式模式沿用现有基础配置，避免为三车最小演示再维护一套重复参数结构。
+zju_coop_error_code_t convert_distributed_config(
+    const zju_coop_config_t& input,
+    zju::coop::DistributedFusionConfig& output) {
+  zju::coop::EngineConfig base{};
+  const auto status = convert_config(input, base);
+  if (status != ZJU_COOP_OK) {
+    return status;
+  }
+  if (base.nodes.size() < 2U || !(base.filter.process_accel_std_mps2 > 0.0) ||
+      !(base.filter.nis_gate > 0.0) ||
+      !(base.filter.max_prediction_step_s > 0.0) ||
+      !(base.filter.min_covariance_diagonal > 0.0)) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+
+  const long double extrapolation_ns =
+      static_cast<long double>(base.filter.max_prediction_step_s) * 1.0e9L;
+  if (!std::isfinite(extrapolation_ns) || extrapolation_ns < 1.0L ||
+      extrapolation_ns >
+          static_cast<long double>(std::numeric_limits<std::uint64_t>::max())) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+
+  zju::coop::DistributedFusionConfig converted{};
+  converted.reference_node_id = base.filter.reference_node_id;
+  converted.process_accel_std_mps2 = base.filter.process_accel_std_mps2;
+  converted.nis_gate = base.filter.nis_gate;
+  converted.min_covariance_diagonal =
+      base.filter.min_covariance_diagonal;
+  converted.max_extrapolation_ns =
+      static_cast<std::uint64_t>(extrapolation_ns);
+  converted.node_timeout_ns = base.edge_timeout_ns;
+  converted.max_future_skew_ns = base.max_future_skew_ns;
+  converted.max_receive_delay_ns = base.max_receive_delay_ns;
+
+  double largest_position_std = 0.0;
+  converted.node_ids.reserve(base.nodes.size());
+  for (const auto& node : base.nodes) {
+    if (node.node_id > std::numeric_limits<std::uint16_t>::max() ||
+        !(node.position_std_m > 0.0) || !(node.velocity_std_mps > 0.0)) {
+      return ZJU_COOP_INVALID_ARGUMENT;
+    }
+    converted.node_ids.push_back(node.node_id);
+    largest_position_std =
+        std::max(largest_position_std, node.position_std_m);
+  }
+  converted.initial_correction_std_m = largest_position_std;
+  output = std::move(converted);
+  return ZJU_COOP_OK;
+}
+
 zju_coop_error_code_t convert_inertial_config(
     // input为已通过v1头校验的调用方惯性配置；inertial/nodes为成功时交给Engine的内部输出。
     const zju_coop_inertial_config_t& input,
@@ -407,16 +490,17 @@ zju_coop_error_code_t convert_inertial_config(
       input.max_inertial_state_dimension == 0U ||
       !valid_array_span<zju_coop_inertial_node_initialization_t>(
           input.nodes, input.node_count, input.node_stride) ||
-      !finite(input.gravity_mps2) || !finite(input.min_imu_dt_s) ||
-      !finite(input.max_imu_dt_s) ||
-      !finite(input.max_propagation_substep_s) ||
-      !finite(input.gyro_noise_density_rad_s_sqrt_hz) ||
-      !finite(input.accel_noise_density_m_s2_sqrt_hz) ||
-      !finite(input.gyro_bias_random_walk_rad_s2_sqrt_hz) ||
-      !finite(input.accel_bias_random_walk_m_s3_sqrt_hz) ||
-      !finite(input.min_covariance_diagonal) ||
-      !finite(input.quaternion_norm_tolerance) ||
-      !finite(input.covariance_symmetry_tolerance) ||
+      !is_finite_value(input.gravity_mps2) ||
+      !is_finite_value(input.min_imu_dt_s) ||
+      !is_finite_value(input.max_imu_dt_s) ||
+      !is_finite_value(input.max_propagation_substep_s) ||
+      !is_finite_value(input.gyro_noise_density_rad_s_sqrt_hz) ||
+      !is_finite_value(input.accel_noise_density_m_s2_sqrt_hz) ||
+      !is_finite_value(input.gyro_bias_random_walk_rad_s2_sqrt_hz) ||
+      !is_finite_value(input.accel_bias_random_walk_m_s3_sqrt_hz) ||
+      !is_finite_value(input.min_covariance_diagonal) ||
+      !is_finite_value(input.quaternion_norm_tolerance) ||
+      !is_finite_value(input.covariance_symmetry_tolerance) ||
       !valid_boolean(input.use_message_covariance) ||
       !valid_boolean(input.use_orientation_for_initialization) ||
       !nul_terminated_nonempty(input.expected_frame_id,
@@ -623,10 +707,10 @@ zju_coop_error_code_t convert_gnss_config(
       input.max_epoch_skew_ns == 0U || input.max_truth_age_ns == 0U ||
       input.max_future_skew_ns == 0U ||
       input.max_receive_delay_ns == 0U ||
-      !finite(input.min_velocity_dt_s) ||
-      !finite(input.max_velocity_dt_s) ||
-      !finite(input.max_horizontal_std_m) ||
-      !finite(input.max_vertical_std_m)) {
+      !is_finite_value(input.min_velocity_dt_s) ||
+      !is_finite_value(input.max_velocity_dt_s) ||
+      !is_finite_value(input.max_horizontal_std_m) ||
+      !is_finite_value(input.max_vertical_std_m)) {
     return ZJU_COOP_INVALID_ARGUMENT;
   }
   output.reference_node_id = input.reference_node_id;
@@ -740,10 +824,44 @@ zju_coop_localization_t localization_output(
   output.cov_xy = source.cov_xy;  // x和y位置误差的互协方差。
   output.cov_yy = source.cov_yy;  // y位置方差。
   output.valid = source.valid ? ZJU_COOP_TRUE : ZJU_COOP_FALSE;  // 三目运算符把C++ bool映射到规定的C整数布尔值。
-  output.yaw_valid = source.yaw_valid ? ZJU_COOP_TRUE : ZJU_COOP_FALSE;  // 当前二维UWB闭环通常不会使航向可观。
+  // v1曾明确约定yaw不可用；即使Engine内部已有惯性航向，也必须保持false，
+  // 防止旧调用方在结构布局未升级时悄然改变业务行为。真实航向仅由Pose2D v2查询提供。
+  output.yaw_valid = ZJU_COOP_FALSE;
   output.z_valid = source.z_valid ? ZJU_COOP_TRUE : ZJU_COOP_FALSE;  // 当前二维UWB闭环通常不会输出有效高度。
   output.state = localization_state(source.state);  // 用显式函数映射枚举，避免依赖两个枚举碰巧同值。
   return output;  // 按值返回独立副本，离开函数后不依赖source生命周期。
+}
+
+// source为只读Pose2D快照中的单车元素，返回独立v2 C结构副本。
+zju_coop_vehicle_pose2d_v2_t pose2d_vehicle_output(
+    const zju::coop::VehiclePose2dSnapshot& source) {
+  zju_coop_vehicle_pose2d_v2_t output{};
+  output.struct_size = sizeof(output);
+  output.abi_version = ZJU_COOP_POSE2D_ABI_VERSION_V2;
+  output.node_id = source.node_id;
+  output.x_m = source.x_m;
+  output.y_m = source.y_m;
+  output.yaw_rad = source.yaw_rad;
+  output.position_valid =
+      source.position_valid ? ZJU_COOP_TRUE : ZJU_COOP_FALSE;
+  output.yaw_valid = source.yaw_valid ? ZJU_COOP_TRUE : ZJU_COOP_FALSE;
+  return output;
+}
+
+// 分布式核心使用独立普通C++快照类型，但对外复用完全相同的Pose2D v2布局。
+zju_coop_vehicle_pose2d_v2_t pose2d_vehicle_output(
+    const zju::coop::DistributedVehiclePose2D& source) {
+  zju_coop_vehicle_pose2d_v2_t output{};
+  output.struct_size = sizeof(output);
+  output.abi_version = ZJU_COOP_POSE2D_ABI_VERSION_V2;
+  output.node_id = source.node_id;
+  output.x_m = source.x_m;
+  output.y_m = source.y_m;
+  output.yaw_rad = source.yaw_rad;
+  output.position_valid =
+      source.position_valid ? ZJU_COOP_TRUE : ZJU_COOP_FALSE;
+  output.yaw_valid = source.yaw_valid ? ZJU_COOP_TRUE : ZJU_COOP_FALSE;
+  return output;
 }
 
 // source为单条规范化无向边的内部质量快照，返回计数安全收窄后的v1 C结构。
@@ -843,8 +961,13 @@ uint32_t ZJU_COOP_CALL zju_coop_abi_version(void) {
   return ZJU_COOP_ABI_VERSION_V1;  // 调用方可先比较此值，再决定是否能安全传入本版结构。
 }
 
+uint32_t ZJU_COOP_CALL zju_coop_pose2d_abi_version(void) {
+  // Pose2D查询独立演进；保留v1函数与结构布局，使既有调用方无需同步升级。
+  return ZJU_COOP_POSE2D_ABI_VERSION_V2;
+}
+
 // 返回指向库内静态字符串的只读指针；调用方只能读取，不能修改或释放。
-const char* ZJU_COOP_CALL zju_coop_version_string(void) { return "0.1.0"; }
+const char* ZJU_COOP_CALL zju_coop_version_string(void) { return "0.3.0"; }
 
 const char* ZJU_COOP_CALL zju_coop_error_string(
     zju_coop_error_code_t code) {
@@ -985,6 +1108,30 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_observation_init(
   return ZJU_COOP_OK;  // 初始化完成不等于该边已经存在。
 }
 
+zju_coop_error_code_t ZJU_COOP_CALL zju_coop_vehicle_pose2d_v2_init(
+    zju_coop_vehicle_pose2d_v2_t* value) {
+  if (value == nullptr) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+  // 整体清零使有效标志和保留字段具有安全默认值；随后写入独立v2头部。
+  *value = {};
+  value->struct_size = sizeof(*value);
+  value->abi_version = ZJU_COOP_POSE2D_ABI_VERSION_V2;
+  return ZJU_COOP_OK;
+}
+
+zju_coop_error_code_t ZJU_COOP_CALL zju_coop_pose2d_snapshot_v2_init(
+    zju_coop_pose2d_snapshot_v2_t* value) {
+  if (value == nullptr) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+  // timestamp/reference/frame在真正查询前均保持零或空串，防止误作有效快照。
+  *value = {};
+  value->struct_size = sizeof(*value);
+  value->abi_version = ZJU_COOP_POSE2D_ABI_VERSION_V2;
+  return ZJU_COOP_OK;
+}
+
 zju_coop_error_code_t ZJU_COOP_CALL
 zju_coop_inertial_node_initialization_init(
     zju_coop_inertial_node_initialization_t* value) {
@@ -1054,6 +1201,18 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_imu_processing_result_init(
   value->abi_version = ZJU_COOP_ABI_VERSION_V1;  // 记录结果字段版本。
   value->disposition = ZJU_COOP_IMU_INVALID_PACKET;  // 未处理前默认无效，避免误报成功。
   return ZJU_COOP_OK;  // push_imu成功返回后才应读取真实处理结论。
+}
+
+zju_coop_error_code_t ZJU_COOP_CALL zju_coop_node_state_init(
+    zju_coop_node_state_t* value) {
+  if (value == nullptr) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+  *value = {};
+  value->struct_size = sizeof(*value);
+  value->abi_version = ZJU_COOP_ABI_VERSION_V1;
+  value->orientation_flu_to_enu_xyzw[3] = 1.0;
+  return ZJU_COOP_OK;
 }
 
 zju_coop_error_code_t ZJU_COOP_CALL zju_coop_point_field_init(
@@ -1225,6 +1384,49 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_destroy(
   }
 }
 
+zju_coop_error_code_t ZJU_COOP_CALL zju_coop_distributed_create(
+    const zju_coop_config_t* config,
+    zju_coop_distributed_handle_t** out_handle) {
+  if (out_handle == nullptr) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+  *out_handle = nullptr;
+  const auto header_status = validate_header(config);
+  if (header_status != ZJU_COOP_OK) {
+    return header_status;
+  }
+  try {
+    zju::coop::DistributedFusionConfig converted{};
+    const auto conversion_status = convert_distributed_config(*config,
+                                                               converted);
+    if (conversion_status != ZJU_COOP_OK) {
+      return conversion_status;
+    }
+    const auto vehicle_count = static_cast<std::uint32_t>(
+        converted.node_ids.size());
+    std::unique_ptr<zju_coop_distributed_handle_t> created(
+        new zju_coop_distributed_handle_t(std::move(converted),
+                                          vehicle_count));
+    *out_handle = created.release();
+    return ZJU_COOP_OK;
+  } catch (...) {
+    return exception_code();
+  }
+}
+
+zju_coop_error_code_t ZJU_COOP_CALL zju_coop_distributed_destroy(
+    zju_coop_distributed_handle_t* handle) {
+  if (handle == nullptr) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+  try {
+    delete handle;
+    return ZJU_COOP_OK;
+  } catch (...) {
+    return exception_code();
+  }
+}
+
 zju_coop_error_code_t ZJU_COOP_CALL zju_coop_gnss_create(
     const zju_coop_gnss_config_t* config,
     zju_coop_gnss_context_t** out_context) {
@@ -1286,8 +1488,9 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_gnss_push_fix(
           ZJU_COOP_GNSS_COVARIANCE_TYPE_KNOWN ||
       !nul_terminated_nonempty(packet->frame_id,
                                sizeof(packet->frame_id)) ||
-      !finite(packet->latitude_deg) || !finite(packet->longitude_deg) ||
-      !finite(packet->altitude_m) ||
+      !is_finite_value(packet->latitude_deg) ||
+      !is_finite_value(packet->longitude_deg) ||
+      !is_finite_value(packet->altitude_m) ||
       !finite_array(packet->position_covariance_m2)) {
     return ZJU_COOP_INVALID_ARGUMENT;
   }
@@ -1628,6 +1831,113 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_push_imu(
   }
 }
 
+zju_coop_error_code_t ZJU_COOP_CALL zju_coop_get_node_state(
+    zju_coop_handle_t* handle, uint32_t node_id,
+    zju_coop_node_state_t* state) {
+  if (handle == nullptr) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+  const auto header_status = validate_header(state);
+  if (header_status != ZJU_COOP_OK) {
+    return header_status;
+  }
+  if (state->reserved0 != 0U || !all_zero(state->reserved1)) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+
+  try {
+    const auto* filter = handle->engine->inertial_filter();
+    if (filter == nullptr) {
+      return ZJU_COOP_NOT_READY;
+    }
+    const auto& node_ids = filter->node_ids();
+    if (std::find(node_ids.begin(), node_ids.end(), node_id) ==
+        node_ids.end()) {
+      return ZJU_COOP_INVALID_ARGUMENT;
+    }
+    const auto& source = filter->state(node_id);
+    if (!zju::coop::finite(source.position_n_m) ||
+        !zju::coop::finite(source.velocity_n_mps) ||
+        !source.orientation_b_to_n.finite()) {
+      return ZJU_COOP_INTERNAL_ERROR;
+    }
+    const auto estimate = filter->estimate(node_id);
+
+    zju_coop_node_state_t output{};
+    output.struct_size = sizeof(output);
+    output.abi_version = ZJU_COOP_ABI_VERSION_V1;
+    output.node_id = node_id;
+    output.timestamp_ns = estimate.pose_timestamp_ns;
+    output.position_enu_m[0] = source.position_n_m.x;
+    output.position_enu_m[1] = source.position_n_m.y;
+    output.position_enu_m[2] = source.position_n_m.z;
+    output.velocity_enu_mps[0] = source.velocity_n_mps.x;
+    output.velocity_enu_mps[1] = source.velocity_n_mps.y;
+    output.velocity_enu_mps[2] = source.velocity_n_mps.z;
+    output.orientation_flu_to_enu_xyzw[0] =
+        source.orientation_b_to_n.x;
+    output.orientation_flu_to_enu_xyzw[1] =
+        source.orientation_b_to_n.y;
+    output.orientation_flu_to_enu_xyzw[2] =
+        source.orientation_b_to_n.z;
+    output.orientation_flu_to_enu_xyzw[3] =
+        source.orientation_b_to_n.w;
+    output.valid = output.timestamp_ns != 0U ? ZJU_COOP_TRUE
+                                             : ZJU_COOP_FALSE;
+
+    const std::uint32_t caller_size = state->struct_size;
+    *state = output;
+    state->struct_size = caller_size;
+    return ZJU_COOP_OK;
+  } catch (...) {
+    return exception_code();
+  }
+}
+
+zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_distributed_push_node_state(
+    zju_coop_distributed_handle_t* handle,
+    const zju_coop_node_state_t* state) {
+  if (handle == nullptr) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+  const auto header_status = validate_header(state);
+  if (header_status != ZJU_COOP_OK) {
+    return header_status;
+  }
+  if (state->reserved0 != 0U || !all_zero(state->reserved1) ||
+      !valid_boolean(state->valid) ||
+      !finite_array(state->position_enu_m) ||
+      !finite_array(state->velocity_enu_mps) ||
+      !finite_array(state->orientation_flu_to_enu_xyzw)) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+
+  try {
+    zju::coop::NodeState converted{};
+    converted.node_id = state->node_id;
+    converted.timestamp_ns = state->timestamp_ns;
+    converted.receive_timestamp_ns = state->receive_timestamp_ns;
+    converted.position_enu_m = {state->position_enu_m[0],
+                                state->position_enu_m[1],
+                                state->position_enu_m[2]};
+    converted.velocity_enu_mps = {state->velocity_enu_mps[0],
+                                  state->velocity_enu_mps[1],
+                                  state->velocity_enu_mps[2]};
+    converted.orientation_flu_to_enu = {
+        state->orientation_flu_to_enu_xyzw[3],
+        state->orientation_flu_to_enu_xyzw[0],
+        state->orientation_flu_to_enu_xyzw[1],
+        state->orientation_flu_to_enu_xyzw[2]};
+    converted.valid = state->valid == ZJU_COOP_TRUE;
+    return handle->fusion->push_node_state(std::move(converted))
+               ? ZJU_COOP_OK
+               : ZJU_COOP_INVALID_ARGUMENT;
+  } catch (...) {
+    return exception_code();
+  }
+}
+
 zju_coop_error_code_t ZJU_COOP_CALL zju_coop_push_range(
     zju_coop_handle_t* handle, const zju_coop_range_packet_t* packet,
     zju_coop_range_processing_result_t* result) {
@@ -1648,8 +1958,9 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_push_range(
       !valid_boolean(packet->has_nlos_probability) ||
       !valid_boolean(packet->valid) ||
       packet->status > ZJU_COOP_RANGE_STATUS_INVALID ||
-      !finite(packet->range_m) || !finite(packet->range_std_m) ||
-      !finite(static_cast<double>(packet->nlos_probability)) ||
+      !is_finite_value(packet->range_m) ||
+      !is_finite_value(packet->range_std_m) ||
+      !is_finite_value(static_cast<double>(packet->nlos_probability)) ||
       packet->nlos_probability < 0.0F || packet->nlos_probability > 1.0F) {
     return ZJU_COOP_INVALID_ARGUMENT;
   }
@@ -1693,6 +2004,93 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_push_range(
     *result = output;
     result->struct_size = caller_size;
     handle->processing_started = true;
+    return ZJU_COOP_OK;
+  } catch (...) {
+    return exception_code();
+  }
+}
+
+zju_coop_error_code_t ZJU_COOP_CALL zju_coop_distributed_push_range(
+    zju_coop_distributed_handle_t* handle,
+    const zju_coop_range_packet_t* packet,
+    zju_coop_range_processing_result_t* result) {
+  if (handle == nullptr) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+  const auto packet_status = validate_header(packet);
+  if (packet_status != ZJU_COOP_OK) {
+    return packet_status;
+  }
+  const auto result_status = validate_header(result);
+  if (result_status != ZJU_COOP_OK) {
+    return result_status;
+  }
+  if (!valid_boolean(packet->nlos_flag) ||
+      !valid_boolean(packet->has_nlos_probability) ||
+      !valid_boolean(packet->valid) ||
+      packet->status > ZJU_COOP_RANGE_STATUS_INVALID ||
+      packet->receive_timestamp_ns == 0U ||
+      !is_finite_value(packet->range_m) ||
+      !is_finite_value(packet->range_std_m) ||
+      !is_finite_value(static_cast<double>(packet->nlos_probability)) ||
+      packet->nlos_probability < 0.0F || packet->nlos_probability > 1.0F) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+
+  try {
+    zju::coop::RangePacket converted{};
+    converted.from_node = packet->from_node;
+    converted.to_node = packet->to_node;
+    converted.sequence = packet->sequence;
+    converted.timestamp_ns = packet->timestamp_ns;
+    converted.receive_timestamp_ns = packet->receive_timestamp_ns;
+    converted.range_m = packet->range_m;
+    converted.range_std_m = packet->range_std_m;
+    converted.nlos_probability = packet->nlos_probability;
+    converted.nlos_flag = packet->nlos_flag == ZJU_COOP_TRUE;
+    converted.has_nlos_probability =
+        packet->has_nlos_probability == ZJU_COOP_TRUE;
+    converted.valid = packet->valid == ZJU_COOP_TRUE;
+    converted.status = packet->status;
+
+    const auto update = handle->fusion->push_range(converted);
+    zju_coop_range_processing_result_t output{};
+    output.struct_size = sizeof(output);
+    output.abi_version = ZJU_COOP_ABI_VERSION_V1;
+    output.from_node = std::min<std::uint32_t>(packet->from_node,
+                                              packet->to_node);
+    output.to_node = std::max<std::uint32_t>(packet->from_node,
+                                            packet->to_node);
+    if (update.disposition == zju::coop::UpdateDisposition::OutOfOrder) {
+      output.disposition = ZJU_COOP_PROCESSING_OUT_OF_ORDER;
+    } else if (update.disposition ==
+                   zju::coop::UpdateDisposition::InvalidPacket ||
+               update.disposition ==
+                   zju::coop::UpdateDisposition::UnknownNode ||
+               update.disposition ==
+                   zju::coop::UpdateDisposition::SelfRange ||
+               update.disposition ==
+                   zju::coop::UpdateDisposition::NonPositiveRange) {
+      output.disposition = ZJU_COOP_PROCESSING_INVALID_PACKET;
+    } else {
+      output.disposition = ZJU_COOP_PROCESSING_PROCESSED;
+    }
+    output.fusion_action = ZJU_COOP_FUSION_USE_NORMAL;
+    output.update_disposition = update_disposition(update.disposition);
+    output.filter_updated =
+        update.disposition == zju::coop::UpdateDisposition::Accepted ||
+                update.disposition ==
+                    zju::coop::UpdateDisposition::NisRejected
+            ? ZJU_COOP_TRUE
+            : ZJU_COOP_FALSE;
+    output.innovation_m = update.innovation_m;
+    output.innovation_variance = update.innovation_variance;
+    output.nis = update.nis;
+    output.covariance_scale = update.covariance_scale;
+
+    const std::uint32_t caller_size = result->struct_size;
+    *result = output;
+    result->struct_size = caller_size;
     return ZJU_COOP_OK;
   } catch (...) {
     return exception_code();
@@ -1886,6 +2284,181 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_step(
     network->struct_size = caller_size;
     *localization_count = required_localizations;
     *observation_count = required_observations;
+    return ZJU_COOP_OK;
+  } catch (...) {
+    return exception_code();
+  }
+}
+
+zju_coop_error_code_t ZJU_COOP_CALL zju_coop_get_pose2d_v2(
+    zju_coop_handle_t* handle, zju_coop_pose2d_snapshot_v2_t* snapshot,
+    zju_coop_vehicle_pose2d_v2_t* vehicles, uint32_t vehicle_capacity,
+    uint32_t vehicle_stride, uint32_t* vehicle_count) {
+  // 指针与容量必须成对出现；NULL/0/0只用于第一次查询所需车辆数。
+  if (handle == nullptr || snapshot == nullptr || vehicle_count == nullptr ||
+      (vehicle_capacity != 0U && vehicles == nullptr) ||
+      (vehicle_capacity == 0U && vehicles != nullptr) ||
+      (vehicle_capacity == 0U && vehicle_stride != 0U)) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+
+  const auto snapshot_status = validate_pose2d_header(snapshot);
+  if (snapshot_status != ZJU_COOP_OK) {
+    return snapshot_status;
+  }
+  if (snapshot->reserved0 != 0U) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+
+  try {
+    const std::uint32_t required = handle->localization_count;
+    if (vehicle_capacity < required) {
+      // 与v1 step保持相同的两次调用契约：容量不足只写回需求数量，不读取数组、不推进Engine。
+      *vehicle_count = required;
+      return ZJU_COOP_BUFFER_TOO_SMALL;
+    }
+    if (!valid_array_span<zju_coop_vehicle_pose2d_v2_t>(
+            vehicles, required, vehicle_stride)) {
+      return ZJU_COOP_INVALID_ARGUMENT;
+    }
+
+    // 写入前逐元素验证v2头、stride和保留字段，任何失败均保持全部输出不变。
+    for (std::uint32_t index = 0U; index < required; ++index) {
+      const auto* output = array_element<zju_coop_vehicle_pose2d_v2_t>(
+          vehicles, index, vehicle_stride);
+      const auto status = validate_pose2d_header(output);
+      if (status != ZJU_COOP_OK || output->struct_size > vehicle_stride ||
+          output->reserved0 != 0U || !all_zero(output->reserved)) {
+        return status != ZJU_COOP_OK ? status : ZJU_COOP_INVALID_ARGUMENT;
+      }
+    }
+
+    // pose2d_snapshot是const只读查询，不调用step，也不改变时间、质量窗、去重缓存或滤波状态。
+    const auto current = handle->engine->pose2d_snapshot();
+    if (current.vehicles.size() != required) {
+      return ZJU_COOP_INTERNAL_ERROR;
+    }
+
+    zju_coop_pose2d_snapshot_v2_t snapshot_value{};
+    snapshot_value.struct_size = sizeof(snapshot_value);
+    snapshot_value.abi_version = ZJU_COOP_POSE2D_ABI_VERSION_V2;
+    snapshot_value.timestamp_ns = current.timestamp_ns;
+    snapshot_value.reference_node_id = current.reference_node_id;
+    const std::string frame_id =
+        "coop_ref_" + std::to_string(current.reference_node_id) + "_enu";
+    if (frame_id.size() >= sizeof(snapshot_value.frame_id)) {
+      return ZJU_COOP_INTERNAL_ERROR;
+    }
+    std::memcpy(snapshot_value.frame_id, frame_id.c_str(),
+                frame_id.size() + 1U);
+
+    std::vector<zju_coop_vehicle_pose2d_v2_t> vehicle_values(required);
+    for (std::uint32_t index = 0U; index < required; ++index) {
+      const auto& source = current.vehicles[index];
+      // 无论有效位如何，跨ABI浮点字段都必须保持有限，避免NaN污染ROS 2/GCS。
+      if (!is_finite_value(source.x_m) ||
+          !is_finite_value(source.y_m) ||
+          !is_finite_value(source.yaw_rad)) {
+        return ZJU_COOP_INTERNAL_ERROR;
+      }
+      vehicle_values[index] = pose2d_vehicle_output(source);
+    }
+
+    // 所有验证与转换成功后再一次性提交，保留调用方可能大于当前版本的struct_size。
+    const std::uint32_t snapshot_caller_size = snapshot->struct_size;
+    *snapshot = snapshot_value;
+    snapshot->struct_size = snapshot_caller_size;
+    for (std::uint32_t index = 0U; index < required; ++index) {
+      auto* output = array_element<zju_coop_vehicle_pose2d_v2_t>(
+          vehicles, index, vehicle_stride);
+      const std::uint32_t caller_size = output->struct_size;
+      *output = vehicle_values[index];
+      output->struct_size = caller_size;
+    }
+    *vehicle_count = required;
+    return ZJU_COOP_OK;
+  } catch (...) {
+    return exception_code();
+  }
+}
+
+zju_coop_error_code_t ZJU_COOP_CALL zju_coop_distributed_get_pose2d_v2(
+    zju_coop_distributed_handle_t* handle, uint64_t now_ns,
+    zju_coop_pose2d_snapshot_v2_t* snapshot,
+    zju_coop_vehicle_pose2d_v2_t* vehicles, uint32_t vehicle_capacity,
+    uint32_t vehicle_stride, uint32_t* vehicle_count) {
+  if (handle == nullptr || snapshot == nullptr || vehicle_count == nullptr ||
+      (vehicle_capacity != 0U && vehicles == nullptr) ||
+      (vehicle_capacity == 0U && vehicles != nullptr) ||
+      (vehicle_capacity == 0U && vehicle_stride != 0U)) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+  const auto snapshot_status = validate_pose2d_header(snapshot);
+  if (snapshot_status != ZJU_COOP_OK) {
+    return snapshot_status;
+  }
+  if (snapshot->reserved0 != 0U) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+
+  try {
+    const std::uint32_t required = handle->vehicle_count;
+    if (vehicle_capacity < required) {
+      *vehicle_count = required;
+      return ZJU_COOP_BUFFER_TOO_SMALL;
+    }
+    if (!valid_array_span<zju_coop_vehicle_pose2d_v2_t>(
+            vehicles, required, vehicle_stride)) {
+      return ZJU_COOP_INVALID_ARGUMENT;
+    }
+    for (std::uint32_t index = 0U; index < required; ++index) {
+      const auto* output = array_element<zju_coop_vehicle_pose2d_v2_t>(
+          vehicles, index, vehicle_stride);
+      const auto status = validate_pose2d_header(output);
+      if (status != ZJU_COOP_OK || output->struct_size > vehicle_stride ||
+          output->reserved0 != 0U || !all_zero(output->reserved)) {
+        return status != ZJU_COOP_OK ? status : ZJU_COOP_INVALID_ARGUMENT;
+      }
+    }
+
+    const auto current = handle->fusion->pose2d_snapshot(now_ns);
+    if (current.vehicles.size() != required) {
+      return ZJU_COOP_INTERNAL_ERROR;
+    }
+    zju_coop_pose2d_snapshot_v2_t snapshot_value{};
+    snapshot_value.struct_size = sizeof(snapshot_value);
+    snapshot_value.abi_version = ZJU_COOP_POSE2D_ABI_VERSION_V2;
+    snapshot_value.timestamp_ns = current.timestamp_ns;
+    snapshot_value.reference_node_id = current.reference_node_id;
+    const std::string frame_id =
+        "coop_ref_" + std::to_string(current.reference_node_id) + "_enu";
+    if (frame_id.size() >= sizeof(snapshot_value.frame_id)) {
+      return ZJU_COOP_INTERNAL_ERROR;
+    }
+    std::memcpy(snapshot_value.frame_id, frame_id.c_str(),
+                frame_id.size() + 1U);
+
+    std::vector<zju_coop_vehicle_pose2d_v2_t> vehicle_values(required);
+    for (std::uint32_t index = 0U; index < required; ++index) {
+      const auto& source = current.vehicles[index];
+      if (!is_finite_value(source.x_m) || !is_finite_value(source.y_m) ||
+          !is_finite_value(source.yaw_rad)) {
+        return ZJU_COOP_INTERNAL_ERROR;
+      }
+      vehicle_values[index] = pose2d_vehicle_output(source);
+    }
+
+    const std::uint32_t snapshot_caller_size = snapshot->struct_size;
+    *snapshot = snapshot_value;
+    snapshot->struct_size = snapshot_caller_size;
+    for (std::uint32_t index = 0U; index < required; ++index) {
+      auto* output = array_element<zju_coop_vehicle_pose2d_v2_t>(
+          vehicles, index, vehicle_stride);
+      const std::uint32_t caller_size = output->struct_size;
+      *output = vehicle_values[index];
+      output->struct_size = caller_size;
+    }
+    *vehicle_count = required;
     return ZJU_COOP_OK;
   } catch (...) {
     return exception_code();

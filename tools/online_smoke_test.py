@@ -52,6 +52,8 @@ class OutputEvidence:
         self.link_timeout_alert_after_stop = False
         # 本证据对象累计解码的输出帧数，用于最终审计摘要。
         self.frame_count = 0
+        # 仅测距回退不查询Pose2D v2，因此在线和回放均不应出现105帧。
+        self.pose2d_frame_count = 0
 
     def mark_inputs_stopped(self):
         """记录输入停输边界；之后的链路超时告警才可作为恢复周期证据。"""
@@ -73,6 +75,9 @@ class OutputEvidence:
                 raise AssertionError("localization capability mask is incomplete")
             if value.valid:
                 self.localization_nodes.add(frame.source_node)
+        elif frame.message_type == zjcl.MSG_POSE2D:
+            zjcl.decode_pose2d_payload(frame.payload)
+            self.pose2d_frame_count += 1
         elif frame.message_type == zjcl.MSG_NETWORK:
             # 当前网络快照，用于记录是否曾进入正常连通可观状态。
             value = zjcl.decode_network_payload(frame.payload)
@@ -134,6 +139,8 @@ class OutputEvidence:
             raise AssertionError(
                 "LINK_TIMEOUT alert after normal inputs stopped was not seen"
             )
+        if self.pose2d_frame_count != 0:
+            raise AssertionError("range-only mode unexpectedly emitted Pose2D")
 
     def assert_replay_telemetry(self):
         """要求回放重新产生状态和活动网络告警，防止只读日志但不重算输出。"""
@@ -141,6 +148,8 @@ class OutputEvidence:
             raise AssertionError("replay did not emit algorithm status")
         if not self.active_alert_seen:
             raise AssertionError("replay did not emit an active network alert")
+        if self.pose2d_frame_count != 0:
+            raise AssertionError("range-only replay unexpectedly emitted Pose2D")
 
 
 def write_temporary_config(source, target, input_port, output_port, log_path):

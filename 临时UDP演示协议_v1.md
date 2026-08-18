@@ -107,7 +107,7 @@ UDP 数据报最大 65507 字节，因此 UDP 情况下 payload 上限为 65467 
 | 偏移 | 类型 | 字段 | v1 约束 |
 |---:|---|---|---|
 | 0 | u32 | abi_version | `0x00010000` |
-| 4 | u32 | software_version_packed | `major<<16 \| minor<<8 \| patch`；当前 `0x00000100` |
+| 4 | u32 | software_version_packed | `major<<16 \| minor<<8 \| patch`；当前 `0x00000300` |
 | 8 | u8 | mode | `1 UWB_ONLY_PLANAR` |
 | 9 | u8 | run_state | `0 INITIALIZING, 1 RUNNING, 2 DEGRADED, 3 ERROR, 4 STOPPED` |
 | 10 | u16 | reserved | `0` |

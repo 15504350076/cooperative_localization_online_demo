@@ -43,7 +43,7 @@ struct EngineConfig {
 /**
  * 面向GCS/ROS 2输出的二维主参考相对定位快照。
  * x/y/vx/vy均为node-reference，位置协方差是二者差值的2×2协方差；
- * 当前yaw_valid和z_valid固定为false，消费者不得补零后标成有效。
+ * 内部惯性模式可携带yaw；兼容C ABI v1仍强制yaw_valid=false，真实航向由Pose2D v2查询。
  */
 struct LocalizationSnapshot {
   std::uint32_t node_id{};           ///< 本条估计所属节点编号。
@@ -51,15 +51,33 @@ struct LocalizationSnapshot {
   std::uint64_t timestamp_ns{};      ///< 该节点估计实际推进到的统一时间。
   double x{};                        ///< 节点相对主参考的x位置，单位m。
   double y{};                        ///< 节点相对主参考的y位置，单位m。
+  double yaw_rad{};                  ///< 本车前向轴在公共ENU中的航向，单位rad。
   double vx{};                       ///< 节点相对主参考的x速度，单位m/s。
   double vy{};                       ///< 节点相对主参考的y速度，单位m/s。
   double cov_xx{};                   ///< 相对位置协方差的xx分量。
   double cov_xy{};                   ///< 相对位置协方差的xy分量。
   double cov_yy{};                   ///< 相对位置协方差的yy分量。
   bool valid{};                      ///< 滤波器是否给出有效的相对估计。
-  bool yaw_valid{};                  ///< yaw字段是否可用；当前输出固定为false。
+  bool yaw_valid{};                  ///< yaw字段是否来自同历元的惯性姿态；仅测距模式固定为false。
   bool z_valid{};                    ///< 高度字段是否可用；当前输出固定为false。
   LocalizationState state{LocalizationState::kUninitialized};  ///< 结合节点有效性与网络状态的定位状态。
+};
+
+/** Pose2D v2只读查询使用的单车内部元素；位置轴与公共ENU平行。 */
+struct VehiclePose2dSnapshot {
+  std::uint32_t node_id{};
+  double x_m{};
+  double y_m{};
+  double yaw_rad{};
+  bool position_valid{};
+  bool yaw_valid{};
+};
+
+/** 不推进滤波状态的当前多车二维位姿快照。 */
+struct Pose2dSnapshot {
+  std::uint64_t timestamp_ns{};  ///< 惯性模式为全部节点共同IMU历元；仅测距模式沿用当前滤波时间。
+  std::uint32_t reference_node_id{};
+  std::vector<VehiclePose2dSnapshot> vehicles;
 };
 
 /** 当前主参考下的协同网络可达性、可观性和综合原因位图。 */
@@ -134,6 +152,8 @@ class Engine {
   /** 推进质量/超时逻辑并生成同一effective_now下的原子输出，不读取新传感器。
    * @param now_ns 调用方提供的统一输出时刻。 */
   [[nodiscard]] EngineSnapshot step(std::uint64_t now_ns);
+  /** 读取当前二维位姿，不推进预测、质量窗口或全局时间。 */
+  [[nodiscard]] Pose2dSnapshot pose2d_snapshot() const;
 
   /** 返回仅测距兼容滤波器只读引用；惯性已启用时它不会继续推进。 */
   [[nodiscard]] const RangeEkf& filter() const noexcept;

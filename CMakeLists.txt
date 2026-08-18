@@ -2,8 +2,8 @@
 # 所有目标统一使用C++17；Windows生成DLL/EXE，Ubuntu与RK3588生成.so和ELF可执行程序。
 cmake_minimum_required(VERSION 3.16)
 
-# zju_coop是本工程标识，0.1.0写入本工程版本变量，C/CXX同时支持纯C ABI冒烟和C++实现。
-project(zju_coop VERSION 0.1.0 LANGUAGES C CXX)
+# zju_coop是本工程标识，0.3.0写入本工程版本变量，C/CXX同时支持纯C ABI冒烟和C++实现。
+project(zju_coop VERSION 0.3.0 LANGUAGES C CXX)
 
 include(CTest)
 include(GNUInstallDirs)
@@ -14,6 +14,7 @@ set(ZJU_COOP_CORE_SOURCES
     src/core/cooperative_inertial_ekf.cpp
     src/core/dense_matrix.cpp
     src/core/degradation_monitor.cpp
+    src/core/distributed_fusion2d.cpp
     src/core/engine.cpp
     src/core/gnss_reference.cpp
     src/core/inertial_eskf15.cpp
@@ -199,6 +200,7 @@ if(BUILD_TESTING)
       tests/test_gnss_reference.cpp
       tests/test_ini_config.cpp
       tests/test_inertial_eskf15.cpp
+      tests/test_distributed_fusion2d.cpp
       tests/test_protocol.cpp
       tests/test_quaternion.cpp
       tests/test_range_ekf.cpp

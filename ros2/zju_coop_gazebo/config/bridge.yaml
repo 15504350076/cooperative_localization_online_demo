@@ -1,0 +1,89 @@
+- ros_topic_name: /clock
+  gz_topic_name: /clock
+  ros_type_name: rosgraph_msgs/msg/Clock
+  gz_type_name: ignition.msgs.Clock
+  direction: GZ_TO_ROS
+  subscriber_queue: 1
+  publisher_queue: 1
+  lazy: false
+
+- ros_topic_name: /simulation/gazebo/vehicle_1/pose
+  gz_topic_name: /model/vehicle_1/pose
+  ros_type_name: tf2_msgs/msg/TFMessage
+  gz_type_name: ignition.msgs.Pose_V
+  direction: GZ_TO_ROS
+  subscriber_queue: 5
+  publisher_queue: 5
+  lazy: false
+
+- ros_topic_name: /simulation/gazebo/vehicle_2/pose
+  gz_topic_name: /model/vehicle_2/pose
+  ros_type_name: tf2_msgs/msg/TFMessage
+  gz_type_name: ignition.msgs.Pose_V
+  direction: GZ_TO_ROS
+  subscriber_queue: 5
+  publisher_queue: 5
+  lazy: false
+
+- ros_topic_name: /simulation/gazebo/vehicle_3/pose
+  gz_topic_name: /model/vehicle_3/pose
+  ros_type_name: tf2_msgs/msg/TFMessage
+  gz_type_name: ignition.msgs.Pose_V
+  direction: GZ_TO_ROS
+  subscriber_queue: 5
+  publisher_queue: 5
+  lazy: false
+
+- ros_topic_name: /vehicle_1/imu/data
+  gz_topic_name: /world/zju_coop_gazebo/model/vehicle_1/link/base_link/sensor/imu_sensor/imu
+  ros_type_name: sensor_msgs/msg/Imu
+  gz_type_name: ignition.msgs.IMU
+  direction: GZ_TO_ROS
+  subscriber_queue: 5
+  publisher_queue: 5
+  lazy: false
+
+- ros_topic_name: /vehicle_2/imu/data
+  gz_topic_name: /world/zju_coop_gazebo/model/vehicle_2/link/base_link/sensor/imu_sensor/imu
+  ros_type_name: sensor_msgs/msg/Imu
+  gz_type_name: ignition.msgs.IMU
+  direction: GZ_TO_ROS
+  subscriber_queue: 5
+  publisher_queue: 5
+  lazy: false
+
+- ros_topic_name: /vehicle_3/imu/data
+  gz_topic_name: /world/zju_coop_gazebo/model/vehicle_3/link/base_link/sensor/imu_sensor/imu
+  ros_type_name: sensor_msgs/msg/Imu
+  gz_type_name: ignition.msgs.IMU
+  direction: GZ_TO_ROS
+  subscriber_queue: 5
+  publisher_queue: 5
+  lazy: false
+
+- ros_topic_name: /vehicle_1/cmd_vel
+  gz_topic_name: /model/vehicle_1/cmd_vel
+  ros_type_name: geometry_msgs/msg/Twist
+  gz_type_name: ignition.msgs.Twist
+  direction: ROS_TO_GZ
+  subscriber_queue: 1
+  publisher_queue: 1
+  lazy: false
+
+- ros_topic_name: /vehicle_2/cmd_vel
+  gz_topic_name: /model/vehicle_2/cmd_vel
+  ros_type_name: geometry_msgs/msg/Twist
+  gz_type_name: ignition.msgs.Twist
+  direction: ROS_TO_GZ
+  subscriber_queue: 1
+  publisher_queue: 1
+  lazy: false
+
+- ros_topic_name: /vehicle_3/cmd_vel
+  gz_topic_name: /model/vehicle_3/cmd_vel
+  ros_type_name: geometry_msgs/msg/Twist
+  gz_type_name: ignition.msgs.Twist
+  direction: ROS_TO_GZ
+  subscriber_queue: 1
+  publisher_queue: 1
+  lazy: false

@@ -1,0 +1,8 @@
+/**/zju_cooperative_fusion_node:
+  ros__parameters:
+    node_ids: [1, 2, 3]
+    reference_node_id: 1
+    common_enu_frame_id: common_enu
+    publish_rate_hz: 10.0
+    range_std_m: 0.1
+    node_state_timeout_ms: 300

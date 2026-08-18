@@ -190,3 +190,48 @@ TEST_CASE(cooperative_inertial_ekf_outputs_reference_relative_state_and_covarian
   EXPECT_TRUE(node_42.cov_xx > 0.0);
   EXPECT_TRUE(node_42.valid);
 }
+
+TEST_CASE(cooperative_inertial_ekf_outputs_each_vehicle_absolute_enu_yaw) {
+  // initializations：三车位置仍以节点7为相对原点，三组四元数分别表示不同ENU航向。
+  auto initializations = nodes();
+  const double quarter_pi = std::acos(-1.0) / 4.0;
+  initializations[0U].orientation_b_to_n =
+      zju::coop::Quaternion::exp({0.0, 0.0, 2.0 * quarter_pi});
+  initializations[1U].orientation_b_to_n =
+      zju::coop::Quaternion::exp({0.0, 0.0, quarter_pi});
+  initializations[2U].orientation_b_to_n =
+      zju::coop::Quaternion::exp({0.0, 0.0, -quarter_pi});
+  CooperativeInertialEkf filter(cooperative_config(), inertial_config(),
+                                initializations);
+
+  // 同一理想历元的三车首帧建立状态时间；初始配置四元数视为上交已完成的共同ENU对准结果。
+  for (const std::uint32_t node_id : filter.node_ids()) {
+    EXPECT_EQ(filter.push_imu(imu(node_id, 1U, 1'000'000'000ULL)).disposition,
+              ImuDisposition::kBaselineEstablished);
+  }
+
+  const auto reference = filter.estimate(7U);
+  const auto node_42 = filter.estimate(42U);
+  const auto node_99 = filter.estimate(99U);
+  EXPECT_EQ(reference.x, 0.0);
+  EXPECT_EQ(reference.y, 0.0);
+  EXPECT_TRUE(reference.yaw_valid);
+  EXPECT_TRUE(node_42.yaw_valid);
+  EXPECT_TRUE(node_99.yaw_valid);
+  EXPECT_TRUE(std::abs(reference.yaw_rad - quarter_pi) < 1.0e-12);
+  EXPECT_TRUE(std::abs(node_42.yaw_rad - 2.0 * quarter_pi) < 1.0e-12);
+  EXPECT_TRUE(std::abs(node_99.yaw_rad + quarter_pi) < 1.0e-12);
+  EXPECT_EQ(reference.pose_timestamp_ns, 1'000'000'000ULL);
+  EXPECT_EQ(node_42.pose_timestamp_ns, 1'000'000'000ULL);
+}
+
+TEST_CASE(cooperative_inertial_ekf_marks_pose_epoch_invalid_when_nodes_differ) {
+  CooperativeInertialEkf filter(cooperative_config(), inertial_config(),
+                                nodes());
+  (void)filter.push_imu(imu(7U, 1U, 1'000'000'000ULL));
+  (void)filter.push_imu(imu(42U, 1U, 1'010'000'000ULL));
+
+  const auto node_42 = filter.estimate(42U);
+  EXPECT_EQ(node_42.pose_timestamp_ns, 0U);
+  EXPECT_FALSE(node_42.yaw_valid);
+}

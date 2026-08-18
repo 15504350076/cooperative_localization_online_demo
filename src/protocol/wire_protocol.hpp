@@ -35,9 +35,10 @@ inline constexpr std::size_t kNetworkPayloadSize = 20U;
 inline constexpr std::size_t kObservationPayloadSize = 80U;
 inline constexpr std::size_t kAlertPayloadSize = 40U;
 inline constexpr std::size_t kAlgorithmStatusPayloadSize = 48U;
+inline constexpr std::size_t kPose2DPayloadSize = 32U;
 // kAlgorithmStatusAbiVersion/kSoftwareVersionPacked写入状态载荷供远端兼容检查；三个range状态值沿用设备质量编码。
 inline constexpr std::uint32_t kAlgorithmStatusAbiVersion = 0x00010000U;
-inline constexpr std::uint32_t kSoftwareVersionPacked = 0x00000100U;
+inline constexpr std::uint32_t kSoftwareVersionPacked = 0x00000300U;
 inline constexpr std::uint8_t kRangeStatusOk = 0U;
 inline constexpr std::uint8_t kRangeStatusDegraded = 1U;
 inline constexpr std::uint8_t kRangeStatusInvalid = 2U;
@@ -50,6 +51,7 @@ enum class MessageType : std::uint16_t {
   kObservation = 102U,
   kAlert = 103U,
   kAlgorithmStatus = 104U,
+  kPose2D = 105U,
 };
 
 enum class ProtocolError {
@@ -156,6 +158,21 @@ struct LocalizationPayload {
   bool yaw_valid{}; /* 航向是否另有有效输出，v1当前为false。 */
   bool z_valid{}; /* 高度是否另有有效输出，v1当前为false。 */
   std::uint32_t capability_mask{}; /* 声明算法可提供的Capability位图，仍须结合三个valid位。 */
+};
+
+/**
+ * 面向临时UDP/GCS的最小二维位姿快照载荷。
+ * 节点号、参考节点号和同批快照时间分别放在公共帧头的source、target、timestamp中；
+ * 本载荷只保存二维位置、ENU航向和各自有效性，保持与首版ROS 2结果消息字段一一对应。
+ */
+struct Pose2DPayload {
+  double x{};  ///< source相对target参考节点的ENU东向位置，单位m。
+  double y{};  ///< source相对target参考节点的ENU北向位置，单位m。
+  double yaw_rad{};  ///< source车体FLU的前向轴在参考ENU平面内的航向，单位rad。
+  bool position_valid{};  ///< x/y当前是否可供GCS显示和业务使用。
+  bool yaw_valid{};  ///< yaw_rad当前是否可供GCS绘制方向箭头。
+  std::uint16_t reserved{};  ///< v1扩展保留位，编码和解码均要求为0。
+  std::uint32_t capability_mask{};  ///< 算法当前可提供能力的位图，须与有效位联合判断。
 };
 
 struct NetworkPayload {
@@ -287,6 +304,13 @@ struct AlertPayload {
 [[nodiscard]] PayloadDecodeResult<LocalizationPayload>
 // bytes必须恰好为64字节定位载荷。
 decode_localization_payload(const std::vector<std::uint8_t>& bytes);
+
+[[nodiscard]] std::vector<std::uint8_t> encode_pose2d_payload(
+    // payload按三个double、两个布尔、uint16保留位和uint32能力位编码为32字节。
+    const Pose2DPayload& payload);
+[[nodiscard]] PayloadDecodeResult<Pose2DPayload> decode_pose2d_payload(
+    // bytes必须恰好为32字节，不含公共帧头。
+    const std::vector<std::uint8_t>& bytes);
 
 [[nodiscard]] std::vector<std::uint8_t> encode_network_payload(
     // payload为待编码的20字节协同图快照。

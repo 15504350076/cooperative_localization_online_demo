@@ -48,3 +48,38 @@ TEST_CASE(vec3_cross_product_follows_right_handed_flu_axes) {
   EXPECT_TRUE(std::abs(result.y) < 1.0e-15);
   EXPECT_TRUE(std::abs(result.z - 1.0) < 1.0e-15);
 }
+
+TEST_CASE(quaternion_extracts_enu_yaw_from_body_forward_axis) {
+  // yaw：函数写回的ENU航向；half_pi：绕ENU上轴正转90度，车体前向应指向北。
+  double yaw = 0.0;
+  const double half_pi = std::acos(-1.0) / 2.0;
+
+  EXPECT_TRUE(zju::coop::yaw_enu_rad(
+      Quaternion::exp({0.0, 0.0, half_pi}), yaw));
+  EXPECT_TRUE(std::abs(yaw - half_pi) < 1.0e-12);
+
+  EXPECT_TRUE(zju::coop::yaw_enu_rad(
+      Quaternion::exp({0.0, 0.0, -half_pi}), yaw));
+  EXPECT_TRUE(std::abs(yaw + half_pi) < 1.0e-12);
+}
+
+TEST_CASE(quaternion_maps_positive_pi_boundary_to_negative_pi) {
+  // pi_rotation把FLU前向+x精确转到ENU西向-x；协议采用[-pi,pi)半开区间，
+  // 因而边界必须唯一编码为-pi，不能保留atan2可能产生的+pi。
+  const double pi = std::acos(-1.0);
+  const Quaternion pi_rotation = Quaternion::exp({0.0, 0.0, pi});
+  double yaw = 0.0;
+
+  EXPECT_TRUE(zju::coop::yaw_enu_rad(pi_rotation, yaw));
+  EXPECT_TRUE(std::abs(yaw + pi) < 1.0e-12);
+  EXPECT_TRUE(yaw < pi);
+}
+
+TEST_CASE(quaternion_rejects_yaw_when_body_forward_axis_is_vertical) {
+  // pitch_up：把车体前向轴旋转到ENU竖直方向，此时水平投影为零、航向没有定义。
+  const double half_pi = std::acos(-1.0) / 2.0;
+  const Quaternion pitch_up = Quaternion::exp({0.0, -half_pi, 0.0});
+  double yaw = 123.0;
+
+  EXPECT_FALSE(zju::coop::yaw_enu_rad(pitch_up, yaw));
+}

@@ -18,7 +18,8 @@ import zjcl_protocol as protocol
 from gcs_dashboard import DashboardState, UdpReceiver, create_http_server
 
 
-def _frame(message_type, payload, source=1, target=0, sequence=7):
+def _frame(message_type, payload, source=1, target=0, sequence=7,
+           timestamp_ns=123_456_789):
     """构造固定时间帧。
 
     message_type/payload决定业务布局；source/target是节点端点；sequence是测试序号。
@@ -28,7 +29,7 @@ def _frame(message_type, payload, source=1, target=0, sequence=7):
             message_type=message_type,
             flags=0,
             sequence=sequence,
-            timestamp_ns=123_456_789,
+            timestamp_ns=timestamp_ns,
             source_node=source,
             target_node=target,
             payload=payload,
@@ -62,6 +63,25 @@ def _localization(source=1, x=1.25, y=-2.5):
             )
         ),
         source=source,
+    )
+
+
+def _pose2d(source=1, reference=1, x=1.5, y=-2.0, yaw=0.75,
+            position_valid=True, yaw_valid=True, timestamp_ns=123_456_789):
+    """构造新增105二维位姿帧；source为车辆，target为主参考节点。"""
+    capabilities = protocol.CAPABILITY_PLANAR_POSITION
+    if yaw_valid:
+        capabilities |= protocol.CAPABILITY_YAW
+    return _frame(
+        protocol.MSG_POSE2D,
+        protocol.encode_pose2d_payload(
+            protocol.Pose2DPayload(
+                x, y, yaw, position_valid, yaw_valid, 0, capabilities,
+            )
+        ),
+        source=source,
+        target=reference,
+        timestamp_ns=timestamp_ns,
     )
 
 
@@ -177,12 +197,116 @@ class DashboardStateTests(unittest.TestCase):
         self.assertIn("非视距比例高", snapshot["edges"]["1-2"]["reasons"])
         self.assertEqual(snapshot["stats"]["accepted"], 3)
 
-        # 全快照小写序列化文本，用于审计不得泄露未支持航向/高度轴。
+        # 旧Localization本身没有航向数值，面板必须明确保持航向无效。
         serialized = json.dumps(snapshot, ensure_ascii=False).lower()
-        self.assertNotIn("yaw", serialized)
+        self.assertFalse(snapshot["nodes"]["1"]["yaw_valid"])
         self.assertNotIn("z_valid", serialized)
         self.assertNotIn("altitude", serialized)
         self.assertNotIn("高度", serialized)
+
+    def test_pose2d_is_authoritative_in_both_udp_arrival_orders_and_rejects_stale_pose(self):
+        # 两个仓库分别覆盖同一快照中100先到/105先到；最终x/y/yaw必须一致。
+        for datagrams in (
+            (_localization(x=9.0, y=8.0), _pose2d()),
+            (_pose2d(), _localization(x=9.0, y=8.0)),
+        ):
+            state = DashboardState(expected_pose_nodes=1)
+            for datagram in datagrams:
+                self.assertTrue(state.ingest_datagram(datagram))
+            node = state.snapshot()["nodes"]["1"]
+            self.assertEqual(node["x"], 1.5)
+            self.assertEqual(node["y"], -2.0)
+            self.assertEqual(node["yaw_rad"], 0.75)
+            self.assertTrue(node["position_valid"])
+            self.assertTrue(node["yaw_valid"])
+            self.assertEqual(node["reference_node_id"], 1)
+            # 旧帧仍负责补充速度/协方差/状态字段。
+            self.assertEqual(node["vx"], 0.1)
+            self.assertEqual(node["state"], protocol.LOCALIZATION_NORMAL)
+
+        # 晚到的旧时间戳105帧不得回退已经展示的新位姿。
+        state = DashboardState(expected_pose_nodes=1)
+        self.assertTrue(state.ingest_datagram(
+            _pose2d(x=4.0, yaw=1.0, timestamp_ns=200)
+        ))
+        self.assertTrue(state.ingest_datagram(
+            _pose2d(x=-7.0, yaw=-1.0, timestamp_ns=100)
+        ))
+        node = state.snapshot()["nodes"]["1"]
+        self.assertEqual(node["x"], 4.0)
+        self.assertEqual(node["yaw_rad"], 1.0)
+        self.assertEqual(node["pose_timestamp_ns"], 200)
+
+    def test_invalid_pose2d_does_not_permanently_block_valid_localization_position(self):
+        # 启动/不同步阶段可能先收到timestamp=0且位置无效的105；它不能锁死后续100位置。
+        state = DashboardState(expected_pose_nodes=1)
+        self.assertTrue(state.ingest_datagram(
+            _pose2d(
+                x=0.0,
+                y=0.0,
+                yaw=0.0,
+                position_valid=False,
+                yaw_valid=False,
+                timestamp_ns=0,
+            )
+        ))
+        self.assertTrue(state.ingest_datagram(
+            _localization(source=1, x=6.0, y=-4.0)
+        ))
+        node = state.snapshot()["nodes"]["1"]
+        self.assertEqual(node["x"], 6.0)
+        self.assertEqual(node["y"], -4.0)
+        self.assertTrue(node["position_valid"])
+        self.assertFalse(node["yaw_valid"])
+        self.assertFalse(node["pose_position_authoritative"])
+
+    def test_three_vehicle_pose2d_is_committed_as_one_timestamp_reference_batch(self):
+        state = DashboardState(expected_pose_nodes=3)
+        # 旧100先提供三车位置，方便证明105收齐前不会部分替换其中一两辆车。
+        for node_id in (1, 2, 3):
+            self.assertTrue(state.ingest_datagram(
+                _localization(source=node_id, x=9.0 + node_id, y=8.0)
+            ))
+
+        self.assertTrue(state.ingest_datagram(
+            _pose2d(source=1, x=0.0, y=0.0, yaw=0.0, timestamp_ns=500)
+        ))
+        self.assertTrue(state.ingest_datagram(
+            _pose2d(source=2, x=3.0, y=0.0, yaw=0.5, timestamp_ns=500)
+        ))
+        partial = state.snapshot()["nodes"]
+        self.assertEqual(partial["1"]["x"], 10.0)
+        self.assertEqual(partial["2"]["x"], 11.0)
+
+        # 不同参考节点的第三帧属于另一个批次，仍不能触发混批提交。
+        self.assertTrue(state.ingest_datagram(
+            _pose2d(
+                source=3,
+                reference=2,
+                x=0.0,
+                y=4.0,
+                yaw=-0.5,
+                timestamp_ns=500,
+            )
+        ))
+        self.assertEqual(state.snapshot()["nodes"]["1"]["x"], 10.0)
+
+        # 同一(timestamp,reference)的节点3到达后，三辆车在一次锁内提交。
+        self.assertTrue(state.ingest_datagram(
+            _pose2d(source=3, x=0.0, y=4.0, yaw=-0.5, timestamp_ns=500)
+        ))
+        committed = state.snapshot()["nodes"]
+        self.assertEqual(committed["1"]["x"], 0.0)
+        self.assertEqual(committed["2"]["x"], 3.0)
+        self.assertEqual(committed["3"]["y"], 4.0)
+        self.assertEqual(
+            {node["pose_timestamp_ns"] for node in committed.values()},
+            {500},
+        )
+        self.assertEqual(
+            {node["reference_node_id"] for node in committed.values()},
+            {1},
+        )
 
     def test_ignored_and_malformed_datagrams_are_counted_without_state_damage(self):
         # 同时接收不关心类型和畸形字节的空状态仓库。
@@ -218,12 +342,13 @@ class DashboardStateTests(unittest.TestCase):
         snapshot = state.snapshot()
         # 算法状态子对象，验证压缩版本和累计计数没有丢失。
         status = snapshot["algorithm_status"]
-        self.assertEqual(status["software_version"], "0.1.0")
+        self.assertEqual(status["software_version"], "0.3.0")
         self.assertEqual(status["accepted_ranges"], 120)
         self.assertEqual(status["rejected_ranges"], 4)
         self.assertEqual(status["protocol_errors"], 3)
         self.assertEqual(status["uptime_ns"], 5_000_000_000)
         self.assertEqual(status["run_state"], protocol.ALGORITHM_RUN_DEGRADED)
+        self.assertEqual(status["mode_text"], "仅测距平面")
         # 告警子对象，验证生命周期、原因位与可读文本。
         alert = snapshot["alert"]
         self.assertEqual(alert["alert_code"], protocol.ALERT_CODE_NETWORK_STATE)
@@ -334,8 +459,16 @@ class DashboardTransportTests(unittest.TestCase):
             self.assertIn("alert", page)
             self.assertNotIn("https://", page.lower())
             self.assertNotIn("http://", page.lower())
-            # forbidden逐项覆盖超出二维UWB能力边界的中英文UI标识。
-            for forbidden in ("yaw", "航向", "高度", "altitude", "z_valid"):
+            self.assertIn("yaw_valid", page)
+            self.assertIn("yaw_rad", page)
+            self.assertIn("航向", page)
+            self.assertIn("Math.cos(node.yaw_rad)", page)
+            self.assertIn('id="reference-node"', page)
+            self.assertIn('id="pose-time"', page)
+            self.assertIn('id="pose-frame"', page)
+            self.assertIn("filter(node => node.position_valid)", page)
+            # 高度仍不属于当前二维展示范围。
+            for forbidden in ("高度", "altitude", "z_valid"):
                 self.assertNotIn(forbidden, page.lower())
         finally:
             server.shutdown()

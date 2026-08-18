@@ -40,6 +40,7 @@ constexpr std::size_t kMaximumNodes = 64U;
 constexpr std::size_t kMaximumEdges = 2016U;
 constexpr std::size_t kMaximumStateDimension = 252U;
 constexpr std::size_t kMaximumTrackedEdges = 1'000'000U;
+constexpr double kPi = 3.141592653589793238462643383279502884;
 
 struct Entry {
   std::string value;  // 去除键名与等号两侧ASCII空白后的原始值文本。
@@ -209,7 +210,7 @@ bool parse_node_section(const std::string& name, std::uint32_t& node_id) {
 bool allowed_key(const Section& section, const std::string& key) {
   if (section.node) {
     return one_of(key, {"x", "y", "vx", "vy", "position_std_m",
-                        "velocity_std_mps"});
+                        "velocity_std_mps", "initial_yaw_rad"});
   }
   if (section.name == "engine") {
     return one_of(key, {"edge_timeout_ns", "max_future_skew_ns",
@@ -659,6 +660,8 @@ DemoConfig parse_ini_config(const std::string& text) {
   // config为逐字段构造并最终返回的强类型值；node_entry_lines保留节点组合校验的原始行号。
   DemoConfig config{};
   std::unordered_map<std::uint32_t, NodeEntryLines> node_entry_lines;
+  // initial_yaw_by_node保存可选节点ENU航向；缺省为0，只用于构造惯性初始四元数。
+  std::unordered_map<std::uint32_t, double> initial_yaw_by_node;
   // edge_timeout_ns决定多久没有新测距后把协同边从活动拓扑中移除。
   config.engine.edge_timeout_ns = unsigned_value(
       require_entry(engine_section, "edge_timeout_ns"), 1U,
@@ -829,6 +832,17 @@ DemoConfig parse_ini_config(const std::string& text) {
         position_std_entry, "node position standard deviation");
     node.velocity_std_mps = positive_value(
         velocity_std_entry, "node velocity standard deviation");
+    // initial_yaw_rad允许每车提供不同初始朝向；采用[-pi,pi)唯一规范范围。
+    double initial_yaw_rad = 0.0;
+    const auto yaw_entry = section.entries.find("initial_yaw_rad");
+    if (yaw_entry != section.entries.end()) {
+      initial_yaw_rad = finite_value(yaw_entry->second, "node initial yaw");
+      if (initial_yaw_rad < -kPi || initial_yaw_rad >= kPi) {
+        fail(IniError::kInvalidValue, yaw_entry->second.line,
+             "node initial yaw must be in [-pi, pi)");
+      }
+    }
+    initial_yaw_by_node.emplace(node.node_id, initial_yaw_rad);
     node_entry_lines.emplace(
         node.node_id,
         NodeEntryLines{x_entry.line, y_entry.line, vx_entry.line,
@@ -943,6 +957,11 @@ DemoConfig parse_ini_config(const std::string& text) {
         node.node_id = source.node_id;  // 保持二维滤波与15维惯性滤波使用同一节点主键。
         node.position_n_m = {source.x, source.y, initial_z};  // 把二维x/y和公共z扩展为ENU三维位置。
         node.velocity_n_mps = {source.vx, source.vy, initial_vz};  // 把二维速度和公共vz扩展为ENU三维速度。
+        // 纯yaw的主动旋转q_b_to_n把FLU前向+x映射到ENU中的[cos(yaw),sin(yaw),0]。
+        const double initial_yaw_rad = initial_yaw_by_node.at(source.node_id);
+        const double half_yaw_rad = 0.5 * initial_yaw_rad;
+        node.orientation_b_to_n = {std::cos(half_yaw_rad), 0.0, 0.0,
+                                   std::sin(half_yaw_rad)};
         node.position_std_m = {source.position_std_m, source.position_std_m,
                                source.position_std_m};
         node.velocity_std_mps = {source.velocity_std_mps,

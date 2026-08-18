@@ -18,6 +18,9 @@ CMakeUserPresets.json
 
 # 运行数据和缓存
 logs/
+log/
+bags/
+stage/
 *.zjlg
 __pycache__/
 *.py[cod]

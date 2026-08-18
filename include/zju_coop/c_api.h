@@ -1,5 +1,5 @@
 /*
- * 模块职责：声明浙大协同定位算法库的稳定C ABI，是上海交大ROS 2适配层唯一必须依赖的接口。
+ * 模块职责：声明浙大协同定位算法库的稳定C ABI，是ROS 2适配层唯一必须依赖的算法接口。
  * 设计边界：ROS消息、通信路由和车辆控制不得进入本头文件；Windows DLL与RK3588 .so
  * 通过相同结构布局和版本检查调用。所有时间为统一时间轴纳秒，物理量采用SI单位。
  *
@@ -30,6 +30,7 @@ extern "C" {
 #endif
 
 #define ZJU_COOP_ABI_VERSION_V1 UINT32_C(0x00010000)
+#define ZJU_COOP_POSE2D_ABI_VERSION_V2 UINT32_C(0x00020000)
 
 /* ABI级错误只描述调用是否成功；量测是否被融合由各processing result另行返回。 */
 typedef int32_t zju_coop_error_code_t;
@@ -104,7 +105,7 @@ typedef int32_t zju_coop_update_disposition_t;
 #define ZJU_COOP_UPDATE_NIS_REJECTED ((zju_coop_update_disposition_t)6)
 #define ZJU_COOP_UPDATE_NUMERICAL_FAILURE ((zju_coop_update_disposition_t)7)
 
-/* IMU处理结果；数值固定，供上海交大ROS 2适配层稳定映射。 */
+/* IMU处理结果；数值固定，供调用方ROS 2适配层稳定映射。 */
 typedef int32_t zju_coop_imu_disposition_t;
 #define ZJU_COOP_IMU_BASELINE_ESTABLISHED ((zju_coop_imu_disposition_t)0)
 #define ZJU_COOP_IMU_PROPAGATED ((zju_coop_imu_disposition_t)1)
@@ -137,7 +138,7 @@ typedef int32_t zju_coop_raw_input_disposition_t;
 
 /*
  * 与sensor_msgs/msg/PointField.datatype数值一致的数据类型。
- * 保持相同数值可让上海交大ROS 2适配层直接映射，但算法库头文件本身不依赖ROS 2。
+ * 保持相同数值可让调用方ROS 2适配层直接映射，但算法库头文件本身不依赖ROS 2。
  */
 typedef uint8_t zju_coop_point_field_datatype_t;
 #define ZJU_COOP_POINT_FIELD_INT8 ((zju_coop_point_field_datatype_t)1)
@@ -195,6 +196,8 @@ typedef uint32_t zju_coop_reason_mask_t;
 
 /* 不透明会话句柄隐藏C++对象布局，调用方只能通过本文件声明的函数访问。 */
 typedef struct zju_coop_handle zju_coop_handle_t;
+/* 低带宽二维协同修正使用独立句柄，不改变既有集中式Engine会话。 */
+typedef struct zju_coop_distributed_handle zju_coop_distributed_handle_t;
 /* GNSS上下文只做初始化与真值，不持有或调用主协同定位Engine。 */
 typedef struct zju_coop_gnss_context zju_coop_gnss_context_t;
 
@@ -352,6 +355,26 @@ typedef struct zju_coop_imu_packet {
   uint8_t status;        /* 设备侧OK/DEGRADED/INVALID质量码。 */
   uint8_t reserved1[5];  /* v1尾部保留字节，调用方必须全部置零。 */
 } zju_coop_imu_packet_t;
+
+/*
+ * 各车本地惯导向低带宽协同层提供的最小状态。完整零偏和15x15协方差只在
+ * 本机滤波器中维护，不属于该跨车状态。orientation为FLU到共同ENU的xyzw四元数。
+ * get_node_state生成状态时receive_timestamp_ns为0；接收端在调用
+ * distributed_push_node_state前写入本机收到该状态的统一时刻。
+ */
+typedef struct zju_coop_node_state {
+  uint32_t struct_size; /* 调用方分配的结构字节数。 */
+  uint32_t abi_version; /* 必须为ZJU_COOP_ABI_VERSION_V1。 */
+  uint32_t node_id; /* 状态所属车辆编号。 */
+  uint32_t reserved0; /* v1保留占位，必须为0。 */
+  uint64_t timestamp_ns; /* 本地惯导状态对应的统一测量时刻，单位ns。 */
+  uint64_t receive_timestamp_ns; /* 参考车接收该状态的统一时刻，单位ns；生产端置0。 */
+  double position_enu_m[3]; /* 共同ENU中的[east,north,up]位置，单位m。 */
+  double velocity_enu_mps[3]; /* 共同ENU中的三轴速度，单位m/s。 */
+  double orientation_flu_to_enu_xyzw[4]; /* FLU到共同ENU的[x,y,z,w]单位四元数。 */
+  zju_coop_bool_t valid; /* true表示时间、位置、速度和姿态可供协同层使用。 */
+  uint8_t reserved1[7]; /* v1尾部保留字节，必须全部为0。 */
+} zju_coop_node_state_t;
 
 /*
  * PointCloud2中单个字段的普通C描述。
@@ -613,8 +636,41 @@ typedef struct zju_coop_observation {
   double covariance_scale; /* 当前融合动作施加到测距方差的无量纲倍率。 */
 } zju_coop_observation_t;
 
-/* 版本查询不需要创建handle，可用于上海交大ROS 2 wrapper启动时的兼容性检查。 */
+/*
+ * Pose2D v2单车元素：x/y是node-reference且坐标轴与公共ENU平行，单位m；
+ * yaw_rad是本车FLU前向+x相对ENU东向+x的逆时针航向，单位rad、范围[-pi,pi)。
+ * 数值字段始终保持有限；调用方必须分别检查position_valid和yaw_valid后再使用。
+ */
+typedef struct zju_coop_vehicle_pose2d_v2 {
+  uint32_t struct_size; /* 调用方分配的元素字节数，写回时保留原值。 */
+  uint32_t abi_version; /* 必须为ZJU_COOP_POSE2D_ABI_VERSION_V2。 */
+  uint32_t node_id; /* 本元素所属车辆编号。 */
+  uint32_t reserved0; /* 必须为0。 */
+  double x_m; /* node-reference的ENU东向相对位置，单位m。 */
+  double y_m; /* node-reference的ENU北向相对位置，单位m。 */
+  double yaw_rad; /* 本车自身ENU航向，单位rad，规范范围[-pi,pi)。 */
+  zju_coop_bool_t position_valid; /* true时x_m/y_m可以使用。 */
+  zju_coop_bool_t yaw_valid; /* true时yaw_rad可以使用。 */
+  uint8_t reserved[6]; /* 必须全0。 */
+} zju_coop_vehicle_pose2d_v2_t;
+
+/*
+ * Pose2D v2数组公共头；timestamp_ns是全部车辆共同IMU测量历元，单位ns；
+ * 无法形成共同非零历元时timestamp_ns=0且本批车辆有效位均为false。
+ * frame_id格式为coop_ref_<reference_node_id>_enu。
+ */
+typedef struct zju_coop_pose2d_snapshot_v2 {
+  uint32_t struct_size; /* 调用方分配的快照头字节数，写回时保留原值。 */
+  uint32_t abi_version; /* 必须为ZJU_COOP_POSE2D_ABI_VERSION_V2。 */
+  uint64_t timestamp_ns; /* 同批全部车辆共同测量历元，单位ns；0表示无共同历元。 */
+  uint32_t reference_node_id; /* 动态坐标原点所在车辆编号。 */
+  uint32_t reserved0; /* 必须为0。 */
+  char frame_id[32]; /* NUL结尾的coop_ref_<reference_node_id>_enu。 */
+} zju_coop_pose2d_snapshot_v2_t;
+
+/* 版本查询不需要创建handle，可用于浙大ROS 2适配节点启动时的兼容性检查。 */
 ZJU_COOP_API uint32_t ZJU_COOP_CALL zju_coop_abi_version(void);
+ZJU_COOP_API uint32_t ZJU_COOP_CALL zju_coop_pose2d_abi_version(void);
 ZJU_COOP_API const char* ZJU_COOP_CALL zju_coop_version_string(void);
 ZJU_COOP_API const char* ZJU_COOP_CALL
 /* code为待转换的稳定C ABI错误码；返回静态只读英文字符串，调用方不得释放。 */
@@ -644,6 +700,10 @@ ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 /* value为调用方数组中的一个可写边质量元素，初始化后才能交给step。 */
 zju_coop_observation_init(zju_coop_observation_t* value);
 ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_vehicle_pose2d_v2_init(zju_coop_vehicle_pose2d_v2_t* value);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_pose2d_snapshot_v2_init(zju_coop_pose2d_snapshot_v2_t* value);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 zju_coop_inertial_node_initialization_init(
     /* value为调用方可写惯性节点初值，成功时写单位四元数与各状态块默认1σ。 */
     zju_coop_inertial_node_initialization_t* value);
@@ -656,6 +716,9 @@ zju_coop_imu_packet_init(zju_coop_imu_packet_t* value);
 ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 /* value为调用方可写IMU诊断结构，初始化后才能传入push_imu。 */
 zju_coop_imu_processing_result_init(zju_coop_imu_processing_result_t* value);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+/* value为本地惯导状态缓冲；成功时写v1头、单位四元数并清零其余字段。 */
+zju_coop_node_state_init(zju_coop_node_state_t* value);
 ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 /* value为可写PointField描述，成功时建立v1头部，业务字段仍需调用方填写。 */
 zju_coop_point_field_init(zju_coop_point_field_t* value);
@@ -695,6 +758,16 @@ ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 zju_coop_destroy(zju_coop_handle_t* handle);
 
 /*
+ * 创建独立的低带宽二维协同修正会话。config沿用既有固定节点、参考节点、
+ * NIS、过程噪声和时间门限。
+ */
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_distributed_create(const zju_coop_config_t* config,
+                            zju_coop_distributed_handle_t** out_handle);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_distributed_destroy(zju_coop_distributed_handle_t* handle);
+
+/*
  * GNSS上下文生命周期与主算法句柄完全独立。初始化输出可直接作为既有create/configure
  * 的nodes数组；RTK真值查询不会读取或修改主算法状态。
  */
@@ -731,11 +804,27 @@ ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 zju_coop_push_imu(zju_coop_handle_t* handle,
                   const zju_coop_imu_packet_t* packet,
                   zju_coop_imu_processing_result_t* result);
+/*
+ * 从已配置惯性的既有句柄只读导出绝对ENU状态。该查询不推进滤波，生产端
+ * receive_timestamp_ns固定为0。
+ */
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_get_node_state(zju_coop_handle_t* handle, uint32_t node_id,
+                        zju_coop_node_state_t* state);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_distributed_push_node_state(
+    zju_coop_distributed_handle_t* handle,
+    const zju_coop_node_state_t* state);
 ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 /* handle为算法会话，packet为只读测距输入，result为已初始化且成功时整体写回的调用方缓冲。 */
 zju_coop_push_range(zju_coop_handle_t* handle,
                     const zju_coop_range_packet_t* packet,
                     zju_coop_range_processing_result_t* result);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_distributed_push_range(
+    zju_coop_distributed_handle_t* handle,
+    const zju_coop_range_packet_t* packet,
+    zju_coop_range_processing_result_t* result);
 
 /*
  * 原始点云/图像预留入口：仅验证ROS 2映射字段与缓冲区布局。
@@ -775,6 +864,25 @@ zju_coop_step(zju_coop_handle_t* handle, uint64_t now_ns,
               uint32_t observation_stride,
               uint32_t* observation_count,
               zju_coop_network_t* network);
+
+/*
+ * 只读查询当前Pose2D，不执行step、不推进滤波或质量时间。先用NULL/0/0查询车辆数；
+ * snapshot及每个vehicle都必须先调用对应v2 init，数组stride为字节步长。
+ */
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_get_pose2d_v2(zju_coop_handle_t* handle,
+                       zju_coop_pose2d_snapshot_v2_t* snapshot,
+                       zju_coop_vehicle_pose2d_v2_t* vehicles,
+                       uint32_t vehicle_capacity, uint32_t vehicle_stride,
+                       uint32_t* vehicle_count);
+
+/* 分布式会话的只读Pose2D v2查询；now_ns只用于节点新鲜度判断。 */
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_distributed_get_pose2d_v2(
+    zju_coop_distributed_handle_t* handle, uint64_t now_ns,
+    zju_coop_pose2d_snapshot_v2_t* snapshot,
+    zju_coop_vehicle_pose2d_v2_t* vehicles, uint32_t vehicle_capacity,
+    uint32_t vehicle_stride, uint32_t* vehicle_count);
 
 #ifdef __cplusplus
 }

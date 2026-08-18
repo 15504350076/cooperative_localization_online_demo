@@ -25,6 +25,7 @@ namespace {
 // kMagic为ZJCL线序签名；kCrcOffset为40字节头内CRC字段起始偏移。
 constexpr std::array<std::uint8_t, 4U> kMagic{'Z', 'J', 'C', 'L'};
 constexpr std::size_t kCrcOffset = 36U;
+constexpr double kPi = 3.141592653589793238462643383279502884;
 
 static_assert(sizeof(float) == sizeof(std::uint32_t),
               "wire protocol requires 32-bit float");
@@ -407,6 +408,8 @@ std::size_t fixed_payload_size(MessageType type) {
       return kAlertPayloadSize;
     case MessageType::kAlgorithmStatus:
       return kAlgorithmStatusPayloadSize;
+    case MessageType::kPose2D:
+      return kPose2DPayloadSize;
   }
   return 0U;
 }
@@ -443,6 +446,29 @@ void require_localization_values(const LocalizationPayload& payload) {
   if (!valid_localization_covariance(payload)) {
     throw std::invalid_argument(
         "localization payload covariance is not positive semidefinite");
+  }
+}
+
+// payload为编码前二维位姿载荷；三个物理量须有限，保留位须维持零值。
+void require_pose2d_values(const Pose2DPayload& payload) {
+  if (!finite(payload.x) || !finite(payload.y) ||
+      !finite(payload.yaw_rad)) {
+    throw std::invalid_argument("pose2d payload contains non-finite data");
+  }
+  if (payload.yaw_rad < -kPi || payload.yaw_rad >= kPi) {
+    throw std::invalid_argument("pose2d yaw must be in [-pi, pi)");
+  }
+  if (payload.reserved != 0U) {
+    throw std::invalid_argument("pose2d reserved field must be zero");
+  }
+  const auto planar_bit =
+      static_cast<std::uint32_t>(Capability::kPlanarPosition);
+  const auto yaw_bit = static_cast<std::uint32_t>(Capability::kYaw);
+  if ((payload.position_valid &&
+       (payload.capability_mask & planar_bit) == 0U) ||
+      (payload.yaw_valid && (payload.capability_mask & yaw_bit) == 0U)) {
+    throw std::invalid_argument(
+        "pose2d valid field is missing its capability bit");
   }
 }
 
@@ -515,6 +541,7 @@ bool is_known_message_type(MessageType type) noexcept {
     case MessageType::kObservation:
     case MessageType::kAlert:
     case MessageType::kAlgorithmStatus:
+    case MessageType::kPose2D:
       return true;
   }
   return false;
@@ -858,6 +885,72 @@ PayloadDecodeResult<LocalizationPayload> decode_localization_payload(
   }
   result.value.capability_mask = read_u32(bytes, 60U);  // 恢复最后4字节能力位图。
   return result;  // 成功结果包含经过有限性和半正定检查的定位数据。
+}
+
+std::vector<std::uint8_t> encode_pose2d_payload(
+    const Pose2DPayload& payload) {
+  // 先检查有限性和保留位，再按冻结的小端偏移构造恰好32字节载荷。
+  require_pose2d_values(payload);
+  std::vector<std::uint8_t> output;
+  output.reserve(kPose2DPayloadSize);
+  append_double(output, payload.x);  // 偏移0：ENU东向相对位置，单位m。
+  append_double(output, payload.y);  // 偏移8：ENU北向相对位置，单位m。
+  append_double(output, payload.yaw_rad);  // 偏移16：ENU平面航向，单位rad。
+  output.push_back(payload.position_valid ? 1U : 0U);  // 偏移24：二维位置有效位。
+  output.push_back(payload.yaw_valid ? 1U : 0U);  // 偏移25：航向有效位。
+  append_u16(output, payload.reserved);  // 偏移26：必须为零的16位扩展保留槽。
+  append_u32(output, payload.capability_mask);  // 偏移28：能力位图。
+  return output;
+}
+
+PayloadDecodeResult<Pose2DPayload> decode_pose2d_payload(
+    const std::vector<std::uint8_t>& bytes) {
+  if (bytes.size() != kPose2DPayloadSize) {
+    return payload_failure<Pose2DPayload>(
+        ProtocolError::kInvalidPayloadSize,
+        "pose2d payload must be exactly 32 bytes");
+  }
+  // 固定偏移恢复三个double；任何NaN/Inf都在进入展示层前拒绝。
+  PayloadDecodeResult<Pose2DPayload> result{};
+  result.value.x = read_double(bytes, 0U);
+  result.value.y = read_double(bytes, 8U);
+  result.value.yaw_rad = read_double(bytes, 16U);
+  if (!finite(result.value.x) || !finite(result.value.y) ||
+      !finite(result.value.yaw_rad)) {
+    return payload_failure<Pose2DPayload>(
+        ProtocolError::kNonFiniteValue,
+        "pose2d payload contains non-finite data");
+  }
+  if (result.value.yaw_rad < -kPi || result.value.yaw_rad >= kPi) {
+    return payload_failure<Pose2DPayload>(
+        ProtocolError::kInvalidValue,
+        "pose2d yaw must be in [-pi, pi)");
+  }
+  if (!decode_boolean(bytes[24U], result.value.position_valid) ||
+      !decode_boolean(bytes[25U], result.value.yaw_valid)) {
+    return payload_failure<Pose2DPayload>(
+        ProtocolError::kInvalidBoolean,
+        "pose2d payload boolean must be zero or one");
+  }
+  result.value.reserved = read_u16(bytes, 26U);
+  if (result.value.reserved != 0U) {
+    return payload_failure<Pose2DPayload>(
+        ProtocolError::kInvalidReserved,
+        "pose2d payload reserved field must be zero");
+  }
+  result.value.capability_mask = read_u32(bytes, 28U);
+  const auto planar_bit =
+      static_cast<std::uint32_t>(Capability::kPlanarPosition);
+  const auto yaw_bit = static_cast<std::uint32_t>(Capability::kYaw);
+  if ((result.value.position_valid &&
+       (result.value.capability_mask & planar_bit) == 0U) ||
+      (result.value.yaw_valid &&
+       (result.value.capability_mask & yaw_bit) == 0U)) {
+    return payload_failure<Pose2DPayload>(
+        ProtocolError::kInvalidValue,
+        "pose2d valid field is missing its capability bit");
+  }
+  return result;
 }
 
 std::vector<std::uint8_t> encode_network_payload(

@@ -28,6 +28,7 @@ MSG_NETWORK = 101
 MSG_OBSERVATION = 102
 MSG_ALERT = 103
 MSG_ALGORITHM_STATUS = 104
+MSG_POSE2D = 105
 
 # 测距/IMU共用的质量状态枚举，数值必须与C++ v1 ABI保持一致。
 RANGE_STATUS_OK = 0
@@ -58,7 +59,7 @@ FUSION_TRIAL_RECOVERY = 4
 
 # 算法状态载荷的ABI/软件版本以及运行模式、生命周期枚举。
 ALGORITHM_STATUS_ABI_VERSION = 0x00010000
-SOFTWARE_VERSION_PACKED = 0x00000100
+SOFTWARE_VERSION_PACKED = 0x00000300
 ALGORITHM_MODE_UWB_ONLY_PLANAR = 1
 ALGORITHM_MODE_IMU_UWB_15_STATE = 2
 ALGORITHM_RUN_INITIALIZING = 0
@@ -81,6 +82,7 @@ ALERT_SOURCE_ALGORITHM = 0
 CAPABILITY_UWB_RANGE = 1 << 0
 CAPABILITY_PLANAR_POSITION = 1 << 1
 CAPABILITY_VELOCITY = 1 << 2
+CAPABILITY_YAW = 1 << 3
 
 # 解码白名单以及每类v1消息在线缆上的精确载荷字节数。
 _KNOWN_TYPES = {
@@ -91,6 +93,7 @@ _KNOWN_TYPES = {
     MSG_OBSERVATION,
     MSG_ALERT,
     MSG_ALGORITHM_STATUS,
+    MSG_POSE2D,
 }
 _FIXED_PAYLOAD_SIZES = {
     MSG_RANGE: 24,
@@ -100,6 +103,7 @@ _FIXED_PAYLOAD_SIZES = {
     MSG_OBSERVATION: 80,
     MSG_ALERT: 40,
     MSG_ALGORITHM_STATUS: 48,
+    MSG_POSE2D: 32,
 }
 # 11槽依次为magic、major、minor、message_type、header_size、flags、
 # payload_size、sequence、timestamp_ns、source_node、target_node。
@@ -113,6 +117,7 @@ _NETWORK = struct.Struct("<IIIBBBBI")
 _OBSERVATION = struct.Struct("<QQIIIIIIddddBBBBI")
 _ALERT = struct.Struct("<IBBBBIHHHHQQI")
 _ALGORITHM_STATUS = struct.Struct("<IIBBHIQQQQ")
+_POSE2D = struct.Struct("<dddBBHI")
 
 
 class ProtocolError(ValueError):
@@ -195,6 +200,21 @@ class LocalizationPayload:
     yaw_valid: bool
     z_valid: bool
     # CAPABILITY_*位图，声明该实现实际输出的观测能力。
+    capability_mask: int
+
+
+@dataclass(frozen=True)
+class Pose2DPayload:
+    """节点相对主参考的最小二维位姿；节点、参考节点和快照时间位于公共帧头。"""
+    # ENU东/北位置（m）和FLU车体前向轴在ENU平面的航向（rad，范围[-pi,pi)）。
+    x: float
+    y: float
+    yaw_rad: float
+    # 位置与航向可分别失效；GCS只有在yaw_valid为真时绘制方向箭头。
+    position_valid: bool
+    yaw_valid: bool
+    # v1固定为零的16位保留槽以及与有效位联合使用的能力位图。
+    reserved: int
     capability_mask: int
 
 
@@ -633,6 +653,55 @@ def decode_localization_payload(data):
         _decoded_boolean("z_valid", values[10]), values[11],
     )
     encode_localization_payload(result)
+    return result
+
+
+def encode_pose2d_payload(value):
+    """编码32字节二维位姿；yaw采用规范半开区间[-pi,pi)，保留位固定为零。"""
+    if not isinstance(value, Pose2DPayload):
+        raise ProtocolError("pose2d value has wrong type")
+    # 三个浮点字段先做有限性检查；半开区间使+pi唯一归一化为-pi。
+    x = _finite("x", value.x)
+    y = _finite("y", value.y)
+    yaw_rad = _finite("yaw_rad", value.yaw_rad)
+    if yaw_rad < -math.pi or yaw_rad >= math.pi:
+        raise ProtocolError("pose2d yaw must be in [-pi, pi)")
+    reserved = _uint("reserved", value.reserved, 16)
+    if reserved != 0:
+        raise ProtocolError("pose2d reserved field must be zero")
+    capability_mask = _uint("capability_mask", value.capability_mask, 32)
+    if value.position_valid and not (
+            capability_mask & CAPABILITY_PLANAR_POSITION):
+        raise ProtocolError("position_valid requires planar capability")
+    if value.yaw_valid and not (capability_mask & CAPABILITY_YAW):
+        raise ProtocolError("yaw_valid requires yaw capability")
+    return _POSE2D.pack(
+        x,
+        y,
+        yaw_rad,
+        _boolean("position_valid", value.position_valid),
+        _boolean("yaw_valid", value.yaw_valid),
+        reserved,
+        capability_mask,
+    )
+
+
+def decode_pose2d_payload(data):
+    """解码32字节二维位姿，并复用编码器复验布尔、保留位、有限值和yaw范围。"""
+    encoded = _bytes(data)
+    if len(encoded) != _POSE2D.size:
+        raise ProtocolError("pose2d payload must be 32 bytes")
+    values = _POSE2D.unpack(encoded)
+    result = Pose2DPayload(
+        values[0],
+        values[1],
+        values[2],
+        _decoded_boolean("position_valid", values[3]),
+        _decoded_boolean("yaw_valid", values[4]),
+        values[5],
+        values[6],
+    )
+    encode_pose2d_payload(result)
     return result
 
 

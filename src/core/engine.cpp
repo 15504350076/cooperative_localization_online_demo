@@ -412,18 +412,58 @@ EngineSnapshot Engine::step(std::uint64_t now_ns) {
     localization.timestamp_ns = estimate.timestamp_ns;
     localization.x = estimate.x;
     localization.y = estimate.y;
+    localization.yaw_rad = estimate.yaw_rad;
     localization.vx = estimate.vx;
     localization.vy = estimate.vy;
     localization.cov_xx = estimate.cov_xx;
     localization.cov_xy = estimate.cov_xy;
     localization.cov_yy = estimate.cov_yy;
     localization.valid = estimate.valid;
-    localization.yaw_valid = false;
+    localization.yaw_valid = inertial_filter_ && estimate.yaw_valid;
     localization.z_valid = false;
     // 节点估计有效时继承同批网络状态，否则明确标记未初始化。
     localization.state = estimate.valid ? snapshot.network.state
                                         : LocalizationState::kUninitialized;
     snapshot.localizations.push_back(localization);
+  }
+  return snapshot;
+}
+
+Pose2dSnapshot Engine::pose2d_snapshot() const {
+  Pose2dSnapshot snapshot{};
+  snapshot.reference_node_id = config_.filter.reference_node_id;
+  const std::vector<NodeEstimate> estimates =
+      inertial_filter_ ? inertial_filter_->estimates() : filter_.estimates();
+  snapshot.vehicles.reserve(estimates.size());
+
+  bool common_inertial_epoch = inertial_filter_.has_value() &&
+                               !estimates.empty();
+  std::uint64_t common_timestamp = 0U;
+  if (common_inertial_epoch) {
+    common_timestamp = estimates.front().pose_timestamp_ns;
+    common_inertial_epoch = common_timestamp != 0U;
+    for (const auto& estimate : estimates) {
+      common_inertial_epoch = common_inertial_epoch &&
+                              estimate.pose_timestamp_ns == common_timestamp;
+    }
+  }
+  if (inertial_filter_) {
+    snapshot.timestamp_ns = common_inertial_epoch ? common_timestamp : 0U;
+  } else if (!estimates.empty()) {
+    snapshot.timestamp_ns = estimates.front().timestamp_ns;
+  }
+
+  for (const auto& estimate : estimates) {
+    VehiclePose2dSnapshot vehicle{};
+    vehicle.node_id = estimate.node_id;
+    vehicle.x_m = estimate.x;
+    vehicle.y_m = estimate.y;
+    vehicle.yaw_rad = estimate.yaw_rad;
+    vehicle.position_valid = estimate.valid &&
+                             (!inertial_filter_ || common_inertial_epoch);
+    vehicle.yaw_valid = inertial_filter_ && common_inertial_epoch &&
+                        estimate.yaw_valid;
+    snapshot.vehicles.push_back(vehicle);
   }
   return snapshot;
 }

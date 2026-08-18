@@ -7,6 +7,7 @@
 
 import argparse
 import configparser
+import math
 import os
 from pathlib import Path
 import re
@@ -101,6 +102,8 @@ def run(args):
         simulator = imu_uwb_simulator.ImuUwbSimulator()
         modes = set()
         localization_nodes = set()
+        # 按公共时间戳保存完整Pose2D批次，防止从三个不同输出周期拼出“伪三车快照”。
+        pose2d_by_timestamp = {}
         # receiver由本在线阶段独占并绑定output_port，负责收集GCS输出；
         # sender同一作用域独占无绑定UDP套接字，向input_port发送IMU/UWB输入。
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as receiver, \
@@ -136,6 +139,19 @@ def run(args):
                     elif frame.message_type == zjcl.MSG_LOCALIZATION:
                         if zjcl.decode_localization_payload(frame.payload).valid:
                             localization_nodes.add(frame.source_node)
+                    elif frame.message_type == zjcl.MSG_POSE2D:
+                        pose = zjcl.decode_pose2d_payload(frame.payload)
+                        if frame.target_node != 1:
+                            raise AssertionError("Pose2D target is not reference node 1")
+                        required = zjcl.CAPABILITY_PLANAR_POSITION
+                        if pose.yaw_valid:
+                            required |= zjcl.CAPABILITY_YAW
+                        if (pose.capability_mask & required) != required:
+                            raise AssertionError("Pose2D capability mask is incomplete")
+                        if pose.position_valid and pose.yaw_valid:
+                            pose2d_by_timestamp.setdefault(
+                                frame.timestamp_ns, {}
+                            )[frame.source_node] = pose
                 except socket.timeout:
                     pass
             # 在线进程合并输出文本；4秒为送数结束后的退出截止时间。
@@ -153,6 +169,41 @@ def run(args):
             raise AssertionError("GCS status did not report IMU+UWB mode")
         if localization_nodes != {1, 2, 3}:
             raise AssertionError(f"missing localization nodes: {localization_nodes}")
+        complete_timestamps = [
+            timestamp for timestamp, poses in pose2d_by_timestamp.items()
+            if set(poses) == {1, 2, 3}
+        ]
+        if not complete_timestamps:
+            raise AssertionError("no common Pose2D timestamp covered all three nodes")
+        # 使用最新完整批次同时校验三车位置与航向，保证数值确实属于同一算法时刻。
+        pose2d_by_node = pose2d_by_timestamp[max(complete_timestamps)]
+        expected_yaws = {1: 0.0, 2: math.pi / 2.0, 3: -3.0 * math.pi / 4.0}
+        # demo.ini与模拟器共同构造3-4-5三车几何；这里验证进程输出中的x/y映射，
+        # 防止“收到了三辆车帧”掩盖参考原点、节点映射或单位错误。
+        expected_positions = {1: (0.0, 0.0), 2: (3.0, 0.0), 3: (0.0, 4.0)}
+        for node_id, expected_yaw in expected_yaws.items():
+            pose = pose2d_by_node[node_id]
+            expected_x, expected_y = expected_positions[node_id]
+            position_error_m = math.hypot(
+                pose.x - expected_x,
+                pose.y - expected_y,
+            )
+            if position_error_m > 0.25:
+                raise AssertionError(
+                    f"node {node_id} position differs from configured geometry: "
+                    f"error_m={position_error_m}"
+                )
+            yaw_error = math.atan2(
+                math.sin(pose.yaw_rad - expected_yaw),
+                math.cos(pose.yaw_rad - expected_yaw),
+            )
+            if abs(yaw_error) > 0.02:
+                raise AssertionError(
+                    f"node {node_id} yaw differs from configured initial yaw: "
+                    f"error={yaw_error}"
+                )
+        if _counter(output, "published_pose2d") == 0:
+            raise AssertionError(f"online did not publish Pose2D:\n{output}")
         if not log_path.is_file() or log_path.stat().st_size <= 8:
             raise AssertionError("IMU+UWB event log is empty")
 
@@ -170,7 +221,7 @@ def run(args):
                 _counter(replay_output, "input_ranges") == 0:
             raise AssertionError(f"replay missed inputs:\n{replay_output}")
 
-    print("PASS IMU+UWB online smoke nodes=3 mode=2 replay=OK")
+    print("PASS IMU+UWB online smoke nodes=3 pose2d=3 mode=2 replay=OK")
     return 0
 
 

@@ -5,6 +5,20 @@
  */
 #include "zju_coop/c_api.h"
 
+#include <stddef.h>
+
+_Static_assert(sizeof(zju_coop_node_state_t) == 120U,
+               "NodeState v1 size must stay frozen");
+_Static_assert(offsetof(zju_coop_node_state_t, timestamp_ns) == 16U,
+               "NodeState v1 timestamp offset must stay frozen");
+_Static_assert(offsetof(zju_coop_node_state_t, position_enu_m) == 32U,
+               "NodeState v1 position offset must stay frozen");
+_Static_assert(offsetof(zju_coop_node_state_t,
+                        orientation_flu_to_enu_xyzw) == 80U,
+               "NodeState v1 quaternion offset must stay frozen");
+_Static_assert(offsetof(zju_coop_node_state_t, valid) == 112U,
+               "NodeState v1 validity offset must stay frozen");
+
 int main(void) {
   /* config/node/packet/result：分别覆盖引擎配置、节点初值、测距输入包和测距处理输出的C初始化入口。 */
   zju_coop_config_t config;
@@ -20,6 +34,8 @@ int main(void) {
   zju_coop_inertial_config_t inertial_config;
   zju_coop_imu_packet_t imu_packet;
   zju_coop_imu_processing_result_t imu_result;
+  /* node_state：覆盖本地惯导到低带宽二维协同层的最小状态结构。 */
+  zju_coop_node_state_t node_state;
   /* raw_result/image/point_field/cloud：覆盖未来视觉与激光原始数据的纯C预留接口。 */
   zju_coop_raw_input_result_t raw_result;
   zju_coop_camera_image_packet_t image;
@@ -31,6 +47,9 @@ int main(void) {
   zju_coop_gnss_fix_packet_t gnss_fix;
   zju_coop_gnss_processing_result_t gnss_result;
   zju_coop_gnss_relative_truth_t gnss_truth;
+  /* pose2d_*：覆盖独立v2二维位姿快照和单车元素，避免破坏既有v1结构布局。 */
+  zju_coop_pose2d_snapshot_v2_t pose2d_snapshot;
+  zju_coop_vehicle_pose2d_v2_t vehicle_pose2d;
 
   /* `&config`取得变量地址供函数写入；`||`表示任一初始化失败就进入返回1分支。 */
   if (zju_coop_config_init(&config) != ZJU_COOP_OK ||
@@ -47,7 +66,8 @@ int main(void) {
           ZJU_COOP_OK ||
       zju_coop_inertial_config_init(&inertial_config) != ZJU_COOP_OK ||
       zju_coop_imu_packet_init(&imu_packet) != ZJU_COOP_OK ||
-      zju_coop_imu_processing_result_init(&imu_result) != ZJU_COOP_OK) {
+      zju_coop_imu_processing_result_init(&imu_result) != ZJU_COOP_OK ||
+      zju_coop_node_state_init(&node_state) != ZJU_COOP_OK) {
     return 4;
   }
   /* 原始数据结构只要求纯C可初始化；本冒烟用例不向算法传入真实大缓冲区。 */
@@ -64,9 +84,19 @@ int main(void) {
       zju_coop_gnss_relative_truth_init(&gnss_truth) != ZJU_COOP_OK) {
     return 6;
   }
+  if (zju_coop_pose2d_snapshot_v2_init(&pose2d_snapshot) != ZJU_COOP_OK ||
+      zju_coop_vehicle_pose2d_v2_init(&vehicle_pose2d) != ZJU_COOP_OK ||
+      zju_coop_pose2d_abi_version() != ZJU_COOP_POSE2D_ABI_VERSION_V2) {
+    return 7;
+  }
   if (config.node_stride != sizeof(zju_coop_node_initialization_t)) {
     /* sizeof在编译期得到公开节点结构字节数，用来核对init填写的默认stride。 */
     return 2;
+  }
+  /* 空分布式句柄必须被稳定拒绝，同时证明新增生命周期符号可由纯C程序链接。 */
+  if (zju_coop_distributed_destroy((zju_coop_distributed_handle_t*)0) !=
+      ZJU_COOP_INVALID_ARGUMENT) {
+    return 8;
   }
   /* 三目运算符：ABI版本匹配返回成功码0，否则返回可定位的失败码3。 */
   return zju_coop_abi_version() == ZJU_COOP_ABI_VERSION_V1 ? 0 : 3;

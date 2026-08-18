@@ -81,4 +81,12 @@ struct Quaternion {
   [[nodiscard]] static Quaternion exp(const Vec3& rotation_vector) noexcept;
 };
 
+/**
+ * 从车体FLU到导航ENU姿态提取车体前向轴的ENU航向。
+ * 成功时`yaw_rad`写入[-pi,pi)，东向为0、逆时针为正；车体前向轴
+ * 水平投影退化或姿态非法时返回false，调用方不得使用输出值。
+ */
+[[nodiscard]] bool yaw_enu_rad(const Quaternion& orientation_b_to_n,
+                               double& yaw_rad) noexcept;
+
 }  // namespace zju::coop

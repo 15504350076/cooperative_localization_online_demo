@@ -417,10 +417,23 @@ NodeEstimate CooperativeInertialEkf::estimate(std::uint32_t node_id) const {
   NodeEstimate output{};
   output.node_id = node_id;
   output.timestamp_ns = latest_timestamp_ns();
+  // Pose2D要求节点与参考车位姿处于同一IMU测量历元；最大时间不能掩盖单车滞后。
+  const auto& node_filter = filters_[found->second];
+  const auto& reference_filter = filters_[reference->second];
+  const bool common_pose_epoch =
+      node_filter.has_timebase() && reference_filter.has_timebase() &&
+      node_filter.timestamp_ns() == reference_filter.timestamp_ns();
+  output.pose_timestamp_ns =
+      common_pose_epoch ? node_filter.timestamp_ns() : 0U;
   output.x = relative_position.x;
   output.y = relative_position.y;
   output.vx = relative_velocity.x;
   output.vy = relative_velocity.y;
+  // 已配置的初始四元数按理想联调约定视为上交完成的FLU到共同ENU对准，
+  // 首帧建立时间基准后，后续姿态由去零偏陀螺递推及ESKF误差注入共同维护。
+  output.yaw_valid =
+      common_pose_epoch && yaw_enu_rad(node_state.orientation_b_to_n,
+                                       output.yaw_rad);
   // Cov(p_i-p_r)=P_ii+P_rr-P_ir-P_ri。两个交叉项来自协同量测建立的
   // 节点相关性，忽略它们会系统性高估或低估相对位置不确定度。
   output.cov_xx = covariance_(node_offset, node_offset) +

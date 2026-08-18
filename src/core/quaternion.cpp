@@ -168,4 +168,32 @@ Quaternion Quaternion::exp(const Vec3& rotation_vector) noexcept {
   return result;
 }
 
+bool yaw_enu_rad(const Quaternion& orientation_b_to_n,
+                 double& yaw_rad) noexcept {
+  // 在局部副本上归一化，既容忍微小浮点漂移，也不修改滤波器持有的名义姿态。
+  Quaternion normalized = orientation_b_to_n;
+  if (!normalized.normalize()) {
+    return false;
+  }
+  // FLU的+x为车辆前向；旋转到ENU后，其东/北分量确定平面航向。
+  const Vec3 forward_n = normalized.rotate({1.0, 0.0, 0.0});
+  const double horizontal_norm = std::hypot(forward_n.x, forward_n.y);
+  if (!finite(forward_n) || !std::isfinite(horizontal_norm) ||
+      horizontal_norm <= 1.0e-12) {
+    return false;
+  }
+  double candidate = std::atan2(forward_n.y, forward_n.x);
+  if (!std::isfinite(candidate)) {
+    return false;
+  }
+  // atan2在负x轴上允许返回+pi；公开协议冻结为半开区间[-pi, pi)，
+  // 因而把唯一的右端点折回等价的-pi，避免消费者同时处理两个“正西”编码。
+  const double pi = std::acos(-1.0);
+  if (candidate >= pi) {
+    candidate = -pi;
+  }
+  yaw_rad = candidate;
+  return true;
+}
+
 }  // namespace zju::coop

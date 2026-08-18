@@ -138,3 +138,53 @@ TEST_CASE(app_elapsed_ns_saturates_when_a_log_timestamp_moves_backwards) {
   EXPECT_EQ(zju::coop::apps::elapsed_ns(100U, 100U), 0U);
   EXPECT_EQ(zju::coop::apps::elapsed_ns(90U, 100U), 0U);
 }
+
+TEST_CASE(app_snapshot_emits_pose2d_with_common_time_and_node_reference_header) {
+  // snapshot模拟一次已完成旧step后取得的只读Pose2D v2结果；网络时间与Pose公共时间一致。
+  zju::coop::apps::StepSnapshot snapshot{};
+  EXPECT_EQ(zju_coop_network_init(&snapshot.network), ZJU_COOP_OK);
+  snapshot.network.timestamp_ns = 500U;
+  snapshot.network.node_count = 1U;
+  snapshot.network.reachable_node_count = 1U;
+  snapshot.network.connected = ZJU_COOP_TRUE;
+  snapshot.network.observable = ZJU_COOP_TRUE;
+  snapshot.network.state = ZJU_COOP_LOCALIZATION_NORMAL;
+  EXPECT_EQ(zju_coop_pose2d_snapshot_v2_init(&snapshot.pose2d), ZJU_COOP_OK);
+  snapshot.pose2d.timestamp_ns = 500U;
+  snapshot.pose2d.reference_node_id = 1U;
+  snapshot.has_pose2d = true;
+  snapshot.pose2d_vehicles.resize(1U);
+  EXPECT_EQ(zju_coop_vehicle_pose2d_v2_init(&snapshot.pose2d_vehicles[0U]),
+            ZJU_COOP_OK);
+  snapshot.pose2d_vehicles[0U].node_id = 2U;
+  snapshot.pose2d_vehicles[0U].x_m = 3.0;
+  snapshot.pose2d_vehicles[0U].y_m = -1.0;
+  snapshot.pose2d_vehicles[0U].yaw_rad = 0.5;
+  snapshot.pose2d_vehicles[0U].position_valid = ZJU_COOP_TRUE;
+  snapshot.pose2d_vehicles[0U].yaw_valid = ZJU_COOP_TRUE;
+
+  std::uint64_t sequence = 10U;
+  const auto outputs = zju::coop::apps::encode_snapshot(
+      snapshot, 1U, sequence,
+      zju::coop::protocol::kDefaultMaxPayloadSize);
+  EXPECT_EQ(outputs.size(), 2U);
+  EXPECT_EQ(outputs[0U].message_type,
+            zju::coop::protocol::MessageType::kPose2D);
+  const auto frame = zju::coop::protocol::decode_frame(outputs[0U].bytes);
+  EXPECT_TRUE(frame.ok());
+  EXPECT_EQ(frame.value.header.timestamp_ns, 500U);
+  EXPECT_EQ(frame.value.header.source_node, 2U);
+  EXPECT_EQ(frame.value.header.target_node, 1U);
+  const auto pose = zju::coop::protocol::decode_pose2d_payload(
+      frame.value.payload);
+  EXPECT_TRUE(pose.ok());
+  EXPECT_EQ(pose.value.x, 3.0);
+  EXPECT_EQ(pose.value.y, -1.0);
+  EXPECT_EQ(pose.value.yaw_rad, 0.5);
+  EXPECT_TRUE(pose.value.position_valid);
+  EXPECT_TRUE(pose.value.yaw_valid);
+  const auto expected_capabilities =
+      static_cast<std::uint32_t>(zju::coop::Capability::kPlanarPosition) |
+      static_cast<std::uint32_t>(zju::coop::Capability::kYaw);
+  EXPECT_EQ(pose.value.capability_mask, expected_capabilities);
+}

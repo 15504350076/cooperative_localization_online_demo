@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>zju_coop_bringup</name>
+  <version>0.3.0</version>
+  <description>Launch and parameter files for the minimal three-vehicle cooperative localization demo.</description>
+  <maintainer email="pdq@zju.edu.cn">Zhejiang University</maintainer>
+  <license>Proprietary</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>rmw_fastrtps_cpp</exec_depend>
+  <exec_depend>zju_coop_ros2</exec_depend>
+
+  <test_depend>cooperative_localization_msgs</test_depend>
+  <test_depend>launch_testing_ament_cmake</test_depend>
+  <test_depend>rclpy</test_depend>
+  <test_depend>sensor_msgs</test_depend>
+  <test_depend>zju_coop_test_msgs</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

@@ -15,6 +15,7 @@
 namespace {
 
 using zju::coop::NodeInitialization;
+using zju::coop::InertialNodeInitialization;
 using zju::coop::config::DemoConfig;
 using zju::coop::config::IniConfigError;
 using zju::coop::config::IniError;
@@ -150,6 +151,20 @@ const NodeInitialization& node(const DemoConfig& config,
   throw std::runtime_error("configured node was not found");
 }
 
+// config必须启用惯性配置；node_id是待查平台，返回其已由yaw转换好的15维初始状态。
+const InertialNodeInitialization& inertial_node(const DemoConfig& config,
+                                                std::uint32_t node_id) {
+  if (!config.inertial.has_value()) {
+    throw std::runtime_error("inertial configuration is disabled");
+  }
+  for (const auto& candidate : config.inertial->nodes) {
+    if (candidate.node_id == node_id) {
+      return candidate;
+    }
+  }
+  throw std::runtime_error("configured inertial node was not found");
+}
+
 }  // namespace
 
 // 成功路径先锁定每个配置节的强类型映射和默认/回退示例文件的实际语义。
@@ -209,6 +224,21 @@ TEST_CASE(demo_ini_loads_three_node_three_four_five_geometry_and_udp_ports) {
   EXPECT_EQ(config.online.output_rate_hz, 10.0);
   EXPECT_EQ(config.online.input_port, 39001U);
   EXPECT_EQ(config.online.output_port, 39002U);
+
+  // 三车初始yaw由各node节给出，解析器须转换为FLU车体系到ENU导航系的内部wxyz四元数。
+  const auto& q1 = inertial_node(config, 1U).orientation_b_to_n;
+  const auto& q2 = inertial_node(config, 2U).orientation_b_to_n;
+  const auto& q3 = inertial_node(config, 3U).orientation_b_to_n;
+  EXPECT_TRUE(std::abs(q1.w - 1.0) < 1.0e-12);
+  EXPECT_TRUE(std::abs(q1.z) < 1.0e-12);
+  EXPECT_TRUE(std::abs(q2.w - std::cos(0.25 * 3.14159265358979323846)) <
+              1.0e-12);
+  EXPECT_TRUE(std::abs(q2.z - std::sin(0.25 * 3.14159265358979323846)) <
+              1.0e-12);
+  EXPECT_TRUE(std::abs(q3.w - std::cos(-0.375 * 3.14159265358979323846)) <
+              1.0e-12);
+  EXPECT_TRUE(std::abs(q3.z - std::sin(-0.375 * 3.14159265358979323846)) <
+              1.0e-12);
 }
 
 TEST_CASE(range_only_demo_ini_keeps_measurement_only_fallback) {

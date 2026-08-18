@@ -14,7 +14,7 @@ TEST_CASE(self_check_validates_public_c_abi_without_external_io) {
   // 同时检查汇总位、失败计数和关键阶段名称，防止自检因漏跑阶段而出现“空报告假通过”。
   EXPECT_TRUE(result.passed);
   EXPECT_EQ(result.failed_checks, 0U);
-  EXPECT_TRUE(result.passed_checks >= 11U);
+  EXPECT_TRUE(result.passed_checks >= 14U);
   EXPECT_TRUE(result.report.find("[PASS] imu_propagation") !=
               std::string::npos);
   EXPECT_TRUE(result.report.find("[PASS] nominal_snapshot") !=
@@ -22,5 +22,7 @@ TEST_CASE(self_check_validates_public_c_abi_without_external_io) {
   EXPECT_TRUE(result.report.find("[PASS] link_timeout") !=
               std::string::npos);
   EXPECT_TRUE(result.report.find("[PASS] network_recovery") !=
+              std::string::npos);
+  EXPECT_TRUE(result.report.find("[PASS] pose2d_snapshot") !=
               std::string::npos);
 }

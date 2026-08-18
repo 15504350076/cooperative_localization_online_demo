@@ -1,13 +1,14 @@
 // 模块实现：用三车静止IMU和3-4-5测距从公开C ABI完成创建、传播、引擎级Processed路径、
-// 输出与恢复验证；测距项不单独断言底层update_disposition为ACCEPTED。
+// 兼容v1输出、Pose2D v2输出与恢复验证；测距项不单独断言底层update_disposition为ACCEPTED。
 // 所有输入均为内存构造的确定性数据，不打开端口和硬件，因此可与后续ROS 2实机节点并存。
 //
 // C++初学者阅读顺序：
 // 1. Recorder把每个布尔判断记录为PASS/FAIL；HandleGuard保证提前返回时也能destroy句柄。
 // 2. 构造三车初值和惯性配置，创建公开C ABI会话。
 // 3. 为每辆车输入两帧静止IMU：第一帧建立时间基线，第二帧真正执行预测。
-// 4. 输入3 m、4 m、5 m三条测距，随后step检查三车输出、网络状态和恢复行为。
-// 5. 所有数据固定，因而同一程序在Windows、Ubuntu和RK3588应得到可重复结果。
+// 4. 输入3 m、4 m、5 m三条测距，随后step检查v1输出，再只读查询三车Pose2D。
+// 5. 最后检查网络状态、重复包、超时、恢复和句柄销毁行为。
+// 6. 所有数据固定，因而同一程序在Windows、Ubuntu和RK3588应得到可重复结果。
 // HandleGuard使用RAII，`= delete`禁止复制句柄所有权；ostringstream把多次`<<`输出累计成字符串；
 // 所有C结构先调用init，避免初学者把零初始化误当作完整ABI版本握手。
 #include "self_check/self_check.hpp"
@@ -84,6 +85,12 @@ struct Snapshot {
   zju_coop_network_t network{};                        ///< 与两数组同次生成的网络状态。
 };
 
+/** 新增Pose2D v2只读查询的公共头和逐车数组；它不负责推进算法状态。 */
+struct Pose2dOutput {
+  zju_coop_pose2d_snapshot_v2_t snapshot{};  ///< 三车共同时间、参考节点和坐标系名称。
+  std::vector<zju_coop_vehicle_pose2d_v2_t> vehicles;  ///< 同一历元的逐车x/y/yaw结果。
+};
+
 /** @param code 待转换为稳定诊断文本的C ABI错误码。 */
 [[nodiscard]] std::string api_error(zju_coop_error_code_t code) {
   const char* text = zju_coop_error_string(code);  // C ABI返回的静态错误字符串或空指针。
@@ -104,6 +111,17 @@ struct Snapshot {
   for (const auto& value : snapshot.localizations) {  // value为逐项匹配编号的定位输出。
     if (value.node_id == node_id) {
       return &value;
+    }
+  }
+  return nullptr;
+}
+
+/** @param output 待查找的Pose2D v2数组；@param node_id 目标车辆编号。 */
+[[nodiscard]] const zju_coop_vehicle_pose2d_v2_t* find_pose2d(
+    const Pose2dOutput& output, std::uint32_t node_id) {
+  for (const auto& vehicle : output.vehicles) {
+    if (vehicle.node_id == node_id) {
+      return &vehicle;
     }
   }
   return nullptr;
@@ -159,6 +177,43 @@ struct Snapshot {
   }
   snapshot.localizations.resize(localization_count);
   snapshot.observations.resize(observation_count);
+  return true;
+}
+
+/**
+ * 读取当前Pose2D v2快照。第一次调用只查询车辆数，第二次调用写入初始化后的数组；
+ * 两次调用均为只读，不会再次执行step或改变滤波时间。
+ */
+[[nodiscard]] bool take_pose2d(zju_coop_handle_t* handle,
+                               Pose2dOutput& output,
+                               std::string& detail) {
+  if (zju_coop_pose2d_snapshot_v2_init(&output.snapshot) != ZJU_COOP_OK) {
+    detail = "Pose2D snapshot initialization failed";
+    return false;
+  }
+  std::uint32_t vehicle_count{};  // 空数组查询回填当前会话的车辆数量。
+  auto code = zju_coop_get_pose2d_v2(
+      handle, &output.snapshot, nullptr, 0U, 0U, &vehicle_count);
+  if (code != ZJU_COOP_BUFFER_TOO_SMALL) {
+    detail = "Pose2D size query returned " + api_error(code);
+    return false;
+  }
+
+  output.vehicles.resize(vehicle_count);
+  for (auto& vehicle : output.vehicles) {
+    if (zju_coop_vehicle_pose2d_v2_init(&vehicle) != ZJU_COOP_OK) {
+      detail = "Pose2D vehicle initialization failed";
+      return false;
+    }
+  }
+  code = zju_coop_get_pose2d_v2(
+      handle, &output.snapshot, output.vehicles.data(), vehicle_count,
+      sizeof(zju_coop_vehicle_pose2d_v2_t), &vehicle_count);
+  if (code != ZJU_COOP_OK) {
+    detail = "Pose2D query returned " + api_error(code);
+    return false;
+  }
+  output.vehicles.resize(vehicle_count);
   return true;
 }
 
@@ -293,6 +348,12 @@ SelfCheckResult run_self_check() noexcept {
     }
     inertial_nodes[1].position_n_m[0] = 3.0;
     inertial_nodes[2].position_n_m[1] = 4.0;
+    // 三个初始四元数模拟上交已完成的共同ENU对准结果：0、+90和-135度。
+    const double pi = std::acos(-1.0);
+    inertial_nodes[1].orientation_xyzw[2] = std::sin(pi / 4.0);
+    inertial_nodes[1].orientation_xyzw[3] = std::cos(pi / 4.0);
+    inertial_nodes[2].orientation_xyzw[2] = std::sin(-3.0 * pi / 8.0);
+    inertial_nodes[2].orientation_xyzw[3] = std::cos(-3.0 * pi / 8.0);
 
     zju_coop_inertial_config_t inertial_config{};  // 首个输入前启用15维路径的版本化配置。
     inertial_initialized =
@@ -374,6 +435,32 @@ SelfCheckResult run_self_check() noexcept {
         approximately(node2->x, 3.0) && approximately(node2->y, 0.0) &&
         approximately(node3->x, 0.0) && approximately(node3->y, 4.0);
     recorder.check(nominal_geometry_ok, "nominal_snapshot", detail);
+
+    // 旧step只推进一次后读取Pose2D v2，验证GCS需要的三车相对位置和各自ENU航向。
+    Pose2dOutput pose2d;
+    detail.clear();
+    const bool pose2d_query_ok = take_pose2d(handle.value, pose2d, detail);
+    const auto* pose1 = find_pose2d(pose2d, 1U);
+    const auto* pose2 = find_pose2d(pose2d, 2U);
+    const auto* pose3 = find_pose2d(pose2d, 3U);
+    const bool pose2d_ok =
+        pose2d_query_ok && pose2d.snapshot.timestamp_ns == propagated_time_ns &&
+        pose2d.snapshot.reference_node_id == 1U &&
+        std::strcmp(pose2d.snapshot.frame_id, "coop_ref_1_enu") == 0 &&
+        pose1 != nullptr && pose2 != nullptr && pose3 != nullptr &&
+        pose1->position_valid == ZJU_COOP_TRUE &&
+        pose2->position_valid == ZJU_COOP_TRUE &&
+        pose3->position_valid == ZJU_COOP_TRUE &&
+        pose1->yaw_valid == ZJU_COOP_TRUE &&
+        pose2->yaw_valid == ZJU_COOP_TRUE &&
+        pose3->yaw_valid == ZJU_COOP_TRUE &&
+        approximately(pose1->x_m, 0.0) && approximately(pose1->y_m, 0.0) &&
+        approximately(pose2->x_m, 3.0) && approximately(pose2->y_m, 0.0) &&
+        approximately(pose3->x_m, 0.0) && approximately(pose3->y_m, 4.0) &&
+        approximately(pose1->yaw_rad, 0.0, 1.0e-12) &&
+        approximately(pose2->yaw_rad, pi / 2.0, 1.0e-12) &&
+        approximately(pose3->yaw_rad, -3.0 * pi / 4.0, 1.0e-12);
+    recorder.check(pose2d_ok, "pose2d_snapshot", detail);
 
     const bool topology_ok =  // 三节点三活动边是否连通且达到二维目标刚度秩。
         nominal_step_ok && nominal.network.node_count == 3U &&

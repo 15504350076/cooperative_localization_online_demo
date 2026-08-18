@@ -23,6 +23,17 @@ class ImuUwbSimulatorTests(unittest.TestCase):
             self.assertAlmostEqual(payload.linear_acceleration_m_s2[2],
                                    9.80665)
 
+    def test_configured_z_angular_rate_remains_an_instantaneous_measurement(self):
+        # 模拟器只填写瞬时z轴角速度；orientation仍无效，避免伪造连续姿态真值。
+        simulator = imu_uwb_simulator.ImuUwbSimulator(
+            gyro_z_rad_s=0.25
+        )
+        frame = zjcl.decode_frame(simulator.generate_imu_tick(123)[0], udp=True)
+        payload = zjcl.decode_imu_payload(frame.payload)
+        self.assertEqual(payload.angular_velocity_rad_s, (0.0, 0.0, 0.25))
+        self.assertFalse(payload.orientation_valid)
+        self.assertEqual(payload.orientation_xyzw, (0.0, 0.0, 0.0, 1.0))
+
 
 if __name__ == "__main__":
     unittest.main()

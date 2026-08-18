@@ -90,6 +90,20 @@ class ZjclProtocolTests(unittest.TestCase):
         self.assertEqual(zjcl.decode_localization_payload(localization_bytes),
                          localization)
 
+        # pose2d冻结新增105类型的32字节布局，位置和航向有效位彼此独立。
+        pose2d = zjcl.Pose2DPayload(
+            1.0, -2.0, 0.5, True, True, 0, 0x0A0B0C0F,
+        )
+        pose2d_bytes = zjcl.encode_pose2d_payload(pose2d)
+        self.assertEqual(
+            pose2d_bytes,
+            bytes.fromhex(
+                "000000000000f03f00000000000000c0"
+                "000000000000e03f010100000f0c0b0a"
+            ),
+        )
+        self.assertEqual(zjcl.decode_pose2d_payload(pose2d_bytes), pose2d)
+
         # network是三节点全连通合法边界；network_bytes覆盖20字节固定布局。
         network = zjcl.NetworkPayload(
             3, 3, 3, True, True, zjcl.LOCALIZATION_NORMAL, 0x31,
@@ -112,7 +126,7 @@ class ZjclProtocolTests(unittest.TestCase):
         # algorithm_status使用明显64位计数，status_bytes用于布局与端序黄金校验。
         algorithm_status = zjcl.AlgorithmStatusPayload(
             0x00010000,
-            0x00000100,
+            0x00000300,
             zjcl.ALGORITHM_MODE_UWB_ONLY_PLANAR,
             zjcl.ALGORITHM_RUN_DEGRADED,
             0x0102030405060708,
@@ -124,7 +138,7 @@ class ZjclProtocolTests(unittest.TestCase):
         self.assertEqual(
             status_bytes,
             bytes.fromhex(
-                "00000100000100000102000000000000"
+                "00000100000300000102000000000000"
                 "08070605040302011817161514131211"
                 "28272625242322213837363534333231"
             ),
@@ -158,12 +172,54 @@ class ZjclProtocolTests(unittest.TestCase):
         )
         self.assertEqual(zjcl.decode_alert_payload(alert_bytes), alert)
 
+    def test_pose2d_rejects_bad_boolean_reserved_nonfinite_and_frame_size(self):
+        # baseline是合法32字节载荷，后续每次只破坏一个协议字段。
+        baseline = bytearray(zjcl.encode_pose2d_payload(
+            zjcl.Pose2DPayload(1.0, 2.0, 0.25, True, False, 0, 3)
+        ))
+        invalid_boolean = bytearray(baseline)
+        invalid_boolean[24] = 2
+        with self.assertRaises(zjcl.ProtocolError):
+            zjcl.decode_pose2d_payload(invalid_boolean)
+        invalid_reserved = bytearray(baseline)
+        invalid_reserved[26] = 1
+        with self.assertRaises(zjcl.ProtocolError):
+            zjcl.decode_pose2d_payload(invalid_reserved)
+        invalid_number = bytearray(baseline)
+        invalid_number[16:24] = struct.pack("<d", math.nan)
+        with self.assertRaises(zjcl.ProtocolError):
+            zjcl.decode_pose2d_payload(invalid_number)
+        missing_capability = bytearray(baseline)
+        missing_capability[28:32] = b"\0\0\0\0"
+        with self.assertRaises(zjcl.ProtocolError):
+            zjcl.decode_pose2d_payload(missing_capability)
+        self.assertEqual(
+            zjcl.decode_pose2d_payload(zjcl.encode_pose2d_payload(
+                zjcl.Pose2DPayload(0.0, 0.0, -math.pi, True, True, 0, 10)
+            )).yaw_rad,
+            -math.pi,
+        )
+        with self.assertRaises(zjcl.ProtocolError):
+            zjcl.encode_pose2d_payload(
+                zjcl.Pose2DPayload(0.0, 0.0, math.pi, True, True, 0, 10)
+            )
+
+        # 新类型105采用公共头source=node、target=reference并执行32字节定长检查。
+        frame = zjcl.Frame(
+            zjcl.MSG_POSE2D, 0, 7, 123, 2, 1, bytes(baseline)
+        )
+        self.assertEqual(zjcl.decode_frame(zjcl.encode_frame(frame)), frame)
+        with self.assertRaises(zjcl.ProtocolError):
+            zjcl.encode_frame(
+                zjcl.Frame(zjcl.MSG_POSE2D, 0, 7, 123, 2, 1, b"x")
+            )
+
     def test_status_and_alert_reject_invalid_enums_reserved_and_lifecycle(self):
         # 可逐字节破坏的合法状态基线，先测未知模式再测非零保留字节。
         status = bytearray(
             zjcl.encode_algorithm_status_payload(
                 zjcl.AlgorithmStatusPayload(
-                    0x00010000, 0x00000100,
+                    0x00010000, 0x00000300,
                     zjcl.ALGORITHM_MODE_UWB_ONLY_PLANAR,
                     zjcl.ALGORITHM_RUN_RUNNING,
                     1, 2, 3, 4,
@@ -264,7 +320,7 @@ class ZjclProtocolTests(unittest.TestCase):
         # 固定48字节状态payload，用于验证公共帧总长与配置硬上限。
         payload = zjcl.encode_algorithm_status_payload(
             zjcl.AlgorithmStatusPayload(
-                0x00010000, 0x00000100,
+                0x00010000, 0x00000300,
                 zjcl.ALGORITHM_MODE_UWB_ONLY_PLANAR,
                 zjcl.ALGORITHM_RUN_RUNNING, 0, 0, 0, 1,
             )

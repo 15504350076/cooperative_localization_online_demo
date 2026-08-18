@@ -1,0 +1,11 @@
+/**/zju_local_inertial_node:
+  ros__parameters:
+    node_id: 1
+    publish_rate_hz: 20.0
+    expected_imu_frame_id: imu_link
+    common_enu_frame_id: common_enu
+    initial_position_enu_m: [0.0, 0.0, 0.0]
+    initial_velocity_enu_mps: [0.0, 0.0, 0.0]
+    initial_orientation_flu_to_enu_xyzw: [0.0, 0.0, 0.0, 1.0]
+    initial_gyro_bias_flu_rad_s: [0.0, 0.0, 0.0]
+    initial_accel_bias_flu_m_s2: [0.0, 0.0, 0.0]

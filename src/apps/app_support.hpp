@@ -29,6 +29,9 @@ struct StepSnapshot {
   std::vector<zju_coop_localization_t> localizations;  ///< C ABI返回的各节点定位数组。
   std::vector<zju_coop_observation_t> observations;    ///< C ABI返回的各无向边质量数组。
   zju_coop_network_t network{};                        ///< 与两组数组同次step生成的网络状态。
+  zju_coop_pose2d_snapshot_v2_t pose2d{};  ///< 旧step完成后只读查询的公共二维位姿头。
+  std::vector<zju_coop_vehicle_pose2d_v2_t> pose2d_vehicles;  ///< 与pose2d同批的各车二维位姿。
+  bool has_pose2d{};  ///< 惯性路径查询成功时为true；仅测距回退明确保持false。
 };
 
 /** RAII算法会话：配置、输入、step和销毁严格按C ABI生命周期执行。 */
@@ -64,6 +67,7 @@ class AlgorithmSession {
 
  private:
   zju_coop_handle_t* handle_{};  ///< 本会话独占并在析构时销毁的C ABI不透明句柄。
+  bool pose2d_enabled_{};  ///< 配置启用惯性路径时才执行只读Pose2D v2查询。
 };
 
 struct EncodedOutput {
