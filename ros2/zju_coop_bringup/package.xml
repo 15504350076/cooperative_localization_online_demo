@@ -11,9 +11,14 @@
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>rmw_fastrtps_cpp</exec_depend>
-  <exec_depend>rtabmap_slam</exec_depend>
-  <exec_depend>zju_coop_perception</exec_depend>
   <exec_depend>zju_coop_ros2</exec_depend>
+
+  <!--
+    RTAB-Map/PCL are optional runtime features.  They are intentionally not
+    package dependencies of the minimal IMU+UWB box image; install
+    zju_coop_perception and rtabmap_slam only when a lidar frontend/SLAM is
+    explicitly enabled.
+  -->
 
   <test_depend>cooperative_localization_msgs</test_depend>
   <test_depend>launch_testing_ament_cmake</test_depend>

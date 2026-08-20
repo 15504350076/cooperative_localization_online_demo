@@ -33,6 +33,11 @@ IMU驱动 + UWB/MCU UART TLV
 
 ## 3. ARM64 原生构建步骤
 
+首轮盒端只需构建 IMU+UWB 主链，不安装 Gazebo、RViz、PCL、OpenCV 或 RTAB-Map。
+这些属于默认关闭的可选感知功能；只有明确启用 `enable_lidar_frontend`、
+`enable_lidar_slam` 或视觉前端时，才另外安装对应依赖并构建
+`zju_coop_perception`。
+
 在盒端安装 CMake、C/C++ 编译器和 Python 3 后：
 
 ```bash
@@ -43,6 +48,22 @@ cmake --build build-arm64 -j"$(nproc)"
 ctest --test-dir build-arm64 --output-on-failure
 cmake --install build-arm64 --prefix install-arm64
 ```
+
+ROS 2 盒端首轮只构建最小 IMU＋UWB 适配包。上一步的 SDK 安装目录为
+`install-arm64`（也可替换成盒端统一部署目录），在工程根目录执行：
+
+```bash
+colcon build --base-paths ros2 \
+  --packages-up-to zju_coop_bringup \
+  --build-base build/ros2-box \
+  --install-base install/ros2-box \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release \
+               -DZJU_COOP_SDK_ROOT="$PWD/install-arm64"
+source install/ros2-box/setup.bash
+```
+
+不要在首轮盒端构建 `zju_coop_gazebo` 或默认关闭的 PCL/OpenCV/RTAB-Map 感知链。
+只有确认真实雷达和标定外参后，才按需安装可选感知依赖并单独构建对应包。
 
 在启动 ROS 2 wrapper 或连接真实传感器之前，先运行不占用端口和硬件的独立自检：
 
@@ -145,6 +166,39 @@ NodeState 为 UWB 时钟锚点并结合 `steady_clock` 估计同域接收时刻�
 
 当前实现位于 `ros2/zju_coop_ros2`，算法核心仍只使用普通 C/C++ 类型。首版不把 UWB 修正反馈给从车本地惯导，也不支持单车热重新初始化。
 
+### 5.1 三盒最小启动顺序
+
+三台盒子使用同一个 `ROS_DOMAIN_ID` 和 `RMW_IMPLEMENTATION`，并保证自组网允许
+DDS 发现与数据端口。每台盒子只启动一个 local；只有参考车 1 启动 fusion。
+`namespace` 会自动选择同名的 `vehicle_N.yaml`，因此不要只改命名空间而沿用另一辆车的配置：
+
+```bash
+# 三台盒子都先执行
+source /opt/ros/humble/setup.bash
+source /path/to/install/ros2-box/setup.bash
+export ROS_DOMAIN_ID=107
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export ROS_LOCALHOST_ONLY=0
+
+# 参考车盒 1（唯一启动 fusion）
+ros2 launch zju_coop_bringup vehicle.launch.py \
+  namespace:=vehicle_1 run_fusion:=true
+
+# 从车盒 2（另一个终端/盒子）
+ros2 launch zju_coop_bringup vehicle.launch.py \
+  namespace:=vehicle_2 run_fusion:=false
+
+# 从车盒 3（另一个终端/盒子）
+ros2 launch zju_coop_bringup vehicle.launch.py \
+  namespace:=vehicle_3 run_fusion:=false
+```
+
+`imu_topic` 默认是相对名 `imu/data`，在上述命名空间下分别对应
+`/vehicle_1/imu/data`、`/vehicle_2/imu/data`、`/vehicle_3/imu/data`；若上交实际
+topic 不同，再显式传 `imu_topic:=<本车 IMU topic>`。跨盒共享的是
+`/cooperative_localization/node_state`、`/uwb/range` 和参考车的
+`/cooperative_localization/poses_2d`；原始 IMU 只留在本车。
+
 ## 6. 结果消息
 
 浙大 ROS 2 适配节点已将 C ABI 输出转换为 `cooperative_localization_msgs/msg/CooperativePose2DArray`。当前最小 GCS 展示字段为：
@@ -170,6 +224,31 @@ topic、QoS、单位、失锁/重锁和 Master 重启语义。在接口冻结前
 必须停发受影响的 IMU/UWB；当前标准 IMU 和临时 UWB 消息没有可执行的整包同步无效位。正式质量接口冻结后才可改用无效标记。Master 导致时间回拨或超门限向前跳变时，首版整组重启三个 local 和 fusion；若启用了 GNSS 后备，还要一并重启后备节点，最简单是重启参考车整个 `vehicle.launch.py`，不能继续沿用旧后验或旧时间缓存。
 
 ## 8. 盒端必做验证
+
+安装并 source 目标 ROS 2 工作区后，可先用轻量自检确认盒端环境和跨盒
+topic 图；它不读取或解析正式 UWB 消息字段：
+
+```bash
+source /opt/ros/humble/setup.bash
+source /path/to/install/setup.bash
+export ROS_DOMAIN_ID=107
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+export ROS_LOCALHOST_ONLY=0
+
+# 图检查：架构、ROS 环境、NodeState、UWB、协同结果。
+ros2 run zju_coop_bringup zju_box_smoke_check \
+  --expect-arch aarch64 --expect-rmw rmw_fastrtps_cpp
+
+# 指定本盒 IMU，并要求每个已检查 topic 在 5 秒内至少收到一帧。
+ros2 run zju_coop_bringup zju_box_smoke_check \
+  --expect-arch aarch64 --expect-rmw rmw_fastrtps_cpp \
+  --imu-topic /vehicle_2/imu/data --wait 5
+```
+
+退出码 `0` 表示请求的图/首帧检查通过，`1` 表示环境、topic、类型或数据
+检查失败，`2` 表示参数错误或缺少 `ros2`/标准 `timeout` 命令。默认不检查
+IMU；每个盒子的实际 IMU topic 由 `--imu-topic` 显式传入。UWB 只检查
+`/uwb/range` 可发现且类型可见，不假定上交尚未冻结的正式消息包名或字段。
 
 1. ARM64 原生/交叉构建与 `ctest`；
 2. `libzju_coop.so` 加载、C header smoke 和导出符号；

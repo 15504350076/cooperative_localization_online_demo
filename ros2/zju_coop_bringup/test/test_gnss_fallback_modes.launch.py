@@ -25,7 +25,13 @@ DERIVED_RANGE_TOPIC = "/cooperative_localization/gnss_derived_range"
 FEEDBACK_TOPIC = "/cooperative_localization/feedback/poses_2d"
 
 
-def _vehicle_launch(namespace, fallback=None, feedback=None):
+def _vehicle_launch(
+    namespace,
+    fallback=None,
+    feedback=None,
+    run_fusion=None,
+    local_config=None,
+):
     launch_file = PathJoinSubstitution([
         FindPackageShare("zju_coop_bringup"),
         "launch",
@@ -33,8 +39,11 @@ def _vehicle_launch(namespace, fallback=None, feedback=None):
     ])
     arguments = {
         "namespace": namespace,
-        "run_fusion": "true",
     }
+    if run_fusion is not None:
+        arguments["run_fusion"] = "true" if run_fusion else "false"
+    if local_config is not None:
+        arguments["local_config"] = local_config
     if fallback is not None:
         arguments.update({
             "use_gnss_range_fallback": "true" if fallback else "false",
@@ -52,14 +61,34 @@ def _vehicle_launch(namespace, fallback=None, feedback=None):
     )
 
 
+def _vehicle_1_config():
+    return PathJoinSubstitution([
+        FindPackageShare("zju_coop_bringup"),
+        "config",
+        "vehicle_1.yaml",
+    ])
+
+
 @pytest.mark.launch_test
 @launch_testing.markers.keep_alive
 def generate_test_description():
     return launch.LaunchDescription([
+        # Start the real role first: its default local_config must be
+        # resolved before the custom-config includes below set the shared
+        # launch argument in this test context.
+        _vehicle_launch("vehicle_2"),
         # Omit the fallback argument to lock its declared default of false.
-        _vehicle_launch("normal_ref", feedback=True),
+        # These deliberately non-role namespaces use an explicit config.
+        _vehicle_launch(
+            "normal_ref", feedback=True, local_config=_vehicle_1_config()
+        ),
         # Request feedback in fallback mode and prove bringup forces it off.
-        _vehicle_launch("fallback_ref", fallback=True, feedback=True),
+        _vehicle_launch(
+            "fallback_ref",
+            fallback=True,
+            feedback=True,
+            local_config=_vehicle_1_config(),
+        ),
         launch_testing.actions.ReadyToTest(),
     ])
 
@@ -148,6 +177,20 @@ class TestGnssFallbackModes(unittest.TestCase):
         self.node.destroy_client(client)
         return value
 
+    def _integer_parameter(self, node_name, parameter_name):
+        client = self.node.create_client(
+            GetParameters, f"{node_name}/get_parameters"
+        )
+        self.assertTrue(client.wait_for_service(timeout_sec=5.0), node_name)
+        request = GetParameters.Request()
+        request.names = [parameter_name]
+        future = client.call_async(request)
+        rclpy.spin_until_future_complete(self.node, future, timeout_sec=5.0)
+        self.assertTrue(future.done(), node_name)
+        value = future.result().values[0].integer_value
+        self.node.destroy_client(client)
+        return value
+
     def test_modes_are_mutually_exclusive_and_use_distinct_uncertainty(self):
         self._wait_for_graph()
         fallback_nodes = [
@@ -173,4 +216,22 @@ class TestGnssFallbackModes(unittest.TestCase):
             self._feedback_enabled(
                 "/fallback_ref/zju_cooperative_fusion_node"
             )
+        )
+
+    def test_namespace_selects_matching_local_config_and_follower_has_no_fusion(
+        self,
+    ):
+        self._wait_for_graph()
+        self.assertEqual(
+            self._integer_parameter(
+                "/vehicle_2/zju_local_inertial_node", "node_id"
+            ),
+            2,
+        )
+        self.assertNotIn(
+            (
+                "zju_cooperative_fusion_node",
+                "/vehicle_2",
+            ),
+            self.node.get_node_names_and_namespaces(),
         )

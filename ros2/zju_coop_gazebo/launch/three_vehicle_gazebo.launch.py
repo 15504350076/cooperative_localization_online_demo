@@ -493,9 +493,10 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "record_bag",
-            default_value="true",
+            default_value="false",
             description=(
-                "Record simulation inputs, truth and algorithm outputs"
+                "Record simulation inputs, truth and algorithm outputs; "
+                "enable explicitly to avoid unexpected disk use"
             ),
         ),
         DeclareLaunchArgument(

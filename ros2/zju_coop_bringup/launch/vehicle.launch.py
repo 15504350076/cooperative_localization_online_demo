@@ -56,8 +56,20 @@ def generate_launch_description():
             DeclareLaunchArgument("namespace", default_value="vehicle_1"),
             DeclareLaunchArgument(
                 "local_config",
-                default_value=PathJoinSubstitution(
-                    [package_share, "config", "vehicle_1.yaml"]
+                default_value=PathJoinSubstitution([
+                    package_share,
+                    "config",
+                    # Keep the vehicle role and the INS node_id coupled.  An
+                    # explicit local_config still overrides this default.
+                    PythonExpression([
+                        "'",
+                        namespace,
+                        "'.strip('/') + '.yaml'",
+                    ]),
+                ]),
+                description=(
+                    "Per-vehicle YAML; defaults to config/<namespace>.yaml "
+                    "(vehicle_1/2/3)"
                 ),
             ),
             DeclareLaunchArgument(
@@ -136,7 +148,14 @@ def generate_launch_description():
                 "point_cloud_frame_alias", default_value=""
             ),
             DeclareLaunchArgument("camera_frame_alias", default_value=""),
-            DeclareLaunchArgument("run_fusion", default_value="true"),
+            DeclareLaunchArgument(
+                "run_fusion",
+                default_value="false",
+                description=(
+                    "Start the cooperative fusion node; enable explicitly "
+                    "on the reference vehicle only"
+                ),
+            ),
             DeclareLaunchArgument(
                 "enable_follower_feedback",
                 default_value="false",

@@ -9,6 +9,11 @@ install(DIRECTORY config launch
   PATTERN "*.pyc" EXCLUDE
 )
 
+install(PROGRAMS scripts/zju_box_smoke_check.sh
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME zju_box_smoke_check
+)
+
 if(BUILD_TESTING)
   find_package(launch_testing_ament_cmake REQUIRED)
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/test_simulation_launch.launch.py")
