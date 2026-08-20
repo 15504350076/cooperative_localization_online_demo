@@ -3,6 +3,7 @@
 #include "sensor_msgs/msg/image.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "sensor_msgs/msg/point_cloud2.hpp"
+#include "sensor_time_bridge.hpp"
 #include "zju_coop/c_api.h"
 
 #include <algorithm>
@@ -19,6 +20,9 @@
 namespace {
 
 constexpr std::uint64_t kNanosecondsPerSecond = 1'000'000'000ULL;
+// Packet-age guards, not a claim about UWB synchronization accuracy.
+constexpr std::uint64_t kMaxImuFutureSkewNs = 100'000'000ULL;
+constexpr std::uint64_t kMaxImuReceiveDelayNs = 500'000'000ULL;
 
 void require_ok(zju_coop_error_code_t code, const char* operation) {
   if (code != ZJU_COOP_OK) {
@@ -33,6 +37,13 @@ std::uint64_t stamp_ns(const builtin_interfaces::msg::Time& stamp) {
   }
   return static_cast<std::uint64_t>(stamp.sec) * kNanosecondsPerSecond +
          stamp.nanosec;
+}
+
+std::uint64_t steady_time_ns() {
+  const auto count = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                         std::chrono::steady_clock::now().time_since_epoch())
+                         .count();
+  return count > 0 ? static_cast<std::uint64_t>(count) : 0U;
 }
 
 std::vector<double> vector_parameter(rclcpp::Node& node, const char* name,
@@ -85,6 +96,7 @@ class LocalInertialNode final : public rclcpp::Node {
         declare_parameter<std::string>("point_cloud_frame_alias", "");
     camera_frame_alias_ =
         declare_parameter<std::string>("camera_frame_alias", "");
+    use_sim_time_ = get_parameter("use_sim_time").as_bool();
 
     if (configured_node_id <= 0 ||
         configured_node_id > std::numeric_limits<std::uint16_t>::max() ||
@@ -218,12 +230,45 @@ class LocalInertialNode final : public rclcpp::Node {
   }
 
  private:
+  std::uint64_t receive_time_ns(
+      std::uint64_t measurement_time_ns,
+      std::uint64_t steady_receive_time_ns,
+      const zju_coop_ros2::SensorTimeBridge& bridge) {
+    if (!use_sim_time_) {
+      return bridge.receive_time_ns(measurement_time_ns,
+                                    steady_receive_time_ns);
+    }
+    const auto ros_time = now().nanoseconds();
+    return ros_time > 0 ? static_cast<std::uint64_t>(ros_time) : 0U;
+  }
+
   void on_imu(const sensor_msgs::msg::Imu& message) {
     const std::uint64_t measurement_time_ns = stamp_ns(message.header.stamp);
-    const auto now_value = now().nanoseconds();
-    if (measurement_time_ns == 0U || now_value <= 0) {
+    const std::uint64_t steady_receive_time_ns = steady_time_ns();
+    const std::uint64_t receive_time = receive_time_ns(
+        measurement_time_ns, steady_receive_time_ns, imu_time_bridge_);
+    if (measurement_time_ns == 0U || receive_time == 0U) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                            "rejecting IMU with zero/invalid timestamp");
+      return;
+    }
+    if (last_imu_measurement_time_ns_ != 0U &&
+        measurement_time_ns <= last_imu_measurement_time_ns_) {
+      if (measurement_time_ns < last_imu_measurement_time_ns_) {
+        RCLCPP_WARN_THROTTLE(
+            get_logger(), *get_clock(), 2000,
+            "rejecting out-of-order/UWB-time-rollback IMU sample; restart "
+            "all localization nodes after a UWB epoch reset");
+      }
+      return;
+    }
+    if (!use_sim_time_ && !imu_time_bridge_.measurement_is_plausible(
+            measurement_time_ns, steady_receive_time_ns,
+            kMaxImuFutureSkewNs, kMaxImuReceiveDelayNs)) {
+      RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 2000,
+          "rejecting IMU outside the established UWB time window; check "
+          "the upstream timestamp domain or restart after an epoch change");
       return;
     }
 
@@ -234,7 +279,7 @@ class LocalInertialNode final : public rclcpp::Node {
     packet.node_id = node_id_;
     packet.sequence = ++imu_sequence_;
     packet.timestamp_ns = measurement_time_ns;
-    packet.receive_timestamp_ns = static_cast<std::uint64_t>(now_value);
+    packet.receive_timestamp_ns = receive_time;
     packet.angular_velocity_rad_s[0] = message.angular_velocity.x;
     packet.angular_velocity_rad_s[1] = message.angular_velocity.y;
     packet.angular_velocity_rad_s[2] = message.angular_velocity.z;
@@ -292,12 +337,24 @@ class LocalInertialNode final : public rclcpp::Node {
           "IMU sample was not consumed (disposition=%u)",
           static_cast<unsigned int>(result.disposition));
     }
+    if (result.disposition == ZJU_COOP_IMU_BASELINE_ESTABLISHED ||
+        result.disposition == ZJU_COOP_IMU_PROPAGATED ||
+        result.disposition == ZJU_COOP_IMU_INTERVAL_REJECTED) {
+      last_imu_measurement_time_ns_ = measurement_time_ns;
+      if (!use_sim_time_) {
+        static_cast<void>(imu_time_bridge_.observe(
+            measurement_time_ns, steady_receive_time_ns));
+      }
+    }
   }
 
   void on_point_cloud(const sensor_msgs::msg::PointCloud2& message) {
     const std::uint64_t measurement_time_ns = stamp_ns(message.header.stamp);
-    const auto now_value = now().nanoseconds();
-    if (measurement_time_ns == 0U || now_value <= 0 ||
+    const std::uint64_t steady_receive_time_ns = steady_time_ns();
+    const std::uint64_t receive_time = receive_time_ns(
+        measurement_time_ns, steady_receive_time_ns,
+        point_cloud_time_bridge_);
+    if (measurement_time_ns == 0U || receive_time == 0U ||
         message.fields.size() > std::numeric_limits<std::uint32_t>::max()) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                            "rejecting point cloud with invalid timestamp or fields");
@@ -335,7 +392,7 @@ class LocalInertialNode final : public rclcpp::Node {
     packet.sensor_id = point_cloud_sensor_id_;
     packet.sequence = ++point_cloud_sequence_;
     packet.timestamp_ns = measurement_time_ns;
-    packet.receive_timestamp_ns = static_cast<std::uint64_t>(now_value);
+    packet.receive_timestamp_ns = receive_time;
     packet.height = message.height;
     packet.width = message.width;
     packet.fields = fields.data();
@@ -371,6 +428,10 @@ class LocalInertialNode final : public rclcpp::Node {
           static_cast<unsigned int>(result.disposition));
       return;
     }
+    if (!use_sim_time_) {
+      static_cast<void>(point_cloud_time_bridge_.observe(
+          measurement_time_ns, steady_receive_time_ns));
+    }
     if (!point_cloud_input_seen_) {
       RCLCPP_INFO(get_logger(), "point cloud input: VALIDATED_NOT_USED");
       point_cloud_input_seen_ = true;
@@ -379,8 +440,10 @@ class LocalInertialNode final : public rclcpp::Node {
 
   void on_camera_image(const sensor_msgs::msg::Image& message) {
     const std::uint64_t measurement_time_ns = stamp_ns(message.header.stamp);
-    const auto now_value = now().nanoseconds();
-    if (measurement_time_ns == 0U || now_value <= 0) {
+    const std::uint64_t steady_receive_time_ns = steady_time_ns();
+    const std::uint64_t receive_time = receive_time_ns(
+        measurement_time_ns, steady_receive_time_ns, camera_time_bridge_);
+    if (measurement_time_ns == 0U || receive_time == 0U) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                            "rejecting camera image with invalid timestamp");
       return;
@@ -402,7 +465,7 @@ class LocalInertialNode final : public rclcpp::Node {
     packet.camera_id = camera_id_;
     packet.sequence = ++camera_sequence_;
     packet.timestamp_ns = measurement_time_ns;
-    packet.receive_timestamp_ns = static_cast<std::uint64_t>(now_value);
+    packet.receive_timestamp_ns = receive_time;
     packet.height = message.height;
     packet.width = message.width;
     packet.step = message.step;
@@ -431,6 +494,10 @@ class LocalInertialNode final : public rclcpp::Node {
           zju_coop_error_string(code),
           static_cast<unsigned int>(result.disposition));
       return;
+    }
+    if (!use_sim_time_) {
+      static_cast<void>(camera_time_bridge_.observe(
+          measurement_time_ns, steady_receive_time_ns));
     }
     if (!camera_input_seen_) {
       RCLCPP_INFO(get_logger(), "camera input: VALIDATED_NOT_USED");
@@ -482,13 +549,18 @@ class LocalInertialNode final : public rclcpp::Node {
   std::uint64_t imu_sequence_{};
   std::uint64_t point_cloud_sequence_{};
   std::uint64_t camera_sequence_{};
+  std::uint64_t last_imu_measurement_time_ns_{};
   std::uint64_t last_published_timestamp_ns_{};
   bool point_cloud_input_seen_{};
   bool camera_input_seen_{};
+  bool use_sim_time_{};
   std::string expected_imu_frame_id_;
   std::string common_enu_frame_id_;
   std::string point_cloud_frame_alias_;
   std::string camera_frame_alias_;
+  zju_coop_ros2::SensorTimeBridge imu_time_bridge_;
+  zju_coop_ros2::SensorTimeBridge point_cloud_time_bridge_;
+  zju_coop_ros2::SensorTimeBridge camera_time_bridge_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_subscription_;
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr
       point_cloud_subscription_;

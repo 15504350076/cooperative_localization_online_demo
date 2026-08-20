@@ -19,7 +19,7 @@
 - ROS 2 Humble 首版：`cooperative_localization_msgs`、`zju_coop_ros2`、`zju_coop_bringup`，以及可选的 `zju_coop_perception`、`zju_coop_gazebo`，输出 GCS 所需 `CooperativePose2DArray`。
 - 从车结果反馈默认关闭；参考车设置 `enable_follower_feedback:=true` 后，才把同一份协同结果发布到专用 `/cooperative_localization/feedback/poses_2d`。该反馈供从车规划模块订阅，不回灌本地惯导；GNSS 距离后备模式禁止用于规划控制。
 - Gazebo 感知、点云配准、视觉定位和激光 SLAM 均默认关闭。按需可启动三车 5 Hz 单线点云的平面 ICP 里程计、已知四色地标板单目平面定位，或一键启动基于 RTAB-Map 的每车独立二维建图。`enable_slam_rviz:=true` 可同时打开预配置的 RViz，默认显示参考车 1 的地图和点云。输出为 `nav_msgs/Odometry` 或 `/vehicle_N/lidar_slam/map`，当前只用于本车评估和录包，尚未反馈 NodeState 或 UWB/GCS 融合，也不跨车发送原始大数据。
-- 默认关闭的 GNSS 距离后备：只在 UWB 时间同步暂不可用时显式启动，与真实 UWB 输入严格互斥，不作为 UWB 或定位精度验收依据；当前输出没有机器可读的测距来源字段，因此该模式只供 GCS 应急显示，禁止接入规划控制。
+- 默认关闭的 GNSS 距离后备：只在 UWB 测距暂不可用、三车共同 UWB 授时仍有效且 `NavSatFix.header.stamp` 已转换到 `UWB_SYSTEM_TIME` 时显式启动；它与真实 UWB 输入严格互斥，不作为 UWB 或定位精度验收依据。当前输出没有机器可读的测距来源字段，因此该模式只供 GCS 应急显示，禁止接入规划控制。
 - C ABI v1 保留定位/观测/网络输出；Pose2D C ABI v2 通过只读 `zju_coop_get_pose2d_v2()` 输出公共快照时间、参考节点、frame 和各车 x/y/yaw，不会重复推进滤波。
 - 在线程序 `zju_coop_online`、回放程序 `zju_coop_replay`、UWB/IMU＋UWB模拟器和浏览器 GCS 面板；临时 UDP 类型 105 输出 Pose2D，面板按共同时间与参考节点收齐三车后原子更新，按有效位显示位置/航向，并显示参考节点、快照时间和坐标系；在线/回放适配层还根据库的网络结果生成状态和告警帧。
 - 输入、输出统一事件日志；回放会跳过历史输出记录，以历史输入重新计算并重新产生定位、状态和告警。
@@ -51,7 +51,8 @@
 - 交大 GCS 负责展示定位结果、拓扑、状态和告警；GCS 不承担传感器前端、时间同步、协同定位求解或车辆控制。
 - `ZJCL/UDP` 是当前不依赖 ROS 2 的临时联调与演示适配层。正式部署计划由浙大 ROS 2 适配节点在 AIBrainBox 上调用 C ABI 并发布结果消息，经上交提供的 DDS/盒端环境交给 GCS；UDP 演示协议不作为正式 ROS 2/DDS 接口。
 
-正式适配时，`timestamp_ns` 必须来自上交统一时间轴，`receive_timestamp_ns` 必须是同一时间基准下的本机接收时刻；两者单位均为纳秒。算法会用二者检查未来时间偏差和传输延迟。时间同步无效时，上交应在双方确认的输入状态接口中报告同步失效，并停止发布或标记对应测距无效；浙大适配节点不得补造测量时间。
+正式适配时，`timestamp_ns` 必须来自上交的 `UWB_SYSTEM_TIME`，单位为纳秒。实盒适配层以该时标和本机 `steady_clock` 估计同域接收时刻，不拿 Linux/ROS UTC 与 UWB 时间直接相减。算法会检查未来时间偏差和传输延迟；这两个门限是异常数据保护，不是同步精度指标。当前正式同步质量接口尚未冻结；时间同步无效时，上交必须停发受影响的 IMU/UWB，浙大节点不得补造测量时间。待正式消息冻结 valid/status 后才可改用无效标记。详细约定见 `docs/19_上交盒端UWB统一时间接入约定.md`。
+该约定只覆盖正式 ROS 2 盒端主链；旧 `zju_coop_online` SystemTime/UDP 演示入口不能直接接 UWB 运行时标。
 
 ## 工程结构
 

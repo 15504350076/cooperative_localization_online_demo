@@ -6,6 +6,7 @@ import math
 import time
 
 import rclpy
+from cooperative_localization_msgs.msg import NodeState
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.qos import qos_profile_sensor_data
@@ -46,8 +47,18 @@ class GnssRangeFallbackNode(Node):
             int(value)
             for value in self.declare_parameter("node_ids", [1, 2, 3]).value
         )
+        self._common_frame_id = str(
+            self.declare_parameter("common_frame_id", "common_enu").value
+        )
         self._max_stamp_skew_ns = self._positive_milliseconds(
             "max_stamp_skew_ms", 50
+        )
+        self._common_time_timeout_ns = self._positive_milliseconds(
+            "common_time_timeout_ms", 500
+        )
+        # This is latest asynchronous sample spread, not UWB clock accuracy.
+        self._max_state_stamp_spread_ns = self._positive_milliseconds(
+            "max_state_stamp_spread_ms", 100
         )
         self._fix_timeout_ns = self._positive_milliseconds(
             "fix_timeout_ms", 500
@@ -68,12 +79,15 @@ class GnssRangeFallbackNode(Node):
             len(self._node_ids) != 3
             or len(set(self._node_ids)) != 3
             or any(node_id <= 0 or node_id > 65535 for node_id in self._node_ids)
+            or not self._common_frame_id
             or not math.isfinite(self._max_range_m)
             or self._max_range_m <= 0.0
         ):
             raise ValueError("invalid GNSS range fallback parameters")
 
         self._latest = {}
+        self._common_time = {}
+        self._last_common_stamp = {node_id: 0 for node_id in self._node_ids}
         self._last_input_stamp = {node_id: 0 for node_id in self._node_ids}
         self._last_emitted_stamp = {node_id: 0 for node_id in self._node_ids}
         self._subscriptions = [
@@ -85,6 +99,14 @@ class GnssRangeFallbackNode(Node):
             )
             for node_id in self._node_ids
         ]
+        state_qos = QoSProfile(
+            depth=5,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+        self._state_subscription = self.create_subscription(
+            NodeState, "node_state", self._on_node_state, state_qos
+        )
         range_qos = QoSProfile(
             depth=20,
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -93,7 +115,9 @@ class GnssRangeFallbackNode(Node):
         self._publisher = self.create_publisher(UwbRange, "range", range_qos)
         self.get_logger().warning(
             "GNSS-derived range fallback ACTIVE: output is not UWB and must "
-            "not be used for UWB timing or accuracy acceptance"
+            "not be used for UWB timing or accuracy acceptance; NavSatFix "
+            "header stamps must already use UWB_SYSTEM_TIME; use_sim_time "
+            "selects /clock, otherwise live NodeState advances with steady time"
         )
 
     def _positive_milliseconds(self, name, default):
@@ -126,6 +150,41 @@ class GnssRangeFallbackNode(Node):
             and altitude_valid
         )
 
+    def _on_node_state(self, message):
+        if message.node_id not in self._node_ids:
+            return
+        stamp_ns = self._stamp_ns(message)
+        if stamp_ns <= self._last_common_stamp[message.node_id]:
+            return
+        self._last_common_stamp[message.node_id] = stamp_ns
+        if not message.valid or message.header.frame_id != self._common_frame_id:
+            self._common_time.pop(message.node_id, None)
+            self._latest.clear()
+            return
+        self._common_time[message.node_id] = (stamp_ns, time.monotonic_ns())
+
+    def _common_now_ns(self):
+        if len(self._common_time) != len(self._node_ids):
+            return None
+        receive_now_ns = time.monotonic_ns()
+        states = [self._common_time[node_id] for node_id in self._node_ids]
+        if any(
+            receive_now_ns < received_ns
+            or receive_now_ns - received_ns > self._common_time_timeout_ns
+            for _, received_ns in states
+        ):
+            return None
+        stamps = [stamp_ns for stamp_ns, _ in states]
+        if max(stamps) - min(stamps) > self._max_state_stamp_spread_ns:
+            return None
+        if bool(self.get_parameter("use_sim_time").value):
+            ros_now_ns = self.get_clock().now().nanoseconds
+            return ros_now_ns if ros_now_ns > 0 else None
+        return max(
+            stamp_ns + receive_now_ns - received_ns
+            for stamp_ns, received_ns in states
+        )
+
     def _on_fix(self, node_id, message):
         stamp_ns = self._stamp_ns(message)
         if stamp_ns <= self._last_input_stamp[node_id]:
@@ -136,7 +195,10 @@ class GnssRangeFallbackNode(Node):
                 self._latest.pop(node_id, None)
             return
 
-        now_ns = self.get_clock().now().nanoseconds
+        now_ns = self._common_now_ns()
+        if now_ns is None:
+            self._latest.clear()
+            return
         too_future = stamp_ns > now_ns + self._max_future_skew_ns
         too_delayed = now_ns > stamp_ns + self._max_receive_delay_ns
         if now_ns <= 0 or too_future or too_delayed:
@@ -169,10 +231,13 @@ class GnssRangeFallbackNode(Node):
         stamps = [self._latest[node_id][0] for node_id in self._node_ids]
         if max(stamps) - min(stamps) > self._max_stamp_skew_ns:
             return
-        ros_now_ns = self.get_clock().now().nanoseconds
-        if ros_now_ns <= 0 or any(
-            stamp_ns > ros_now_ns + self._max_future_skew_ns
-            or ros_now_ns > stamp_ns + self._max_receive_delay_ns
+        common_now_ns = self._common_now_ns()
+        if common_now_ns is None:
+            self._latest.clear()
+            return
+        if any(
+            stamp_ns > common_now_ns + self._max_future_skew_ns
+            or common_now_ns > stamp_ns + self._max_receive_delay_ns
             for stamp_ns in stamps
         ):
             return

@@ -168,6 +168,7 @@ class TestDynamicPipeline(unittest.TestCase):
             UwbRange, UWB_TOPIC, qos_profile_sensor_data
         )
         self.node_states = {node_id: [] for node_id in NODE_IDS}
+        self.last_range_timestamp_ns = 0
         self.node_state_subscription = self.node.create_subscription(
             NodeState,
             NODE_STATE_TOPIC,
@@ -242,6 +243,7 @@ class TestDynamicPipeline(unittest.TestCase):
         return message
 
     def _publish_ranges(self, timestamp_ns, elapsed_s):
+        self.last_range_timestamp_ns = timestamp_ns
         positions = {
             node_id: _truth(node_id, elapsed_s)[0] for node_id in NODE_IDS
         }
@@ -411,8 +413,18 @@ class TestDynamicPipeline(unittest.TestCase):
         self.assertIsNotNone(stale)
         stale_vehicles = {vehicle.node_id: vehicle for vehicle in stale.vehicles}
         self.assertTrue(stale_vehicles[1].position_valid)
-        self.assertFalse(stale_vehicles[2].position_valid)
-        self.assertFalse(stale_vehicles[3].position_valid)
+        stale_stamp_ns = self._timestamp_ns(stale.header.stamp)
+        range_age_s = (
+            stale_stamp_ns - self.last_range_timestamp_ns
+        ) * 1.0e-9
+        self.assertFalse(
+            stale_vehicles[2].position_valid,
+            f"node 2 stayed valid at pose-range stamp delta {range_age_s:.3f}s",
+        )
+        self.assertFalse(
+            stale_vehicles[3].position_valid,
+            f"node 3 stayed valid at pose-range stamp delta {range_age_s:.3f}s",
+        )
         self.assertTrue(all(vehicle.yaw_valid for vehicle in stale.vehicles))
 
 

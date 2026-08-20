@@ -82,7 +82,9 @@ Linux 构建包含导出符号检查：动态库必须导出公开 C API，且�
 
 当前首版浙大适配节点订阅上交发布的 `sensor_msgs/msg/Imu`，并把以下字段逐项映射到 `zju_coop_imu_packet_t`：
 
-- `header.stamp` → 统一时间轴纳秒 `timestamp_ns`；回调开始时记录同时间域的 `receive_timestamp_ns`；
+- `header.stamp` → `UWB_SYSTEM_TIME` 纳秒 `timestamp_ns`；实盒适配层以该时间戳和
+  本机 `steady_clock` 估计同域 `receive_timestamp_ns`，不会把 Linux/ROS UTC
+  与 UWB 时间直接相减；Gazebo `use_sim_time=true` 时仍使用 `/clock`；
 - `header.frame_id` → `frame_id`，当前惯性配置要求 `imu_link`；
 - `orientation` 顺序为 x/y/z/w，只在配置允许且首帧协方差有效时用于初始对准，后续不连续覆盖惯导姿态；若采用理想配置初值，则每辆车还必须提供公共 ENU 下的初始航向；
 - `angular_velocity` 单位 rad/s；
@@ -110,7 +112,9 @@ bool valid
 uint8 status               # 0 OK, 1 DEGRADED, 2 INVALID
 ```
 
-浙大适配节点在本机回调开始时采集 `receive_timestamp_ns`，不要求通过跨平台 ROS 2 消息传输该字段。`stamp` 与接收时刻必须在可比较的上交统一时间域。
+`stamp` 必须与 IMU/NodeState 同属 `UWB_SYSTEM_TIME`。参考车适配节点以本车
+NodeState 为 UWB 时钟锚点并结合 `steady_clock` 估计同域接收时刻，
+`receive_timestamp_ns` 不通过跨平台 ROS 2 消息传输，也不使用系统 UTC 代替。
 
 失同步或驱动判定不可用时，应把 `valid=false`、`status=INVALID` 的包推入 SDK，使质量窗口能够统计无效数据；采样/接收时差超限时 SDK 会拒绝该包并报告 `TIME_SYNC_TIMEOUT`。
 
@@ -156,11 +160,14 @@ C ABI v1 仍可补充以下诊断与状态：
 - Observation：边、窗口、计数、比例、频率、state、action、reason_mask、scale；
 - AlgorithmStatus 与 Alert：后续由浙大适配节点复用参考适配层语义，或在正式接口评审中扩展 C ABI。
 
-首版结果消息、`/cooperative_localization/poses_2d` 和 QoS 已实现，适配时逐字段赋值，没有把 C 结构内存直接作为 ROS 2 serialized bytes。上交正式 UWB 包名、输入 QoS、时间同步状态以及 GCS 跨盒 DDS 行为仍待冻结；`zju_coop_test_msgs/UwbRange` 只能作为当前四字段接口的构建与测试替身。
+首版结果消息、`/cooperative_localization/poses_2d` 和 QoS 已实现，适配时逐字段赋值，没有把 C 结构内存直接作为 ROS 2 serialized bytes。上交正式 UWB 包名、输入 QoS、时间同步状态以及 GCS 跨盒 DDS 行为仍待冻结；`zju_coop_test_msgs/UwbRange` 只能作为当前四字段接口的构建与测试替身。实盒统一时间的冻结口径见 `docs/19_上交盒端UWB统一时间接入约定.md`。
 
 ## 7. 平台状态接口
 
-NodeTimeSync、LinkState、NodeHealth 由上交系统产生，应与算法状态分开发布。建议字段见上级目录的《对交大GCS开发的需求.docx》。这些接口当前没有进入 C ABI 或正式 ROS 2 包，必须在生产联调前冻结消息包名、topic、QoS、单位和时钟域。
+NodeTimeSync、LinkState、NodeHealth 由上交系统产生，应与算法状态分开发布。
+这些接口当前没有进入 C ABI 或正式 ROS 2 包，必须在生产联调前冻结消息包名、
+topic、QoS、单位、失锁/重锁和 Master 重启语义。在接口冻结前，失同步时上交驱动
+必须停发受影响的 IMU/UWB；当前标准 IMU 和临时 UWB 消息没有可执行的整包同步无效位。正式质量接口冻结后才可改用无效标记。Master 导致时间回拨或超门限向前跳变时，首版整组重启三个 local 和 fusion；若启用了 GNSS 后备，还要一并重启后备节点，最简单是重启参考车整个 `vehicle.launch.py`，不能继续沿用旧后验或旧时间缓存。
 
 ## 8. 盒端必做验证
 

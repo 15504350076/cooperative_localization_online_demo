@@ -1,4 +1,5 @@
-# stamp：本车惯导最后一次接受的 IMU 样本时刻，不是消息发布时间或接收时间。
+# stamp：本车惯导最后一次接受的 IMU 样本时刻，不是消息发布时间或接收时间；
+# 实盒必须使用 UWB_SYSTEM_TIME，Gazebo 使用同一 /clock 仿真时间域。
 # frame_id：第一版固定为 common_enu；三车必须使用同一公共 ENU 定义。
 std_msgs/Header header
 

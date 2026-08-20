@@ -12,6 +12,7 @@ import launch_testing.asserts
 import launch_testing.markers
 import pytest
 import rclpy
+from builtin_interfaces.msg import Time
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.serialization import serialize_message
 from sensor_msgs.msg import Image, Imu, PointCloud2, PointField
@@ -25,6 +26,9 @@ FEEDBACK_TOPIC = "/cooperative_localization/feedback/poses_2d"
 NODE_STATE_TOPIC = "/cooperative_localization/node_state"
 UWB_TOPIC = "/uwb/range"
 NODE_IDS = (1, 2, 3)
+# Deliberately not ROS SystemTime: production sensor headers use
+# UWB_SYSTEM_TIME (here represented as elapsed time since the UWB epoch).
+UWB_START_NS = 10_000_000_000
 LONG_CAMERA_FRAME_ID = "vehicle_2/base_link/front_camera_optical_frame"
 LONG_POINT_CLOUD_FRAME_ID = "vehicle_2/base_link/front_lidar_sensor_frame"
 INITIAL_POSITIONS = (
@@ -103,6 +107,7 @@ def generate_test_description():
             "range_std_m": 0.1,
             "node_state_timeout_ms": 2000,
             "enable_follower_feedback": True,
+            "use_sim_time": False,
         }],
         remappings=[
             ("node_state", NODE_STATE_TOPIC),
@@ -156,6 +161,9 @@ class TestMinimalPipeline(unittest.TestCase):
         self.uwb_publisher = self.node.create_publisher(
             UwbRange, UWB_TOPIC, qos_profile_sensor_data
         )
+        self.node_state_publisher = self.node.create_publisher(
+            NodeState, NODE_STATE_TOPIC, qos_profile_sensor_data
+        )
         self.camera_publishers = {
             node_id: self.node.create_publisher(
                 Image,
@@ -191,6 +199,7 @@ class TestMinimalPipeline(unittest.TestCase):
         for publisher in self.imu_publishers:
             self.node.destroy_publisher(publisher)
         self.node.destroy_publisher(self.uwb_publisher)
+        self.node.destroy_publisher(self.node_state_publisher)
         for publisher in self.camera_publishers.values():
             self.node.destroy_publisher(publisher)
         for publisher in self.point_cloud_publishers.values():
@@ -208,6 +217,9 @@ class TestMinimalPipeline(unittest.TestCase):
                 for publisher in self.imu_publishers
             )
             uwb_ready = self.uwb_publisher.get_subscription_count() >= 1
+            node_state_ready = (
+                self.node_state_publisher.get_subscription_count() >= 1
+            )
             pose_ready = self.node.count_publishers(POSE_TOPIC) >= 1
             feedback_ready = self.node.count_publishers(FEEDBACK_TOPIC) == 1
             raw_input_ready = (
@@ -218,6 +230,7 @@ class TestMinimalPipeline(unittest.TestCase):
             if (
                 imu_ready
                 and uwb_ready
+                and node_state_ready
                 and pose_ready
                 and feedback_ready
                 and raw_input_ready
@@ -306,6 +319,14 @@ class TestMinimalPipeline(unittest.TestCase):
         ]
         return message
 
+    @staticmethod
+    def _uwb_stamp(elapsed_s):
+        timestamp_ns = UWB_START_NS + int(elapsed_s * 1_000_000_000)
+        return Time(
+            sec=timestamp_ns // 1_000_000_000,
+            nanosec=timestamp_ns % 1_000_000_000,
+        )
+
     def _publish_ranges(self, stamp):
         for source, target, distance in (
             (1, 2, 4.0),
@@ -320,6 +341,15 @@ class TestMinimalPipeline(unittest.TestCase):
             message.target_id = target
             message.distance = float(distance)
             self.uwb_publisher.publish(message)
+
+    def _publish_reference_state(self, stamp, valid):
+        message = NodeState()
+        message.header.stamp = stamp
+        message.header.frame_id = "common_enu"
+        message.node_id = 1
+        message.orientation_flu_to_enu_xyzw[3] = 1.0
+        message.valid = valid
+        self.node_state_publisher.publish(message)
 
     @staticmethod
     def _complete_pose(message):
@@ -342,7 +372,7 @@ class TestMinimalPipeline(unittest.TestCase):
         return abs(vehicle_2.x_m - 4.0) < 0.5
 
     def test_standard_imu_and_uwb_produce_gcs_pose_array(
-        self, proc_output, local_nodes
+        self, proc_output, local_nodes, fusion_node
     ):
         self._wait_for_graph()
         self._assert_optional_raw_input_graph()
@@ -370,10 +400,15 @@ class TestMinimalPipeline(unittest.TestCase):
             timeout=5,
         )
 
+        # An invalid reference state must not establish the UWB clock anchor.
+        self._publish_reference_state(self._uwb_stamp(100.0), False)
+        time.sleep(0.05)
+
         accepted = None
         deadline = time.monotonic() + 15.0
+        start_wall = time.monotonic()
         while time.monotonic() < deadline and accepted is None:
-            stamp = self.node.get_clock().now().to_msg()
+            stamp = self._uwb_stamp(time.monotonic() - start_wall)
             for publisher in self.imu_publishers:
                 publisher.publish(self._imu(stamp))
             # Give local callbacks and timers time to forward this common-stamp
@@ -427,6 +462,20 @@ class TestMinimalPipeline(unittest.TestCase):
             self.assertAlmostEqual(
                 vehicle.yaw_rad, expected_yaws[node_id], places=6
             )
+
+        self._publish_reference_state(self._uwb_stamp(100.0), True)
+        proc_output.assertWaitFor(
+            "reference NodeState UWB time discontinuity",
+            process=fusion_node,
+            timeout=5,
+        )
+
+        self._publish_reference_state(self._uwb_stamp(-0.001), True)
+        proc_output.assertWaitFor(
+            "reference NodeState UWB time rolled back",
+            process=fusion_node,
+            timeout=5,
+        )
 
 
 @launch_testing.post_shutdown_test()

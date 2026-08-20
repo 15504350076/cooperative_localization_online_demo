@@ -1,6 +1,7 @@
 #include "cooperative_localization_msgs/msg/cooperative_pose2_d_array.hpp"
 #include "cooperative_localization_msgs/msg/node_state.hpp"
 #include "rclcpp/rclcpp.hpp"
+#include "sensor_time_bridge.hpp"
 #include "zju_coop/c_api.h"
 #include "zju_coop_test_msgs/msg/uwb_range.hpp"
 
@@ -20,6 +21,9 @@
 namespace {
 
 constexpr std::uint64_t kNanosecondsPerSecond = 1'000'000'000ULL;
+constexpr std::uint64_t kNanosecondsPerMillisecond = 1'000'000ULL;
+constexpr std::uint64_t kMaximumMilliseconds =
+    std::numeric_limits<std::uint64_t>::max() / kNanosecondsPerMillisecond;
 
 void require_ok(zju_coop_error_code_t code, const char* operation) {
   if (code != ZJU_COOP_OK) {
@@ -34,6 +38,13 @@ std::uint64_t stamp_ns(const builtin_interfaces::msg::Time& stamp) {
   }
   return static_cast<std::uint64_t>(stamp.sec) * kNanosecondsPerSecond +
          stamp.nanosec;
+}
+
+std::uint64_t steady_time_ns() {
+  const auto count = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                         std::chrono::steady_clock::now().time_since_epoch())
+                         .count();
+  return count > 0 ? static_cast<std::uint64_t>(count) : 0U;
 }
 
 class CooperativeFusionNode final : public rclcpp::Node {
@@ -51,14 +62,28 @@ class CooperativeFusionNode final : public rclcpp::Node {
     range_std_m_ = declare_parameter<double>("range_std_m", 0.10);
     const auto timeout_ms =
         declare_parameter<std::int64_t>("node_state_timeout_ms", 300);
+    // Packet-age guards; neither value is a UWB synchronization-accuracy target.
+    const auto max_future_skew_ms =
+        declare_parameter<std::int64_t>("max_future_skew_ms", 100);
+    const auto max_receive_delay_ms =
+        declare_parameter<std::int64_t>("max_receive_delay_ms", 500);
     common_enu_frame_id_ =
         declare_parameter<std::string>("common_enu_frame_id", "common_enu");
+    use_sim_time_ = get_parameter("use_sim_time").as_bool();
 
     if (configured_ids.size() < 2U || configured_reference <= 0 ||
         configured_reference > std::numeric_limits<std::uint16_t>::max() ||
         !std::isfinite(publish_rate_hz) || publish_rate_hz <= 0.0 ||
         !std::isfinite(range_std_m_) || range_std_m_ <= 0.0 ||
-        timeout_ms <= 0 || common_enu_frame_id_.empty()) {
+        timeout_ms <= 0 ||
+        static_cast<std::uint64_t>(timeout_ms) > kMaximumMilliseconds ||
+        max_future_skew_ms <= 0 ||
+        static_cast<std::uint64_t>(max_future_skew_ms) >
+            kMaximumMilliseconds ||
+        max_receive_delay_ms <= 0 ||
+        static_cast<std::uint64_t>(max_receive_delay_ms) >
+            kMaximumMilliseconds ||
+        common_enu_frame_id_.empty()) {
       throw std::invalid_argument("invalid cooperative fusion parameters");
     }
     reference_node_id_ = static_cast<std::uint32_t>(configured_reference);
@@ -91,7 +116,15 @@ class CooperativeFusionNode final : public rclcpp::Node {
     config.nodes = nodes.data();
     config.node_count = static_cast<std::uint32_t>(nodes.size());
     config.max_prediction_step_s = 0.10;
-    config.edge_timeout_ns = static_cast<std::uint64_t>(timeout_ms) * 1'000'000ULL;
+    config.edge_timeout_ns = static_cast<std::uint64_t>(timeout_ms) *
+                             kNanosecondsPerMillisecond;
+    max_future_skew_ns_ = static_cast<std::uint64_t>(max_future_skew_ms) *
+                          kNanosecondsPerMillisecond;
+    max_receive_delay_ns_ =
+        static_cast<std::uint64_t>(max_receive_delay_ms) *
+        kNanosecondsPerMillisecond;
+    config.max_future_skew_ns = max_future_skew_ns_;
+    config.max_receive_delay_ns = max_receive_delay_ns_;
     require_ok(zju_coop_distributed_create(&config, &handle_),
                "zju_coop_distributed_create");
 
@@ -120,8 +153,14 @@ class CooperativeFusionNode final : public rclcpp::Node {
     publish_timer_ = create_wall_timer(period, [this]() { publish_pose(); });
 
     RCLCPP_INFO(get_logger(),
-                "distributed fusion ready: %zu nodes, reference=%u",
-                node_ids_.size(), reference_node_id_);
+                "distributed fusion ready: %zu nodes, reference=%u, "
+                "time_source=%s; timestamp guards future=%lld ms, "
+                "receive-delay=%lld ms (data rejection, not sync accuracy)",
+                node_ids_.size(), reference_node_id_,
+                use_sim_time_ ? "ROS simulation clock"
+                              : "reference NodeState UWB clock",
+                static_cast<long long>(max_future_skew_ms),
+                static_cast<long long>(max_receive_delay_ms));
   }
 
   ~CooperativeFusionNode() override {
@@ -131,6 +170,14 @@ class CooperativeFusionNode final : public rclcpp::Node {
   }
 
  private:
+  std::uint64_t current_time_ns(std::uint64_t steady_now_ns) const {
+    if (!use_sim_time_) {
+      return reference_time_bridge_.current_time_ns(steady_now_ns);
+    }
+    const auto ros_time = now().nanoseconds();
+    return ros_time > 0 ? static_cast<std::uint64_t>(ros_time) : 0U;
+  }
+
   void on_node_state(
       const cooperative_localization_msgs::msg::NodeState& message) {
     if (message.header.frame_id != common_enu_frame_id_) {
@@ -151,20 +198,50 @@ class CooperativeFusionNode final : public rclcpp::Node {
       return;
     }
     if (measurement_time <= previous->second) {
+      if (message.node_id == reference_node_id_ &&
+          measurement_time < previous->second) {
+        RCLCPP_ERROR_THROTTLE(
+            get_logger(), *get_clock(), 2000,
+            "reference NodeState UWB time rolled back; rejecting the new "
+            "epoch until this fusion node is restarted");
+        return;
+      }
       RCLCPP_WARN_THROTTLE(
           get_logger(), *get_clock(), 2000,
           "rejecting duplicate/out-of-order NodeState from node %u",
           message.node_id);
       return;
     }
-    const auto receive_time = now().nanoseconds();
+    const auto steady_receive_time = steady_time_ns();
+    auto receive_time = current_time_ns(steady_receive_time);
+    const bool is_reference = message.node_id == reference_node_id_;
+    const bool initializes_reference_clock =
+        !use_sim_time_ && is_reference && receive_time == 0U;
+    if (initializes_reference_clock) {
+      // The first local reference state is the only available UWB-time anchor.
+      receive_time = measurement_time;
+    } else if (!use_sim_time_ && is_reference &&
+               !reference_time_bridge_.measurement_is_plausible(
+                   measurement_time, steady_receive_time,
+                   max_future_skew_ns_, max_receive_delay_ns_)) {
+      RCLCPP_ERROR_THROTTLE(
+          get_logger(), *get_clock(), 2000,
+          "reference NodeState UWB time discontinuity exceeds the configured "
+          "window; reject this epoch and restart all localization nodes if "
+          "the new time base persists");
+      return;
+    }
     zju_coop_node_state_t state{};
-    if (receive_time <= 0 || zju_coop_node_state_init(&state) != ZJU_COOP_OK) {
+    if (receive_time == 0U ||
+        zju_coop_node_state_init(&state) != ZJU_COOP_OK) {
+      RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 2000,
+          "waiting for the reference NodeState UWB time anchor");
       return;
     }
     state.node_id = message.node_id;
     state.timestamp_ns = measurement_time;
-    state.receive_timestamp_ns = static_cast<std::uint64_t>(receive_time);
+    state.receive_timestamp_ns = receive_time;
     std::copy(message.position_enu_m.begin(), message.position_enu_m.end(),
               state.position_enu_m);
     std::copy(message.velocity_enu_mps.begin(), message.velocity_enu_mps.end(),
@@ -181,6 +258,11 @@ class CooperativeFusionNode final : public rclcpp::Node {
       return;
     }
     previous->second = measurement_time;
+    if (!use_sim_time_ && is_reference) {
+      // Only an accepted local reference state may discipline the bridge.
+      static_cast<void>(reference_time_bridge_.observe(
+          measurement_time, steady_receive_time));
+    }
   }
 
   void on_uwb_range(const zju_coop_test_msgs::msg::UwbRange& message) {
@@ -190,10 +272,11 @@ class CooperativeFusionNode final : public rclcpp::Node {
                            "rejecting UWB node id outside uint16 C ABI");
       return;
     }
-    const auto receive_time = now().nanoseconds();
+    const auto receive_time = current_time_ns(steady_time_ns());
     zju_coop_range_packet_t packet{};
     zju_coop_range_processing_result_t result{};
-    if (receive_time <= 0 || zju_coop_range_packet_init(&packet) != ZJU_COOP_OK ||
+    if (receive_time == 0U ||
+        zju_coop_range_packet_init(&packet) != ZJU_COOP_OK ||
         zju_coop_range_processing_result_init(&result) != ZJU_COOP_OK) {
       return;
     }
@@ -201,7 +284,7 @@ class CooperativeFusionNode final : public rclcpp::Node {
     packet.to_node = static_cast<std::uint16_t>(message.target_id);
     packet.sequence = ++uwb_sequence_;
     packet.timestamp_ns = stamp_ns(message.header.stamp);
-    packet.receive_timestamp_ns = static_cast<std::uint64_t>(receive_time);
+    packet.receive_timestamp_ns = receive_time;
     packet.range_m = message.distance;
     packet.range_std_m = range_std_m_;
     packet.valid = ZJU_COOP_TRUE;
@@ -226,8 +309,8 @@ class CooperativeFusionNode final : public rclcpp::Node {
   }
 
   void publish_pose() {
-    const auto now_value = now().nanoseconds();
-    if (now_value <= 0) {
+    const auto now_value = current_time_ns(steady_time_ns());
+    if (now_value == 0U) {
       return;
     }
     zju_coop_pose2d_snapshot_v2_t snapshot{};
@@ -242,7 +325,7 @@ class CooperativeFusionNode final : public rclcpp::Node {
     }
     std::uint32_t count{};
     const auto code = zju_coop_distributed_get_pose2d_v2(
-        handle_, static_cast<std::uint64_t>(now_value), &snapshot,
+        handle_, now_value, &snapshot,
         vehicles.data(), static_cast<std::uint32_t>(vehicles.size()),
         static_cast<std::uint32_t>(sizeof(vehicles.front())), &count);
     if (code != ZJU_COOP_OK) {
@@ -280,7 +363,11 @@ class CooperativeFusionNode final : public rclcpp::Node {
   std::uint32_t reference_node_id_{};
   std::uint64_t uwb_sequence_{};
   double range_std_m_{};
+  bool use_sim_time_{};
+  std::uint64_t max_future_skew_ns_{};
+  std::uint64_t max_receive_delay_ns_{};
   std::string common_enu_frame_id_;
+  zju_coop_ros2::SensorTimeBridge reference_time_bridge_;
   rclcpp::Subscription<cooperative_localization_msgs::msg::NodeState>::SharedPtr
       node_state_subscription_;
   rclcpp::Subscription<zju_coop_test_msgs::msg::UwbRange>::SharedPtr

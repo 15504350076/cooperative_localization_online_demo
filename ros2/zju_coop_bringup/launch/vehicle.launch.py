@@ -148,7 +148,10 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "use_gnss_range_fallback",
                 default_value="false",
-                description="Use GNSS-derived ranges instead of /uwb/range",
+                description=(
+                    "Use GNSS-derived ranges instead of /uwb/range; requires "
+                    "live NodeState and NavSatFix stamps in UWB_SYSTEM_TIME"
+                ),
             ),
             DeclareLaunchArgument(
                 "gnss_topic_1", default_value="/vehicle_1/gnss/fix"
@@ -321,6 +324,10 @@ def generate_launch_description():
                     ),
                 }],
                 remappings=[
+                    (
+                        "node_state",
+                        "/cooperative_localization/node_state",
+                    ),
                     ("fix_1", LaunchConfiguration("gnss_topic_1")),
                     ("fix_2", LaunchConfiguration("gnss_topic_2")),
                     ("fix_3", LaunchConfiguration("gnss_topic_3")),

@@ -12,7 +12,13 @@ import launch_testing.asserts
 import launch_testing.markers
 import pytest
 import rclpy
-from rclpy.qos import qos_profile_sensor_data
+from cooperative_localization_msgs.msg import NodeState
+from rclpy.qos import (
+    DurabilityPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from sensor_msgs.msg import NavSatFix, NavSatStatus
 
 from zju_coop_test_msgs.msg import UwbRange
@@ -20,6 +26,7 @@ from zju_coop_test_msgs.msg import UwbRange
 
 FIX_TOPICS = tuple(f"/test/vehicle_{node_id}/gnss/fix" for node_id in (1, 2, 3))
 RANGE_TOPIC = "/test/cooperative_localization/gnss_derived_range"
+STATE_TOPIC = "/test/cooperative_localization/node_state"
 WGS84_A_M = 6378137.0
 
 
@@ -33,7 +40,10 @@ def generate_test_description():
         output="screen",
         parameters=[{
             "node_ids": [1, 2, 3],
+            "common_frame_id": "common_enu",
             "max_stamp_skew_ms": 50,
+            "common_time_timeout_ms": 150,
+            "max_state_stamp_spread_ms": 100,
             "fix_timeout_ms": 150,
             "max_receive_delay_ms": 500,
             "max_future_skew_ms": 100,
@@ -41,6 +51,7 @@ def generate_test_description():
             "use_altitude": False,
         }],
         remappings=[
+            ("node_state", STATE_TOPIC),
             ("fix_1", FIX_TOPICS[0]),
             ("fix_2", FIX_TOPICS[1]),
             ("fix_3", FIX_TOPICS[2]),
@@ -68,6 +79,14 @@ class TestGnssRangeFallback(unittest.TestCase):
 
     def setUp(self):
         self.node = rclpy.create_node("gnss_range_fallback_test_driver")
+        state_qos = QoSProfile(
+            depth=5,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+        self.state_publisher = self.node.create_publisher(
+            NodeState, STATE_TOPIC, state_qos
+        )
         self.fix_publishers = [
             self.node.create_publisher(NavSatFix, topic, qos_profile_sensor_data)
             for topic in FIX_TOPICS
@@ -78,6 +97,7 @@ class TestGnssRangeFallback(unittest.TestCase):
         )
 
     def tearDown(self):
+        self.node.destroy_publisher(self.state_publisher)
         for publisher in self.fix_publishers:
             self.node.destroy_publisher(publisher)
         self.node.destroy_subscription(self.range_subscription)
@@ -90,6 +110,7 @@ class TestGnssRangeFallback(unittest.TestCase):
             if (
                 all(publisher.get_subscription_count() == 1
                     for publisher in self.fix_publishers)
+                and self.state_publisher.get_subscription_count() == 1
                 and self.node.count_publishers(RANGE_TOPIC) == 1
             ):
                 return
@@ -121,6 +142,20 @@ class TestGnssRangeFallback(unittest.TestCase):
         ):
             publisher.publish(self._fix(stamp_ns + offset_ns, longitude, status))
 
+    def _publish_common_time(
+        self, stamp_ns, valid=True, frame_id="common_enu"
+    ):
+        for node_id in (1, 2, 3):
+            message = NodeState()
+            message.header.stamp.sec = stamp_ns // 1_000_000_000
+            message.header.stamp.nanosec = stamp_ns % 1_000_000_000
+            message.header.frame_id = frame_id
+            message.node_id = node_id
+            message.orientation_flu_to_enu_xyzw = [0.0, 0.0, 0.0, 1.0]
+            message.valid = valid
+            self.state_publisher.publish(message)
+        time.sleep(0.05)
+
     def _spin_until_ranges(self, expected, timeout_s=3.0):
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline and len(self.ranges) < expected:
@@ -128,7 +163,8 @@ class TestGnssRangeFallback(unittest.TestCase):
 
     def test_valid_synchronized_fixes_generate_one_three_edge_epoch(self):
         self._wait_for_graph()
-        stamp_ns = self.node.get_clock().now().nanoseconds
+        stamp_ns = time.monotonic_ns()
+        self._publish_common_time(stamp_ns)
         self._publish_epoch(
             stamp_ns, offsets_ns=(-20_000_000, -10_000_000, 0)
         )
@@ -158,7 +194,8 @@ class TestGnssRangeFallback(unittest.TestCase):
         self.assertEqual(self.ranges, [])
 
         # A newer NO_FIX must invalidate this node's previously cached fix.
-        next_stamp_ns = self.node.get_clock().now().nanoseconds
+        next_stamp_ns = time.monotonic_ns()
+        self._publish_common_time(next_stamp_ns)
         longitude_3m = math.degrees(
             2.0 * math.asin(3.0 / (2.0 * WGS84_A_M))
         )
@@ -194,12 +231,37 @@ class TestGnssRangeFallback(unittest.TestCase):
     def test_bad_fix_skew_and_receive_timeout_do_not_emit_ranges(self):
         self._wait_for_graph()
 
-        now_ns = self.node.get_clock().now().nanoseconds
+        # A valid-looking trio is ignored until all three NodeState streams
+        # establish a live UWB_SYSTEM_TIME reference.
+        now_ns = time.monotonic_ns()
+        self._publish_common_time(now_ns, valid=False)
+        self._publish_epoch(now_ns)
+        self._spin_until_ranges(1, timeout_s=0.3)
+        self.assertEqual(self.ranges, [])
+
+        # Wrong-frame and stale NodeState samples cannot establish the clock.
+        now_ns = time.monotonic_ns()
+        self._publish_common_time(now_ns, frame_id="map")
+        self._publish_epoch(now_ns)
+        self._spin_until_ranges(1, timeout_s=0.3)
+        self.assertEqual(self.ranges, [])
+
+        now_ns = time.monotonic_ns()
+        self._publish_common_time(now_ns)
+        time.sleep(0.2)
+        self._publish_epoch(now_ns + 200_000_000)
+        self._spin_until_ranges(1, timeout_s=0.3)
+        self.assertEqual(self.ranges, [])
+
+        now_ns = time.monotonic_ns()
+        self._publish_common_time(now_ns)
         self._publish_epoch(now_ns - 600_000_000)
         self._spin_until_ranges(1, timeout_s=0.3)
         self.assertEqual(self.ranges, [])
 
-        future_ns = self.node.get_clock().now().nanoseconds + 200_000_000
+        now_ns = time.monotonic_ns()
+        self._publish_common_time(now_ns)
+        future_ns = now_ns + 200_000_000
         self._publish_epoch(future_ns)
         self._spin_until_ranges(1, timeout_s=0.3)
         self.assertEqual(self.ranges, [])
@@ -208,8 +270,15 @@ class TestGnssRangeFallback(unittest.TestCase):
         self._spin_until_ranges(1, timeout_s=0.3)
         self.assertEqual(self.ranges, [])
 
+        # A real-UTC NavSatFix cannot pass a UWB_SYSTEM_TIME reference gate.
+        self._publish_common_time(time.monotonic_ns())
+        self._publish_epoch(time.time_ns())
+        self._spin_until_ranges(1, timeout_s=0.3)
+        self.assertEqual(self.ranges, [])
+
+        stamp_ns = time.monotonic_ns()
+        self._publish_common_time(stamp_ns)
         # One NO_FIX invalidates the whole synchronized epoch.
-        stamp_ns = self.node.get_clock().now().nanoseconds
         self._publish_epoch(
             stamp_ns,
             statuses=(
@@ -222,13 +291,15 @@ class TestGnssRangeFallback(unittest.TestCase):
         self.assertEqual(self.ranges, [])
 
         # An 80 ms sensor-stamp spread exceeds the configured 50 ms slop.
-        stamp_ns = self.node.get_clock().now().nanoseconds
+        stamp_ns = time.monotonic_ns()
+        self._publish_common_time(stamp_ns)
         self._publish_epoch(stamp_ns, offsets_ns=(-80_000_000, -70_000_000, 0))
         self._spin_until_ranges(1, timeout_s=0.3)
         self.assertEqual(self.ranges, [])
 
         # Cached fixes older than the receive-time timeout are not combined.
-        stamp_ns = self.node.get_clock().now().nanoseconds
+        stamp_ns = time.monotonic_ns()
+        self._publish_common_time(stamp_ns)
         self.fix_publishers[0].publish(self._fix(stamp_ns, 0.0))
         longitude_3m = math.degrees(
             2.0 * math.asin(3.0 / (2.0 * WGS84_A_M))

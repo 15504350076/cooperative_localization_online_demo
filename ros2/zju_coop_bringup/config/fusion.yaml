@@ -6,3 +6,6 @@
     publish_rate_hz: 10.0
     range_std_m: 0.1
     node_state_timeout_ms: 300
+    # Data-age rejection guards, not UWB synchronization-accuracy targets.
+    max_future_skew_ms: 100
+    max_receive_delay_ms: 500

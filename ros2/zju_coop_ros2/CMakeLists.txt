@@ -13,6 +13,10 @@ if(NOT ZJU_COOP_SDK_ROOT)
   message(FATAL_ERROR "ZJU_COOP_SDK_ROOT must name the staged zju_coop SDK")
 endif()
 
+# These are derived from ZJU_COOP_SDK_ROOT.  Do not let a reused colcon build
+# directory keep headers or a library from an older staged SDK.
+unset(ZJU_COOP_INCLUDE_DIR CACHE)
+unset(ZJU_COOP_LIBRARY CACHE)
 find_path(ZJU_COOP_INCLUDE_DIR zju_coop/c_api.h
   HINTS "${ZJU_COOP_SDK_ROOT}/include"
   NO_DEFAULT_PATH)
@@ -54,6 +58,11 @@ install(FILES "${ZJU_COOP_LIBRARY}" DESTINATION lib)
 
 if(BUILD_TESTING)
   find_package(launch_testing_ament_cmake REQUIRED)
+  add_executable(test_sensor_time_bridge test/test_sensor_time_bridge.cpp)
+  target_compile_features(test_sensor_time_bridge PRIVATE cxx_std_17)
+  target_compile_options(test_sensor_time_bridge PRIVATE
+    -Wall -Wextra -Wpedantic)
+  add_test(NAME sensor_time_bridge COMMAND test_sensor_time_bridge)
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/test_pipeline.launch.py")
     add_launch_test(test/test_pipeline.launch.py TIMEOUT 40)
   endif()
