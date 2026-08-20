@@ -22,9 +22,10 @@ from zju_coop_test_msgs.msg import UwbRange
 
 GNSS_TOPICS = tuple(f"/test/vehicle_{node_id}/gnss/fix" for node_id in (1, 2, 3))
 DERIVED_RANGE_TOPIC = "/cooperative_localization/gnss_derived_range"
+FEEDBACK_TOPIC = "/cooperative_localization/feedback/poses_2d"
 
 
-def _vehicle_launch(namespace, fallback=None):
+def _vehicle_launch(namespace, fallback=None, feedback=None):
     launch_file = PathJoinSubstitution([
         FindPackageShare("zju_coop_bringup"),
         "launch",
@@ -41,6 +42,10 @@ def _vehicle_launch(namespace, fallback=None):
             "gnss_topic_2": GNSS_TOPICS[1],
             "gnss_topic_3": GNSS_TOPICS[2],
         })
+    if feedback is not None:
+        arguments["enable_follower_feedback"] = (
+            "true" if feedback else "false"
+        )
     return IncludeLaunchDescription(
         PythonLaunchDescriptionSource(launch_file),
         launch_arguments=arguments.items(),
@@ -52,8 +57,9 @@ def _vehicle_launch(namespace, fallback=None):
 def generate_test_description():
     return launch.LaunchDescription([
         # Omit the fallback argument to lock its declared default of false.
-        _vehicle_launch("normal_ref"),
-        _vehicle_launch("fallback_ref", fallback=True),
+        _vehicle_launch("normal_ref", feedback=True),
+        # Request feedback in fallback mode and prove bringup forces it off.
+        _vehicle_launch("fallback_ref", fallback=True, feedback=True),
         launch_testing.actions.ReadyToTest(),
     ])
 
@@ -86,14 +92,21 @@ class TestGnssFallbackModes(unittest.TestCase):
 
     def _wait_for_graph(self, timeout_s=10.0):
         deadline = time.monotonic() + timeout_s
+        graph_state = None
         while time.monotonic() < deadline:
             rclpy.spin_once(self.node, timeout_sec=0.05)
+            graph_state = (
+                self.uwb_publisher.get_subscription_count(),
+                tuple(
+                    publisher.get_subscription_count()
+                    for publisher in self.gnss_publishers
+                ),
+                self.node.count_publishers(DERIVED_RANGE_TOPIC),
+                self.node.count_subscribers(DERIVED_RANGE_TOPIC),
+                self.node.count_publishers(FEEDBACK_TOPIC),
+            )
             if (
-                self.uwb_publisher.get_subscription_count() == 1
-                and all(publisher.get_subscription_count() == 1
-                        for publisher in self.gnss_publishers)
-                and self.node.count_publishers(DERIVED_RANGE_TOPIC) == 1
-                and self.node.count_subscribers(DERIVED_RANGE_TOPIC) == 1
+                graph_state == (1, (1, 1, 1), 1, 1, 1)
                 and any(
                     name == "zju_gnss_range_fallback_node"
                     and namespace == "/fallback_ref"
@@ -102,7 +115,10 @@ class TestGnssFallbackModes(unittest.TestCase):
                 )
             ):
                 return
-        self.fail("normal and GNSS-fallback bringup graphs were not ready")
+        self.fail(
+            "normal and GNSS-fallback bringup graphs were not ready: "
+            f"{graph_state}"
+        )
 
     def _range_std_m(self, node_name):
         client = self.node.create_client(
@@ -115,6 +131,20 @@ class TestGnssFallbackModes(unittest.TestCase):
         rclpy.spin_until_future_complete(self.node, future, timeout_sec=5.0)
         self.assertTrue(future.done(), node_name)
         value = future.result().values[0].double_value
+        self.node.destroy_client(client)
+        return value
+
+    def _feedback_enabled(self, node_name):
+        client = self.node.create_client(
+            GetParameters, f"{node_name}/get_parameters"
+        )
+        self.assertTrue(client.wait_for_service(timeout_sec=5.0), node_name)
+        request = GetParameters.Request()
+        request.names = ["enable_follower_feedback"]
+        future = client.call_async(request)
+        rclpy.spin_until_future_complete(self.node, future, timeout_sec=5.0)
+        self.assertTrue(future.done(), node_name)
+        value = future.result().values[0].bool_value
         self.node.destroy_client(client)
         return value
 
@@ -133,4 +163,14 @@ class TestGnssFallbackModes(unittest.TestCase):
         self.assertAlmostEqual(
             self._range_std_m("/fallback_ref/zju_cooperative_fusion_node"),
             3.0,
+        )
+        self.assertTrue(
+            self._feedback_enabled(
+                "/normal_ref/zju_cooperative_fusion_node"
+            )
+        )
+        self.assertFalse(
+            self._feedback_enabled(
+                "/fallback_ref/zju_cooperative_fusion_node"
+            )
         )

@@ -26,8 +26,10 @@
           <box><size>0.8 0.5 0.2</size></box>
         </geometry>
         <material>
-          <ambient>0.1 0.35 0.8 1</ambient>
-          <diffuse>0.1 0.35 0.8 1</diffuse>
+          <!-- Neutral grey avoids being mistaken for the blue visual
+               landmark while keeping the orange reference car distinctive. -->
+          <ambient>0.28 0.30 0.34 1</ambient>
+          <diffuse>0.34 0.36 0.40 1</diffuse>
         </material>
       </visual>
 
@@ -37,6 +39,56 @@
         <always_on>true</always_on>
         <update_rate>100</update_rate>
         <ignition_frame_id>imu_link</ignition_frame_id>
+      </sensor>
+
+      <!-- Optional development sensors. They stay idle until their Gazebo
+           topics have subscribers; the production localization nodes do not
+           subscribe to either raw stream. -->
+      <sensor name="front_lidar" type="gpu_lidar">
+        <pose>0.20 0 0.20 0 0 0</pose>
+        <always_on>false</always_on>
+        <update_rate>5</update_rate>
+        <visualize>false</visualize>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>360</samples>
+              <resolution>1</resolution>
+              <min_angle>-3.141592653589793</min_angle>
+              <max_angle>3.141592653589793</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>1</samples>
+              <resolution>1</resolution>
+              <min_angle>0</min_angle>
+              <max_angle>0</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.20</min>
+            <max>40.0</max>
+            <resolution>0.02</resolution>
+          </range>
+        </lidar>
+      </sensor>
+
+      <sensor name="front_camera" type="camera">
+        <pose>0.41 0 0.10 0 0 0</pose>
+        <always_on>false</always_on>
+        <update_rate>10</update_rate>
+        <visualize>false</visualize>
+        <camera>
+          <horizontal_fov>1.047197551196598</horizontal_fov>
+          <image>
+            <width>320</width>
+            <height>240</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.10</near>
+            <far>50.0</far>
+          </clip>
+        </camera>
       </sensor>
     </link>
 

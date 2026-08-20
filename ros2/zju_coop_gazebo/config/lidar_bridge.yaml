@@ -1,0 +1,26 @@
+- ros_topic_name: /vehicle_1/lidar/points
+  gz_topic_name: /world/zju_coop_gazebo/model/vehicle_1/link/base_link/sensor/front_lidar/scan/points
+  ros_type_name: sensor_msgs/msg/PointCloud2
+  gz_type_name: ignition.msgs.PointCloudPacked
+  direction: GZ_TO_ROS
+  subscriber_queue: 2
+  publisher_queue: 2
+  lazy: true
+
+- ros_topic_name: /vehicle_2/lidar/points
+  gz_topic_name: /world/zju_coop_gazebo/model/vehicle_2/link/base_link/sensor/front_lidar/scan/points
+  ros_type_name: sensor_msgs/msg/PointCloud2
+  gz_type_name: ignition.msgs.PointCloudPacked
+  direction: GZ_TO_ROS
+  subscriber_queue: 2
+  publisher_queue: 2
+  lazy: true
+
+- ros_topic_name: /vehicle_3/lidar/points
+  gz_topic_name: /world/zju_coop_gazebo/model/vehicle_3/link/base_link/sensor/front_lidar/scan/points
+  ros_type_name: sensor_msgs/msg/PointCloud2
+  gz_type_name: ignition.msgs.PointCloudPacked
+  direction: GZ_TO_ROS
+  subscriber_queue: 2
+  publisher_queue: 2
+  lazy: true

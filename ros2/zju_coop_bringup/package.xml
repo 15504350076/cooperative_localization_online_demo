@@ -11,6 +11,8 @@
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>rmw_fastrtps_cpp</exec_depend>
+  <exec_depend>rtabmap_slam</exec_depend>
+  <exec_depend>zju_coop_perception</exec_depend>
   <exec_depend>zju_coop_ros2</exec_depend>
 
   <test_depend>cooperative_localization_msgs</test_depend>

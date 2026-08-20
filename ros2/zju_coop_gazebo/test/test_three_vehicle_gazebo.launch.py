@@ -38,6 +38,34 @@ RECORDED_TOPICS = {
     NODE_STATE_TOPIC,
     POSE_TOPIC,
 }
+PERCEPTION_TOPICS = {
+    *(
+        f"/vehicle_{node_id}/lidar/points"
+        for node_id in NODE_IDS
+    ),
+    *(
+        f"/vehicle_{node_id}/camera/image_raw"
+        for node_id in NODE_IDS
+    ),
+    *(
+        f"/vehicle_{node_id}/camera/camera_info"
+        for node_id in NODE_IDS
+    ),
+}
+FRONTEND_TOPICS = {
+    *(
+        f"/vehicle_{node_id}/lidar/odometry"
+        for node_id in NODE_IDS
+    ),
+    *(
+        f"/vehicle_{node_id}/visual/odometry"
+        for node_id in NODE_IDS
+    ),
+    *(
+        f"/vehicle_{node_id}/lidar_slam/map"
+        for node_id in NODE_IDS
+    ),
+}
 BAG_TEMP_DIRECTORY = tempfile.TemporaryDirectory(
     prefix="zju_coop_gazebo_bag_test_"
 )
@@ -56,6 +84,7 @@ def generate_test_description():
         PythonLaunchDescriptionSource(launch_file),
         launch_arguments={
             "headless": "true",
+            "software_rendering": "true",
             "node_2_initial_east_m": "4.5",
             "record_bag": "true",
             "bag_output": str(BAG_OUTPUT),
@@ -452,6 +481,14 @@ class TestGazeboPipeline(unittest.TestCase):
         )
         self.assertGreater(raw_error, 0.30)
         self.assertLess(fused_errors[2], 0.8 * raw_error)
+
+        # Perception bridges are opt-in. Check after the full collection
+        # interval so a late-starting publisher cannot escape this contract.
+        for topic in PERCEPTION_TOPICS:
+            self.assertEqual(self.node.count_publishers(topic), 0, topic)
+            self.assertEqual(self.node.count_subscribers(topic), 0, topic)
+        for topic in FRONTEND_TOPICS:
+            self.assertEqual(self.node.count_publishers(topic), 0, topic)
 
 
 @launch_testing.post_shutdown_test()

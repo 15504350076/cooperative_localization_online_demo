@@ -5,6 +5,7 @@ import math
 
 import rclpy
 from geometry_msgs.msg import Twist
+from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from tf2_msgs.msg import TFMessage
@@ -20,9 +21,11 @@ NODE_IDS = (1, 2, 3)
 UWB_EDGES = ((1, 2), (1, 3), (2, 3))
 STATIONARY_DURATION_NS = 1_000_000_000
 S_CURVE_DURATION_NS = 8_000_000_000
+LOOP_START_NS = 15_000_000_000
 S_CURVE_PEAK_YAW_RATE_RAD_S = 0.15
+LOOP_YAW_RATE_RAD_S = 0.25
 LINEAR_SPEEDS_MPS = {
-    1: 0.40,
+    1: 0.30,
     2: 0.30,
     3: 0.25,
 }
@@ -150,6 +153,8 @@ class GazeboScenario(Node):
                     command.angular.z = (
                         S_CURVE_PEAK_YAW_RATE_RAD_S * math.sin(phase)
                     )
+                elif motion_elapsed_ns >= LOOP_START_NS:
+                    command.angular.z = LOOP_YAW_RATE_RAD_S
             self._command_publishers[node_id].publish(command)
 
     def _tick(self):
@@ -214,8 +219,13 @@ def main(args=None):
     node = GazeboScenario()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, ExternalShutdownException):
         pass
+    except RuntimeError:
+        # ROS 2 Humble can race a subscription take with context shutdown.
+        # Preserve real conversion failures while allowing a clean stop.
+        if rclpy.ok():
+            raise
     finally:
         node.destroy_node()
         if rclpy.ok():

@@ -16,14 +16,16 @@
 - 稳定 C ABI 动态库 `zju_coop`；核心接口只使用普通 C 结构体，不依赖 ROS 2 消息。
 - 分布式首版：每车本地 15 维惯导输出紧凑 NodeState，参考车按 UWB 时刻对齐三车状态并维护独立二维修正；协同修正不覆盖本地惯导。
 - 整组三车统一算法时刻必须新鲜；非参考车还只有经近期且被滤波接受的测距边连通到参考车时才设置 `position_valid=true`。任一车状态冻结或测距失联后仍保留有限数值用于诊断，但 GCS/规划不得继续使用无效结果。
-- ROS 2 Humble 首版：`cooperative_localization_msgs`、`zju_coop_ros2`、`zju_coop_bringup` 和可选 `zju_coop_gazebo`，输出 GCS 所需 `CooperativePose2DArray`。
+- ROS 2 Humble 首版：`cooperative_localization_msgs`、`zju_coop_ros2`、`zju_coop_bringup`，以及可选的 `zju_coop_perception`、`zju_coop_gazebo`，输出 GCS 所需 `CooperativePose2DArray`。
+- 从车结果反馈默认关闭；参考车设置 `enable_follower_feedback:=true` 后，才把同一份协同结果发布到专用 `/cooperative_localization/feedback/poses_2d`。该反馈供从车规划模块订阅，不回灌本地惯导；GNSS 距离后备模式禁止用于规划控制。
+- Gazebo 感知、点云配准、视觉定位和激光 SLAM 均默认关闭。按需可启动三车 5 Hz 单线点云的平面 ICP 里程计、已知四色地标板单目平面定位，或一键启动基于 RTAB-Map 的每车独立二维建图。`enable_slam_rviz:=true` 可同时打开预配置的 RViz，默认显示参考车 1 的地图和点云。输出为 `nav_msgs/Odometry` 或 `/vehicle_N/lidar_slam/map`，当前只用于本车评估和录包，尚未反馈 NodeState 或 UWB/GCS 融合，也不跨车发送原始大数据。
 - 默认关闭的 GNSS 距离后备：只在 UWB 时间同步暂不可用时显式启动，与真实 UWB 输入严格互斥，不作为 UWB 或定位精度验收依据；当前输出没有机器可读的测距来源字段，因此该模式只供 GCS 应急显示，禁止接入规划控制。
 - C ABI v1 保留定位/观测/网络输出；Pose2D C ABI v2 通过只读 `zju_coop_get_pose2d_v2()` 输出公共快照时间、参考节点、frame 和各车 x/y/yaw，不会重复推进滤波。
 - 在线程序 `zju_coop_online`、回放程序 `zju_coop_replay`、UWB/IMU＋UWB模拟器和浏览器 GCS 面板；临时 UDP 类型 105 输出 Pose2D，面板按共同时间与参考节点收齐三车后原子更新，按有效位显示位置/航向，并显示参考节点、快照时间和坐标系；在线/回放适配层还根据库的网络结果生成状态和告警帧。
 - 输入、输出统一事件日志；回放会跳过历史输出记录，以历史输入重新计算并重新产生定位、状态和告警。
 - 严格帧长、枚举、保留位、数值范围和 CRC 校验；所有数据携带时间戳、序号和节点号。
 
-尚未实现或未验证：上交正式 UWB 消息包替换、真实 UWB/IMU/GNSS 驱动与时间同步、三盒 DDS/5G Mesh、激光雷达/多目视觉前端、绝对位置约束，以及 RK3588/ARM64 真实盒端构建、运行和性能指标。GNSS 后备只把三车位置几何转成低置信度距离，不是 GNSS 绝对位置融合。当前 Ubuntu 22.04 x86-64 同机 ROS 2/Gazebo 结果不能替代上述验证。C ABI v1 `Localization` 仍只发布二维相对位置和速度，`yaw_valid=false`、`z_valid=false`；GCS 航向由 Pose2D v2 链路提供。
+尚未实现或未验证：上交正式 UWB 消息包替换、真实 UWB/IMU/GNSS 驱动与时间同步、三盒 DDS/5G Mesh、真实雷达/通用自然场景视觉前端及其融合、绝对位置约束，以及 RK3588/ARM64 真实盒端构建、运行和性能指标。GNSS 后备只把三车位置几何转成低置信度距离，不是 GNSS 绝对位置融合。当前 Ubuntu 22.04 x86-64 同机 ROS 2/Gazebo 结果不能替代上述验证。C ABI v1 `Localization` 仍只发布二维相对位置和速度，`yaw_valid=false`、`z_valid=false`；GCS 航向由 Pose2D v2 链路提供。
 
 ## 交付边界与分工
 
@@ -41,6 +43,7 @@
                 │
                 ▼
 同一浙大 ROS 2 适配节点发布结果 → DDS → 交大 GCS
+                                  └→ 可选从车规划反馈（默认关闭）
 ```
 
 - 浙大已实现并计划交付 `libzju_coop.so`、`c_api.h`、调用算法库的 ROS 2 适配节点、最小结果消息定义与发布逻辑；同时负责 UWB 协同定位、质量处理、动态拓扑、定位/观测/网络结果，以及演示层状态/告警语义和算法级回放能力。

@@ -13,16 +13,20 @@ import launch_testing.markers
 import pytest
 import rclpy
 from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import Imu
+from rclpy.serialization import serialize_message
+from sensor_msgs.msg import Image, Imu, PointCloud2, PointField
 
 from cooperative_localization_msgs.msg import CooperativePose2DArray, NodeState
 from zju_coop_test_msgs.msg import UwbRange
 
 
 POSE_TOPIC = "/cooperative_localization/poses_2d"
+FEEDBACK_TOPIC = "/cooperative_localization/feedback/poses_2d"
 NODE_STATE_TOPIC = "/cooperative_localization/node_state"
 UWB_TOPIC = "/uwb/range"
 NODE_IDS = (1, 2, 3)
+LONG_CAMERA_FRAME_ID = "vehicle_2/base_link/front_camera_optical_frame"
+LONG_POINT_CLOUD_FRAME_ID = "vehicle_2/base_link/front_lidar_sensor_frame"
 INITIAL_POSITIONS = (
     (0.0, 0.0, 0.0),
     (5.0, 0.0, 0.0),
@@ -35,25 +39,40 @@ INITIAL_ORIENTATIONS = (
 )
 
 
-def _local_node(node_id, initial_position, initial_orientation):
+def _local_node(
+    node_id, initial_position, initial_orientation, enable_raw_input=False
+):
+    parameters = {
+        "node_id": node_id,
+        "publish_rate_hz": 10.0,
+        "expected_imu_frame_id": "imu_link",
+        "initial_position_enu_m": list(initial_position),
+        "initial_velocity_enu_mps": [0.0, 0.0, 0.0],
+        "initial_orientation_flu_to_enu_xyzw": list(initial_orientation),
+        "initial_gyro_bias_flu_rad_s": [0.0, 0.0, 0.0],
+        "initial_accel_bias_flu_m_s2": [0.0, 0.0, 0.0],
+    }
+    if enable_raw_input:
+        parameters.update({
+            "enable_camera_input": True,
+            "enable_point_cloud_input": True,
+            "camera_id": 1,
+            "point_cloud_sensor_id": 1,
+            "camera_frame_alias": "camera_front",
+            "point_cloud_frame_alias": "lidar_link",
+        })
+
     return launch_ros.actions.Node(
         package="zju_coop_ros2",
         executable="zju_local_inertial_node",
         name=f"zju_local_inertial_node_{node_id}",
         output="screen",
-        parameters=[{
-            "node_id": node_id,
-            "publish_rate_hz": 10.0,
-            "expected_imu_frame_id": "imu_link",
-            "initial_position_enu_m": list(initial_position),
-            "initial_velocity_enu_mps": [0.0, 0.0, 0.0],
-            "initial_orientation_flu_to_enu_xyzw": list(initial_orientation),
-            "initial_gyro_bias_flu_rad_s": [0.0, 0.0, 0.0],
-            "initial_accel_bias_flu_m_s2": [0.0, 0.0, 0.0],
-        }],
+        parameters=[parameters],
         remappings=[
             ("imu", f"/vehicle_{node_id}/imu/data"),
             ("node_state", NODE_STATE_TOPIC),
+            ("camera_image", f"/vehicle_{node_id}/camera/image_raw"),
+            ("point_cloud", f"/vehicle_{node_id}/lidar/points"),
         ],
     )
 
@@ -62,7 +81,12 @@ def _local_node(node_id, initial_position, initial_orientation):
 @launch_testing.markers.keep_alive
 def generate_test_description():
     local_nodes = [
-        _local_node(node_id, position, orientation)
+        _local_node(
+            node_id,
+            position,
+            orientation,
+            enable_raw_input=(node_id == 2),
+        )
         for node_id, position, orientation in zip(
             NODE_IDS, INITIAL_POSITIONS, INITIAL_ORIENTATIONS
         )
@@ -78,11 +102,13 @@ def generate_test_description():
             "publish_rate_hz": 10.0,
             "range_std_m": 0.1,
             "node_state_timeout_ms": 2000,
+            "enable_follower_feedback": True,
         }],
         remappings=[
             ("node_state", NODE_STATE_TOPIC),
             ("uwb_range", UWB_TOPIC),
             ("poses_2d", POSE_TOPIC),
+            ("feedback_poses_2d", FEEDBACK_TOPIC),
         ],
     )
 
@@ -130,6 +156,22 @@ class TestMinimalPipeline(unittest.TestCase):
         self.uwb_publisher = self.node.create_publisher(
             UwbRange, UWB_TOPIC, qos_profile_sensor_data
         )
+        self.camera_publishers = {
+            node_id: self.node.create_publisher(
+                Image,
+                f"/vehicle_{node_id}/camera/image_raw",
+                qos_profile_sensor_data,
+            )
+            for node_id in NODE_IDS
+        }
+        self.point_cloud_publishers = {
+            node_id: self.node.create_publisher(
+                PointCloud2,
+                f"/vehicle_{node_id}/lidar/points",
+                qos_profile_sensor_data,
+            )
+            for node_id in NODE_IDS
+        }
         self.pose_messages = []
         self.pose_subscription = self.node.create_subscription(
             CooperativePose2DArray,
@@ -137,12 +179,24 @@ class TestMinimalPipeline(unittest.TestCase):
             self.pose_messages.append,
             qos_profile_sensor_data,
         )
+        self.feedback_messages = []
+        self.feedback_subscription = self.node.create_subscription(
+            CooperativePose2DArray,
+            FEEDBACK_TOPIC,
+            self.feedback_messages.append,
+            qos_profile_sensor_data,
+        )
 
     def tearDown(self):
         for publisher in self.imu_publishers:
             self.node.destroy_publisher(publisher)
         self.node.destroy_publisher(self.uwb_publisher)
+        for publisher in self.camera_publishers.values():
+            self.node.destroy_publisher(publisher)
+        for publisher in self.point_cloud_publishers.values():
+            self.node.destroy_publisher(publisher)
         self.node.destroy_subscription(self.pose_subscription)
+        self.node.destroy_subscription(self.feedback_subscription)
         self.node.destroy_node()
 
     def _wait_for_graph(self, timeout_sec=10.0):
@@ -155,9 +209,77 @@ class TestMinimalPipeline(unittest.TestCase):
             )
             uwb_ready = self.uwb_publisher.get_subscription_count() >= 1
             pose_ready = self.node.count_publishers(POSE_TOPIC) >= 1
-            if imu_ready and uwb_ready and pose_ready:
+            feedback_ready = self.node.count_publishers(FEEDBACK_TOPIC) == 1
+            raw_input_ready = (
+                self.camera_publishers[2].get_subscription_count() >= 1
+                and self.point_cloud_publishers[2].get_subscription_count()
+                >= 1
+            )
+            if (
+                imu_ready
+                and uwb_ready
+                and pose_ready
+                and feedback_ready
+                and raw_input_ready
+            ):
                 return
-        self.fail("ROS graph did not expose all IMU, UWB and Pose2D endpoints")
+        self.fail(
+            "ROS graph did not expose all IMU, UWB, raw-input and Pose2D "
+            "endpoints"
+        )
+
+    def _assert_optional_raw_input_graph(self):
+        for node_id in (1, 3):
+            self.assertEqual(
+                self.camera_publishers[node_id].get_subscription_count(),
+                0,
+                f"vehicle {node_id} created a default-disabled camera "
+                "subscription",
+            )
+            self.assertEqual(
+                self.point_cloud_publishers[node_id].get_subscription_count(),
+                0,
+                f"vehicle {node_id} created a default-disabled point-cloud "
+                "subscription",
+            )
+
+    @staticmethod
+    def _camera_image(stamp):
+        message = Image()
+        message.header.stamp.sec = stamp.sec
+        message.header.stamp.nanosec = stamp.nanosec
+        message.header.frame_id = LONG_CAMERA_FRAME_ID
+        message.height = 2
+        message.width = 2
+        message.encoding = "rgb8"
+        message.is_bigendian = 0
+        message.step = 6
+        message.data = bytes(12)
+        return message
+
+    @staticmethod
+    def _point_cloud(stamp):
+        message = PointCloud2()
+        message.header.stamp.sec = stamp.sec
+        message.header.stamp.nanosec = stamp.nanosec
+        message.header.frame_id = LONG_POINT_CLOUD_FRAME_ID
+        message.height = 1
+        message.width = 2
+        message.fields = [
+            PointField(
+                name=name,
+                offset=offset,
+                datatype=PointField.FLOAT32,
+                count=1,
+            )
+            for name, offset in (("x", 0), ("y", 4), ("z", 8))
+        ]
+        message.is_bigendian = False
+        message.point_step = 12
+        message.row_step = 24
+        message.data = bytes(24)
+        message.is_dense = True
+        return message
 
     @staticmethod
     def _imu(stamp):
@@ -204,7 +326,8 @@ class TestMinimalPipeline(unittest.TestCase):
         return (
             message.reference_node_id == 1
             and len(message.vehicles) == 3
-            and {vehicle.node_id for vehicle in message.vehicles} == set(NODE_IDS)
+            and {vehicle.node_id for vehicle in message.vehicles}
+            == set(NODE_IDS)
             and all(vehicle.position_valid for vehicle in message.vehicles)
             and all(vehicle.yaw_valid for vehicle in message.vehicles)
         )
@@ -218,8 +341,34 @@ class TestMinimalPipeline(unittest.TestCase):
         )
         return abs(vehicle_2.x_m - 4.0) < 0.5
 
-    def test_standard_imu_and_uwb_produce_gcs_pose_array(self):
+    def test_standard_imu_and_uwb_produce_gcs_pose_array(
+        self, proc_output, local_nodes
+    ):
         self._wait_for_graph()
+        self._assert_optional_raw_input_graph()
+        self.assertGreater(len(LONG_CAMERA_FRAME_ID), 31)
+        self.assertGreater(len(LONG_POINT_CLOUD_FRAME_ID), 31)
+
+        raw_stamp = self.node.get_clock().now().to_msg()
+        for node_id in (1, 3):
+            self.camera_publishers[node_id].publish(
+                self._camera_image(raw_stamp)
+            )
+            self.point_cloud_publishers[node_id].publish(
+                self._point_cloud(raw_stamp)
+            )
+        self.camera_publishers[2].publish(self._camera_image(raw_stamp))
+        self.point_cloud_publishers[2].publish(self._point_cloud(raw_stamp))
+        proc_output.assertWaitFor(
+            "camera input: VALIDATED_NOT_USED",
+            process=local_nodes[1],
+            timeout=5,
+        )
+        proc_output.assertWaitFor(
+            "point cloud input: VALIDATED_NOT_USED",
+            process=local_nodes[1],
+            timeout=5,
+        )
 
         accepted = None
         deadline = time.monotonic() + 15.0
@@ -239,9 +388,31 @@ class TestMinimalPipeline(unittest.TestCase):
                 None,
             )
 
-        self.assertIsNotNone(accepted, "no complete valid three-vehicle pose received")
+        self.assertIsNotNone(
+            accepted, "no complete valid three-vehicle pose received"
+        )
         self.assertEqual(accepted.header.frame_id, "coop_ref_1_enu")
         self.assertNotEqual(accepted.header.stamp.sec, 0)
+
+        feedback_deadline = time.monotonic() + 2.0
+        matching_feedback = None
+        while time.monotonic() < feedback_deadline:
+            matching_feedback = next(
+                (
+                    message
+                    for message in reversed(self.feedback_messages)
+                    if message.header.stamp == accepted.header.stamp
+                ),
+                None,
+            )
+            if matching_feedback is not None:
+                break
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+        self.assertIsNotNone(matching_feedback)
+        self.assertEqual(
+            serialize_message(matching_feedback),
+            serialize_message(accepted),
+        )
 
         vehicles = {vehicle.node_id: vehicle for vehicle in accepted.vehicles}
         reference = vehicles[1]

@@ -1,0 +1,53 @@
+- ros_topic_name: /vehicle_1/camera/image_raw
+  gz_topic_name: /world/zju_coop_gazebo/model/vehicle_1/link/base_link/sensor/front_camera/image
+  ros_type_name: sensor_msgs/msg/Image
+  gz_type_name: ignition.msgs.Image
+  direction: GZ_TO_ROS
+  subscriber_queue: 2
+  publisher_queue: 2
+  lazy: true
+
+- ros_topic_name: /vehicle_1/camera/camera_info
+  gz_topic_name: /world/zju_coop_gazebo/model/vehicle_1/link/base_link/sensor/front_camera/camera_info
+  ros_type_name: sensor_msgs/msg/CameraInfo
+  gz_type_name: ignition.msgs.CameraInfo
+  direction: GZ_TO_ROS
+  subscriber_queue: 2
+  publisher_queue: 2
+  lazy: true
+
+- ros_topic_name: /vehicle_2/camera/image_raw
+  gz_topic_name: /world/zju_coop_gazebo/model/vehicle_2/link/base_link/sensor/front_camera/image
+  ros_type_name: sensor_msgs/msg/Image
+  gz_type_name: ignition.msgs.Image
+  direction: GZ_TO_ROS
+  subscriber_queue: 2
+  publisher_queue: 2
+  lazy: true
+
+- ros_topic_name: /vehicle_2/camera/camera_info
+  gz_topic_name: /world/zju_coop_gazebo/model/vehicle_2/link/base_link/sensor/front_camera/camera_info
+  ros_type_name: sensor_msgs/msg/CameraInfo
+  gz_type_name: ignition.msgs.CameraInfo
+  direction: GZ_TO_ROS
+  subscriber_queue: 2
+  publisher_queue: 2
+  lazy: true
+
+- ros_topic_name: /vehicle_3/camera/image_raw
+  gz_topic_name: /world/zju_coop_gazebo/model/vehicle_3/link/base_link/sensor/front_camera/image
+  ros_type_name: sensor_msgs/msg/Image
+  gz_type_name: ignition.msgs.Image
+  direction: GZ_TO_ROS
+  subscriber_queue: 2
+  publisher_queue: 2
+  lazy: true
+
+- ros_topic_name: /vehicle_3/camera/camera_info
+  gz_topic_name: /world/zju_coop_gazebo/model/vehicle_3/link/base_link/sensor/front_camera/camera_info
+  ros_type_name: sensor_msgs/msg/CameraInfo
+  gz_type_name: ignition.msgs.CameraInfo
+  direction: GZ_TO_ROS
+  subscriber_queue: 2
+  publisher_queue: 2
+  lazy: true

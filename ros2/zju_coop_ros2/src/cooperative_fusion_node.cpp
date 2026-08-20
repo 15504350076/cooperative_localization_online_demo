@@ -46,6 +46,8 @@ class CooperativeFusionNode final : public rclcpp::Node {
         declare_parameter<std::int64_t>("reference_node_id", 1);
     const double publish_rate_hz =
         declare_parameter<double>("publish_rate_hz", 10.0);
+    const bool enable_follower_feedback =
+        declare_parameter<bool>("enable_follower_feedback", false);
     range_std_m_ = declare_parameter<double>("range_std_m", 0.10);
     const auto timeout_ms =
         declare_parameter<std::int64_t>("node_state_timeout_ms", 300);
@@ -96,6 +98,12 @@ class CooperativeFusionNode final : public rclcpp::Node {
     pose_publisher_ = create_publisher<
         cooperative_localization_msgs::msg::CooperativePose2DArray>(
         "poses_2d", rclcpp::QoS(1).reliable().durability_volatile());
+    if (enable_follower_feedback) {
+      feedback_publisher_ = create_publisher<
+          cooperative_localization_msgs::msg::CooperativePose2DArray>(
+          "feedback_poses_2d",
+          rclcpp::QoS(1).reliable().durability_volatile());
+    }
     node_state_subscription_ = create_subscription<
         cooperative_localization_msgs::msg::NodeState>(
         "node_state", rclcpp::QoS(5).best_effort().durability_volatile(),
@@ -260,6 +268,9 @@ class CooperativeFusionNode final : public rclcpp::Node {
       output.vehicles.push_back(pose);
     }
     pose_publisher_->publish(output);
+    if (feedback_publisher_ != nullptr) {
+      feedback_publisher_->publish(output);
+    }
   }
 
   zju_coop_distributed_handle_t* handle_{};
@@ -277,6 +288,9 @@ class CooperativeFusionNode final : public rclcpp::Node {
   rclcpp::Publisher<
       cooperative_localization_msgs::msg::CooperativePose2DArray>::SharedPtr
       pose_publisher_;
+  rclcpp::Publisher<
+      cooperative_localization_msgs::msg::CooperativePose2DArray>::SharedPtr
+      feedback_publisher_;
   rclcpp::TimerBase::SharedPtr publish_timer_;
 };
 

@@ -48,6 +48,9 @@ def generate_launch_description():
     uwb_nlos_bias = LaunchConfiguration("uwb_nlos_bias_m")
     gyro_noise = LaunchConfiguration("gyro_noise_std_rad_s")
     accel_noise = LaunchConfiguration("accel_noise_std_m_s2")
+    enable_follower_feedback = LaunchConfiguration(
+        "enable_follower_feedback"
+    )
 
     local_nodes = [
         _local_node(1, (0.0, 0.0, 0.0), (0.6, 0.0, 0.0), 0.0),
@@ -67,11 +70,18 @@ def generate_launch_description():
             "range_std_m": 0.1,
             "node_state_timeout_ms": 500,
             "common_enu_frame_id": "common_enu",
+            "enable_follower_feedback": ParameterValue(
+                enable_follower_feedback, value_type=bool
+            ),
         }],
         remappings=[
             ("node_state", NODE_STATE_TOPIC),
             ("uwb_range", "/uwb/range"),
             ("poses_2d", "/cooperative_localization/poses_2d"),
+            (
+                "feedback_poses_2d",
+                "/cooperative_localization/feedback/poses_2d",
+            ),
         ],
     )
     simulator = Node(
@@ -98,6 +108,14 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        DeclareLaunchArgument(
+            "enable_follower_feedback",
+            default_value="false",
+            description=(
+                "Publish the corrected cooperative pose array on the "
+                "dedicated follower feedback topic"
+            ),
+        ),
         DeclareLaunchArgument(
             "uwb_noise_std_m",
             default_value="0.0",

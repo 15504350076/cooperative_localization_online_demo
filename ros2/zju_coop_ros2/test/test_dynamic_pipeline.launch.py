@@ -22,6 +22,7 @@ from zju_coop_test_msgs.msg import UwbRange
 
 
 POSE_TOPIC = "/cooperative_localization/poses_2d"
+FEEDBACK_TOPIC = "/cooperative_localization/feedback/poses_2d"
 NODE_STATE_TOPIC = "/cooperative_localization/node_state"
 UWB_TOPIC = "/uwb/range"
 NODE_IDS = (1, 2, 3)
@@ -131,6 +132,7 @@ def generate_test_description():
             ("node_state", NODE_STATE_TOPIC),
             ("uwb_range", UWB_TOPIC),
             ("poses_2d", POSE_TOPIC),
+            ("feedback_poses_2d", FEEDBACK_TOPIC),
         ],
     )
 
@@ -278,6 +280,7 @@ class TestDynamicPipeline(unittest.TestCase):
 
     def test_dynamic_motion_time_alignment_and_uwb_correction(self):
         self._wait_for_graph()
+        self.assertEqual(self.node.count_publishers(FEEDBACK_TOPIC), 0)
         start_ns = self.node.get_clock().now().nanoseconds
         sample_count = int(RUN_DURATION_S / IMU_DT_S)
         start_wall = time.monotonic()
