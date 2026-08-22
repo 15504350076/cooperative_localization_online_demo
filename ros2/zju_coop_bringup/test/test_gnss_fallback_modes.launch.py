@@ -80,13 +80,17 @@ def generate_test_description():
         # Omit the fallback argument to lock its declared default of false.
         # These deliberately non-role namespaces use an explicit config.
         _vehicle_launch(
-            "normal_ref", feedback=True, local_config=_vehicle_1_config()
+            "normal_ref",
+            feedback=True,
+            run_fusion=True,
+            local_config=_vehicle_1_config(),
         ),
         # Request feedback in fallback mode and prove bringup forces it off.
         _vehicle_launch(
             "fallback_ref",
             fallback=True,
             feedback=True,
+            run_fusion=True,
             local_config=_vehicle_1_config(),
         ),
         launch_testing.actions.ReadyToTest(),
