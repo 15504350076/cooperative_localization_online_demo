@@ -137,7 +137,10 @@ uint8 status               # 0 OK, 1 DEGRADED, 2 INVALID
 NodeState 为 UWB 时钟锚点并结合 `steady_clock` 估计同域接收时刻，
 `receive_timestamp_ns` 不通过跨平台 ROS 2 消息传输，也不使用系统 UTC 代替。
 
-失同步或驱动判定不可用时，应把 `valid=false`、`status=INVALID` 的包推入 SDK，使质量窗口能够统计无效数据；采样/接收时差超限时 SDK 会拒绝该包并报告 `TIME_SYNC_TIMEOUT`。
+当正式 UWB 消息已冻结 `valid/status` 语义后，失同步或驱动判定不可用时，
+可把 `valid=false`、`status=INVALID` 的包推入 SDK，使质量窗口统计无效数据。
+当前临时 UWB 消息无此状态字段，因此按第 7 节停发；采样/接收时差超限时
+SDK 会拒绝该包并报告 `TIME_SYNC_TIMEOUT`。
 
 ### 4.3 原始图像和点云预留接口
 

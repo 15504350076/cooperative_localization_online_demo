@@ -114,16 +114,19 @@ def run(args):
             start = time.monotonic()
             next_imu = start + 0.10
             next_uwb = start + 0.10
-            while time.monotonic() - start < 1.2:
+            # 前1.2秒送数，随后继续接收0.3秒。停止送数后的窗口让在线进程消费完
+            # 同一IMU历元的三车数据，避免10 Hz输出恰好总落在三帧批次中间。
+            while time.monotonic() - start < 1.5:
                 # 当前调度单调时刻与该轮输入共享的协议Unix纳秒时间。
                 now = time.monotonic()
                 timestamp = time.time_ns()
-                if now >= next_imu:
+                sending = now - start < 1.2
+                if sending and now >= next_imu:
                     # frame为单节点完整IMU输入数据报。
                     for frame in simulator.generate_imu_tick(timestamp):
                         sender.sendto(frame, ("127.0.0.1", input_port))
                     next_imu += 0.01
-                if now >= next_uwb:
+                if sending and now >= next_uwb:
                     # frame为单边完整测距输入数据报。
                     for frame in simulator.generate_uwb_tick(timestamp):
                         sender.sendto(frame, ("127.0.0.1", input_port))
