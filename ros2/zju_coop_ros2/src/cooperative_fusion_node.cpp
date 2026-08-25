@@ -1,3 +1,7 @@
+// 参考车侧二维协同融合 ROS 2 适配节点。
+// 数据流：各车 NodeState + 车间 UWB 测距 -> SDK 分布式二维修正器 -> 三车相对位姿。
+// 滤波状态只含各非参考车的 [delta_e, delta_n]；各车完整惯导状态仍留在本机。
+// UWB 修正相对平面位置，不在本节点估计姿态或 IMU 零偏。
 #include "cooperative_localization_msgs/msg/cooperative_pose2_d_array.hpp"
 #include "cooperative_localization_msgs/msg/node_state.hpp"
 #include "rclcpp/rclcpp.hpp"
@@ -25,6 +29,7 @@ constexpr std::uint64_t kNanosecondsPerMillisecond = 1'000'000ULL;
 constexpr std::uint64_t kMaximumMilliseconds =
     std::numeric_limits<std::uint64_t>::max() / kNanosecondsPerMillisecond;
 
+// SDK 句柄创建失败属于不可恢复的启动错误，直接转成异常交给 main 报告。
 void require_ok(zju_coop_error_code_t code, const char* operation) {
   if (code != ZJU_COOP_OK) {
     throw std::runtime_error(std::string(operation) + ": " +
@@ -32,6 +37,7 @@ void require_ok(zju_coop_error_code_t code, const char* operation) {
   }
 }
 
+// 将 ROS 消息时间转成 SDK 使用的纳秒整数；0 表示无效。
 std::uint64_t stamp_ns(const builtin_interfaces::msg::Time& stamp) {
   if (stamp.sec < 0 || stamp.nanosec >= kNanosecondsPerSecond) {
     return 0U;
@@ -40,6 +46,7 @@ std::uint64_t stamp_ns(const builtin_interfaces::msg::Time& stamp) {
          stamp.nanosec;
 }
 
+// 本机 steady_clock 只提供可靠的经过时间，由 SensorTimeBridge 映射到 UWB 时间域。
 std::uint64_t steady_time_ns() {
   const auto count = std::chrono::duration_cast<std::chrono::nanoseconds>(
                          std::chrono::steady_clock::now().time_since_epoch())
@@ -51,6 +58,8 @@ class CooperativeFusionNode final : public rclcpp::Node {
  public:
   CooperativeFusionNode()
       : Node("zju_cooperative_fusion_node") {
+    // node_ids 定义本次融合允许接收的车辆集合；reference_node_id 定义输出原点。
+    // 从车反馈默认关闭，最小实现只发布参考车本地的 poses_2d。
     const auto configured_ids =
         declare_parameter<std::vector<std::int64_t>>("node_ids", {1, 2, 3});
     const auto configured_reference =
@@ -62,7 +71,7 @@ class CooperativeFusionNode final : public rclcpp::Node {
     range_std_m_ = declare_parameter<double>("range_std_m", 0.10);
     const auto timeout_ms =
         declare_parameter<std::int64_t>("node_state_timeout_ms", 300);
-    // Packet-age guards; neither value is a UWB synchronization-accuracy target.
+    // 数据包时效门限只用于拒绝异常时间戳，不是 UWB 授时精度指标。
     const auto max_future_skew_ms =
         declare_parameter<std::int64_t>("max_future_skew_ms", 100);
     const auto max_receive_delay_ms =
@@ -71,6 +80,7 @@ class CooperativeFusionNode final : public rclcpp::Node {
         declare_parameter<std::string>("common_enu_frame_id", "common_enu");
     use_sim_time_ = get_parameter("use_sim_time").as_bool();
 
+    // 启动时严格校验，避免编号截断、零噪声或毫秒转纳秒溢出进入 SDK。
     if (configured_ids.size() < 2U || configured_reference <= 0 ||
         configured_reference > std::numeric_limits<std::uint16_t>::max() ||
         !std::isfinite(publish_rate_hz) || publish_rate_hz <= 0.0 ||
@@ -88,6 +98,7 @@ class CooperativeFusionNode final : public rclcpp::Node {
     }
     reference_node_id_ = static_cast<std::uint32_t>(configured_reference);
 
+    // 同时建立有序车辆列表、去重集合和每车最后接收时刻。
     std::vector<zju_coop_node_initialization_t> nodes(configured_ids.size());
     std::unordered_set<std::uint32_t> unique_ids;
     node_ids_.reserve(configured_ids.size());
@@ -110,6 +121,8 @@ class CooperativeFusionNode final : public rclcpp::Node {
       throw std::invalid_argument("reference_node_id is absent from node_ids");
     }
 
+    // 创建参考车上的分布式修正器。max_prediction_step_s 限制一次外推跨度，
+    // edge_timeout_ns 决定一条测距边多久后不再支撑 position_valid。
     zju_coop_config_t config{};
     require_ok(zju_coop_config_init(&config), "zju_coop_config_init");
     config.reference_node_id = reference_node_id_;
@@ -128,6 +141,8 @@ class CooperativeFusionNode final : public rclcpp::Node {
     require_ok(zju_coop_distributed_create(&config, &handle_),
                "zju_coop_distributed_create");
 
+    // poses_2d 面向参考车本地规划/控制；feedback_poses_2d 是参数控制的同内容反馈口。
+    // NodeState/UWB 使用 best-effort 以优先实时性，融合结果使用 reliable。
     pose_publisher_ = create_publisher<
         cooperative_localization_msgs::msg::CooperativePose2DArray>(
         "poses_2d", rclcpp::QoS(1).reliable().durability_volatile());
@@ -170,6 +185,8 @@ class CooperativeFusionNode final : public rclcpp::Node {
   }
 
  private:
+  // 返回当前统一算法时刻。实盒由参考车 NodeState 的 UWB 时间锚点外推，
+  // Gazebo 则直接使用 /clock；锚点尚未建立时返回 0，暂停 UWB处理和输出。
   std::uint64_t current_time_ns(std::uint64_t steady_now_ns) const {
     if (!use_sim_time_) {
       return reference_time_bridge_.current_time_ns(steady_now_ns);
@@ -178,6 +195,8 @@ class CooperativeFusionNode final : public rclcpp::Node {
     return ros_time > 0 ? static_cast<std::uint64_t>(ros_time) : 0U;
   }
 
+  // 接收各车本地惯导航位推算结果，校验 frame/id/时序后写入 SDK 状态历史。
+  // SDK 会在测距时刻对两端历史状态插值或有限外推，不直接用消息到达时刻融合。
   void on_node_state(
       const cooperative_localization_msgs::msg::NodeState& message) {
     if (message.header.frame_id != common_enu_frame_id_) {
@@ -198,6 +217,7 @@ class CooperativeFusionNode final : public rclcpp::Node {
       return;
     }
     if (measurement_time <= previous->second) {
+      // 所有车辆都要求时间严格递增；参考车回拨还会破坏全局 UWB 时间锚点。
       if (message.node_id == reference_node_id_ &&
           measurement_time < previous->second) {
         RCLCPP_ERROR_THROTTLE(
@@ -218,7 +238,7 @@ class CooperativeFusionNode final : public rclcpp::Node {
     const bool initializes_reference_clock =
         !use_sim_time_ && is_reference && receive_time == 0U;
     if (initializes_reference_clock) {
-      // The first local reference state is the only available UWB-time anchor.
+      // 首个参考车本地状态是启动阶段唯一可信的 UWB 时间锚点。
       receive_time = measurement_time;
     } else if (!use_sim_time_ && is_reference &&
                !reference_time_bridge_.measurement_is_plausible(
@@ -259,12 +279,14 @@ class CooperativeFusionNode final : public rclcpp::Node {
     }
     previous->second = measurement_time;
     if (!use_sim_time_ && is_reference) {
-      // Only an accepted local reference state may discipline the bridge.
+      // 只让已被 SDK 接受的参考车状态校准时间桥；从车网络延迟不能改变统一时钟。
       static_cast<void>(reference_time_bridge_.observe(
           measurement_time, steady_receive_time));
     }
   }
 
+  // 接收临时 UwbRange 测试消息，补充配置给出的统一测距标准差后送入滤波器。
+  // 正式硬件消息若提供质量/方差/状态，需要在此处按真实字段填写，不应固定为 OK。
   void on_uwb_range(const zju_coop_test_msgs::msg::UwbRange& message) {
     if (message.src_id > std::numeric_limits<std::uint16_t>::max() ||
         message.target_id > std::numeric_limits<std::uint16_t>::max()) {
@@ -289,6 +311,8 @@ class CooperativeFusionNode final : public rclcpp::Node {
     packet.range_std_m = range_std_m_;
     packet.valid = ZJU_COOP_TRUE;
     packet.status = ZJU_COOP_RANGE_STATUS_OK;
+    // SDK 在测距时刻对齐两车 NodeState，以预测距离形成创新，经 NIS 门限后
+    // 更新非参考车平面修正量及协方差；被拒绝的测距不会改变滤波状态。
     const auto code =
         zju_coop_distributed_push_range(handle_, &packet, &result);
     if (code != ZJU_COOP_OK) {
@@ -308,6 +332,9 @@ class CooperativeFusionNode final : public rclcpp::Node {
     }
   }
 
+  // 按统一算法时刻读取一次只读快照，并转换成参考车坐标系下的 ROS 2 输出。
+  // position_valid/yaw_valid 由 SDK 根据状态新鲜度和近期有效测距连通性给出，
+  // 无效时数值只用于诊断，规划控制端不能继续使用。
   void publish_pose() {
     const auto now_value = current_time_ns(steady_time_ns());
     if (now_value == 0U) {
@@ -356,6 +383,7 @@ class CooperativeFusionNode final : public rclcpp::Node {
     }
   }
 
+  // SDK 状态、允许车辆和每车输入顺序保护。
   zju_coop_distributed_handle_t* handle_{};
   std::vector<std::uint32_t> node_ids_;
   std::unordered_map<std::uint32_t, std::uint64_t>
@@ -367,6 +395,7 @@ class CooperativeFusionNode final : public rclcpp::Node {
   std::uint64_t max_future_skew_ns_{};
   std::uint64_t max_receive_delay_ns_{};
   std::string common_enu_frame_id_;
+  // 仅由参考车本地 NodeState 驱动的 UWB 时间桥。
   zju_coop_ros2::SensorTimeBridge reference_time_bridge_;
   rclcpp::Subscription<cooperative_localization_msgs::msg::NodeState>::SharedPtr
       node_state_subscription_;
@@ -386,6 +415,7 @@ class CooperativeFusionNode final : public rclcpp::Node {
 int main(int argc, char** argv) {
   rclcpp::init(argc, argv);
   try {
+    // 单线程执行保证 NodeState、UWB 和发布回调串行访问 SDK 句柄。
     rclcpp::spin(std::make_shared<CooperativeFusionNode>());
   } catch (const std::exception& error) {
     RCLCPP_FATAL(rclcpp::get_logger("zju_cooperative_fusion_node"), "%s",

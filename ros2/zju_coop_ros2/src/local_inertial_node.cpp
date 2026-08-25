@@ -1,3 +1,7 @@
+// 本车侧惯导 ROS 2 适配节点。
+// 数据流：sensor_msgs/Imu -> SDK 单车 15 维 ESKF 传播 -> NodeState。
+// NodeState 只发送公共 ENU 下的位置、速度和姿态；零偏及 15x15 协方差留在本机。
+// 点云和图像是默认关闭的预留输入，当前仅完成格式/时间校验，不参与状态更新。
 #include "cooperative_localization_msgs/msg/node_state.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
@@ -20,10 +24,11 @@
 namespace {
 
 constexpr std::uint64_t kNanosecondsPerSecond = 1'000'000'000ULL;
-// Packet-age guards, not a claim about UWB synchronization accuracy.
+// 只用于拒绝明显超前或滞后的数据包，不代表 UWB 授时精度指标。
 constexpr std::uint64_t kMaxImuFutureSkewNs = 100'000'000ULL;
 constexpr std::uint64_t kMaxImuReceiveDelayNs = 500'000'000ULL;
 
+// SDK C 接口在初始化阶段失败时直接终止节点，避免带着半初始化状态运行。
 void require_ok(zju_coop_error_code_t code, const char* operation) {
   if (code != ZJU_COOP_OK) {
     throw std::runtime_error(std::string(operation) + ": " +
@@ -31,6 +36,7 @@ void require_ok(zju_coop_error_code_t code, const char* operation) {
   }
 }
 
+// ROS 时间戳统一转换成无符号纳秒；0 作为无效时间哨兵。
 std::uint64_t stamp_ns(const builtin_interfaces::msg::Time& stamp) {
   if (stamp.sec < 0 || stamp.nanosec >= kNanosecondsPerSecond) {
     return 0U;
@@ -39,6 +45,7 @@ std::uint64_t stamp_ns(const builtin_interfaces::msg::Time& stamp) {
          stamp.nanosec;
 }
 
+// 单调时钟只计算本机经过时间，不与 UWB_SYSTEM_TIME 直接比较。
 std::uint64_t steady_time_ns() {
   const auto count = std::chrono::duration_cast<std::chrono::nanoseconds>(
                          std::chrono::steady_clock::now().time_since_epoch())
@@ -46,6 +53,7 @@ std::uint64_t steady_time_ns() {
   return count > 0 ? static_cast<std::uint64_t>(count) : 0U;
 }
 
+// 声明定长向量参数，并在启动期一次性检查维数和有限性。
 std::vector<double> vector_parameter(rclcpp::Node& node, const char* name,
                                      std::vector<double> defaults,
                                      std::size_t expected_size) {
@@ -64,6 +72,7 @@ void copy_values(double (&destination)[Size], const std::vector<double>& source)
   std::copy_n(source.begin(), Size, destination);
 }
 
+// C ABI 使用定长字符数组；拒绝空字符串和会被截断的内容。
 template <std::size_t Capacity>
 bool copy_c_string(char (&destination)[Capacity], const std::string& source) {
   if (source.empty() || source.size() >= Capacity) {
@@ -77,6 +86,8 @@ class LocalInertialNode final : public rclcpp::Node {
  public:
   LocalInertialNode()
       : Node("zju_local_inertial_node") {
+    // 必选项给出车辆身份和惯导初值；点云、相机开关默认关闭。
+    // 话题使用相对名称，实际三车话题由 namespace/remap 区分。
     const auto configured_node_id = declare_parameter<std::int64_t>("node_id", 0);
     const double publish_rate_hz =
         declare_parameter<double>("publish_rate_hz", 20.0);
@@ -98,6 +109,8 @@ class LocalInertialNode final : public rclcpp::Node {
         declare_parameter<std::string>("camera_frame_alias", "");
     use_sim_time_ = get_parameter("use_sim_time").as_bool();
 
+    // node_id 受当前 UWB 协议 uint16 编号限制；传感器 id 使用 uint32。
+    // frame_id 还必须放入 SDK C ABI 的 32 字节数组。
     if (configured_node_id <= 0 ||
         configured_node_id > std::numeric_limits<std::uint16_t>::max() ||
         configured_point_cloud_sensor_id <= 0 ||
@@ -131,6 +144,7 @@ class LocalInertialNode final : public rclcpp::Node {
     const auto accel_bias = vector_parameter(
         *this, "initial_accel_bias_flu_m_s2", {0.0, 0.0, 0.0}, 3U);
 
+    // SDK 要求 FLU->ENU 四元数已归一化，不在节点内静默修正错误初值。
     const double orientation_norm =
         std::sqrt(orientation[0] * orientation[0] +
                   orientation[1] * orientation[1] +
@@ -142,6 +156,8 @@ class LocalInertialNode final : public rclcpp::Node {
           "initial_orientation_flu_to_enu_xyzw must be a unit quaternion");
     }
 
+    // 先建立只含本车的 SDK 基础实例。本节点不是三车集中式滤波器：
+    // reference_node_id 设成本车，仅用于满足单车 SDK 实例的基础配置。
     zju_coop_node_initialization_t base_node{};
     require_ok(zju_coop_node_initialization_init(&base_node),
                "zju_coop_node_initialization_init");
@@ -162,6 +178,8 @@ class LocalInertialNode final : public rclcpp::Node {
     handle_ = candidate;
 
     try {
+      // 给单车惯导装载名义状态 p/v/q/bg/ba。误差状态和协方差由 SDK 持有，
+      // 后续每个有效 IMU 样本通过 zju_coop_push_imu 推进。
       zju_coop_inertial_node_initialization_t initial{};
       require_ok(zju_coop_inertial_node_initialization_init(&initial),
                  "zju_coop_inertial_node_initialization_init");
@@ -188,6 +206,8 @@ class LocalInertialNode final : public rclcpp::Node {
       throw;
     }
 
+    // IMU/NodeState 属于高频实时数据，使用小队列和 best-effort，避免旧样本积压。
+    // 点云/图像只保留最新一帧；未打开参数时不会创建对应订阅者。
     node_state_publisher_ =
         create_publisher<cooperative_localization_msgs::msg::NodeState>(
             "node_state", rclcpp::QoS(5).best_effort().durability_volatile());
@@ -230,6 +250,8 @@ class LocalInertialNode final : public rclcpp::Node {
   }
 
  private:
+  // 实盒：把本机 steady 到达时刻映射到传感器头中的 UWB 时间域。
+  // Gazebo：所有消息和 /clock 已在同一仿真时间域，直接使用 ROS 时间。
   std::uint64_t receive_time_ns(
       std::uint64_t measurement_time_ns,
       std::uint64_t steady_receive_time_ns,
@@ -242,6 +264,7 @@ class LocalInertialNode final : public rclcpp::Node {
     return ros_time > 0 ? static_cast<std::uint64_t>(ros_time) : 0U;
   }
 
+  // 接收一帧本车 IMU，校验时间顺序后转换成稳定 C ABI 数据包并推进惯导。
   void on_imu(const sensor_msgs::msg::Imu& message) {
     const std::uint64_t measurement_time_ns = stamp_ns(message.header.stamp);
     const std::uint64_t steady_receive_time_ns = steady_time_ns();
@@ -254,6 +277,7 @@ class LocalInertialNode final : public rclcpp::Node {
     }
     if (last_imu_measurement_time_ns_ != 0U &&
         measurement_time_ns <= last_imu_measurement_time_ns_) {
+      // 中点积分要求严格递增的采样时间；回拨通常表示 UWB 时间纪元变化。
       if (measurement_time_ns < last_imu_measurement_time_ns_) {
         RCLCPP_WARN_THROTTLE(
             get_logger(), *get_clock(), 2000,
@@ -296,6 +320,8 @@ class LocalInertialNode final : public rclcpp::Node {
               message.linear_acceleration_covariance.end(),
               packet.linear_acceleration_covariance);
 
+    // ROS Imu 约定 covariance[0] < 0 表示未提供姿态。
+    // 只有声明可用且四元数归一化时，才把姿态观测交给 SDK。
     const double orientation_norm =
         std::sqrt(message.orientation.x * message.orientation.x +
                   message.orientation.y * message.orientation.y +
@@ -319,6 +345,7 @@ class LocalInertialNode final : public rclcpp::Node {
                 message.header.frame_id.size() + 1U);
     packet.valid = ZJU_COOP_TRUE;
 
+    // 第一个 IMU 样本只建立积分基线；从第二个合格样本开始进行传播。
     zju_coop_imu_processing_result_t result{};
     if (zju_coop_imu_processing_result_init(&result) != ZJU_COOP_OK) {
       return;
@@ -340,6 +367,8 @@ class LocalInertialNode final : public rclcpp::Node {
     if (result.disposition == ZJU_COOP_IMU_BASELINE_ESTABLISHED ||
         result.disposition == ZJU_COOP_IMU_PROPAGATED ||
         result.disposition == ZJU_COOP_IMU_INTERVAL_REJECTED) {
+      // SDK 已处理过这些时刻，包括已判定间隔不合格的样本；记录时间可防止
+      // 重复/乱序样本重新进入，并用该传感器时刻持续约束时间桥。
       last_imu_measurement_time_ns_ = measurement_time_ns;
       if (!use_sim_time_) {
         static_cast<void>(imu_time_bridge_.observe(
@@ -348,6 +377,8 @@ class LocalInertialNode final : public rclcpp::Node {
     }
   }
 
+  // 可选点云入口。完整保留 PointCloud2 字段布局和原始字节，不做点类型假设。
+  // 当前 SDK 预期返回 VALIDATED_NOT_USED，因此这里不会改变惯导状态。
   void on_point_cloud(const sensor_msgs::msg::PointCloud2& message) {
     const std::uint64_t measurement_time_ns = stamp_ns(message.header.stamp);
     const std::uint64_t steady_receive_time_ns = steady_time_ns();
@@ -361,6 +392,7 @@ class LocalInertialNode final : public rclcpp::Node {
       return;
     }
 
+    // 将 ROS 字段描述转换为 C ABI；字段数组和 data 指针只在同步 push 调用期间使用。
     std::vector<zju_coop_point_field_t> fields(message.fields.size());
     for (std::size_t index = 0U; index < message.fields.size(); ++index) {
       if (zju_coop_point_field_init(&fields[index]) != ZJU_COOP_OK ||
@@ -381,6 +413,7 @@ class LocalInertialNode final : public rclcpp::Node {
     const auto& packet_frame = point_cloud_frame_alias_.empty()
                                    ? message.header.frame_id
                                    : point_cloud_frame_alias_;
+    // frame alias 用于适配上游过长或不符合约定的 frame_id，不修改原消息。
     if (zju_coop_point_cloud_packet_init(&packet) != ZJU_COOP_OK ||
         !copy_c_string(packet.frame_id, packet_frame)) {
       RCLCPP_WARN_THROTTLE(
@@ -438,6 +471,7 @@ class LocalInertialNode final : public rclcpp::Node {
     }
   }
 
+  // 可选图像入口。保留 encoding/step/原始字节；当前同样只校验、不参与定位。
   void on_camera_image(const sensor_msgs::msg::Image& message) {
     const std::uint64_t measurement_time_ns = stamp_ns(message.header.stamp);
     const std::uint64_t steady_receive_time_ns = steady_time_ns();
@@ -505,6 +539,8 @@ class LocalInertialNode final : public rclcpp::Node {
     }
   }
 
+  // 以固定频率读取 SDK 最新状态；仅在出现新的 IMU 状态时发布一次 NodeState。
+  // header.stamp 是该状态最后接受的 IMU 样本时刻，不是定时器触发时刻。
   void publish_state() {
     zju_coop_node_state_t state{};
     if (zju_coop_node_state_init(&state) != ZJU_COOP_OK) {
@@ -542,6 +578,7 @@ class LocalInertialNode final : public rclcpp::Node {
     last_published_timestamp_ns_ = state.timestamp_ns;
   }
 
+  // SDK 生命周期与车辆/传感器标识。
   zju_coop_handle_t* handle_{};
   std::uint32_t node_id_{};
   std::uint32_t point_cloud_sensor_id_{1U};
@@ -549,6 +586,7 @@ class LocalInertialNode final : public rclcpp::Node {
   std::uint64_t imu_sequence_{};
   std::uint64_t point_cloud_sequence_{};
   std::uint64_t camera_sequence_{};
+  // 输入顺序和重复发布保护。
   std::uint64_t last_imu_measurement_time_ns_{};
   std::uint64_t last_published_timestamp_ns_{};
   bool point_cloud_input_seen_{};
@@ -558,6 +596,7 @@ class LocalInertialNode final : public rclcpp::Node {
   std::string common_enu_frame_id_;
   std::string point_cloud_frame_alias_;
   std::string camera_frame_alias_;
+  // 不同传感器可能有独立驱动延迟，分别维护时间桥，避免相互污染。
   zju_coop_ros2::SensorTimeBridge imu_time_bridge_;
   zju_coop_ros2::SensorTimeBridge point_cloud_time_bridge_;
   zju_coop_ros2::SensorTimeBridge camera_time_bridge_;
@@ -576,6 +615,7 @@ class LocalInertialNode final : public rclcpp::Node {
 int main(int argc, char** argv) {
   rclcpp::init(argc, argv);
   try {
+    // 单线程 spin 使回调顺序确定；当前成员状态无需额外加锁。
     rclcpp::spin(std::make_shared<LocalInertialNode>());
   } catch (const std::exception& error) {
     RCLCPP_FATAL(rclcpp::get_logger("zju_local_inertial_node"), "%s",
