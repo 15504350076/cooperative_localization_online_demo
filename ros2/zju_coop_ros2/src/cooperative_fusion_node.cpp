@@ -2,12 +2,12 @@
 // 数据流：各车 NodeState + 车间 UWB 测距 -> SDK 分布式二维修正器 -> 三车相对位姿。
 // 滤波状态只含各非参考车的 [delta_e, delta_n]；各车完整惯导状态仍留在本机。
 // UWB 修正相对平面位置，不在本节点估计姿态或 IMU 零偏。
+#include "cooperative_interfaces/msg/uwb_range.hpp"
 #include "cooperative_localization_msgs/msg/cooperative_pose2_d_array.hpp"
 #include "cooperative_localization_msgs/msg/node_state.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_time_bridge.hpp"
 #include "zju_coop/c_api.h"
-#include "zju_coop_test_msgs/msg/uwb_range.hpp"
 
 #include <algorithm>
 #include <array>
@@ -158,9 +158,9 @@ class CooperativeFusionNode final : public rclcpp::Node {
         [this](cooperative_localization_msgs::msg::NodeState::ConstSharedPtr message) {
           on_node_state(*message);
         });
-    uwb_subscription_ = create_subscription<zju_coop_test_msgs::msg::UwbRange>(
+    uwb_subscription_ = create_subscription<cooperative_interfaces::msg::UwbRange>(
         "uwb_range", rclcpp::QoS(20).best_effort().durability_volatile(),
-        [this](zju_coop_test_msgs::msg::UwbRange::ConstSharedPtr message) {
+        [this](cooperative_interfaces::msg::UwbRange::ConstSharedPtr message) {
           on_uwb_range(*message);
         });
     const auto period = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -285,13 +285,18 @@ class CooperativeFusionNode final : public rclcpp::Node {
     }
   }
 
-  // 接收临时 UwbRange 测试消息，补充配置给出的统一测距标准差后送入滤波器。
-  // 正式硬件消息若提供质量/方差/状态，需要在此处按真实字段填写，不应固定为 OK。
-  void on_uwb_range(const zju_coop_test_msgs::msg::UwbRange& message) {
-    if (message.src_id > std::numeric_limits<std::uint16_t>::max() ||
-        message.target_id > std::numeric_limits<std::uint16_t>::max()) {
+  // 接收上交盒端正式 UwbRange。正式消息只携带距离，因此测距标准差取配置值。
+  void on_uwb_range(const cooperative_interfaces::msg::UwbRange& message) {
+    const auto measurement_time = stamp_ns(message.header.stamp);
+    if (message.src_id == message.target_id ||
+        last_node_state_timestamp_ns_.count(message.src_id) == 0U ||
+        last_node_state_timestamp_ns_.count(message.target_id) == 0U ||
+        message.src_id > std::numeric_limits<std::uint16_t>::max() ||
+        message.target_id > std::numeric_limits<std::uint16_t>::max() ||
+        measurement_time == 0U || !std::isfinite(message.distance) ||
+        message.distance <= 0.0F) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
-                           "rejecting UWB node id outside uint16 C ABI");
+                           "rejecting invalid/unconfigured UWB range");
       return;
     }
     const auto receive_time = current_time_ns(steady_time_ns());
@@ -305,7 +310,7 @@ class CooperativeFusionNode final : public rclcpp::Node {
     packet.from_node = static_cast<std::uint16_t>(message.src_id);
     packet.to_node = static_cast<std::uint16_t>(message.target_id);
     packet.sequence = ++uwb_sequence_;
-    packet.timestamp_ns = stamp_ns(message.header.stamp);
+    packet.timestamp_ns = measurement_time;
     packet.receive_timestamp_ns = receive_time;
     packet.range_m = message.distance;
     packet.range_std_m = range_std_m_;
@@ -332,7 +337,8 @@ class CooperativeFusionNode final : public rclcpp::Node {
     }
   }
 
-  // 按统一算法时刻读取一次只读快照，并转换成参考车坐标系下的 ROS 2 输出。
+  // 按统一算法时刻读取只读快照，输出以参考车为原点、轴向平行公共 ENU 的结果；
+  // 这里只平移原点，不随参考车航向旋转坐标轴。
   // position_valid/yaw_valid 由 SDK 根据状态新鲜度和近期有效测距连通性给出，
   // 无效时数值只用于诊断，规划控制端不能继续使用。
   void publish_pose() {
@@ -399,7 +405,7 @@ class CooperativeFusionNode final : public rclcpp::Node {
   zju_coop_ros2::SensorTimeBridge reference_time_bridge_;
   rclcpp::Subscription<cooperative_localization_msgs::msg::NodeState>::SharedPtr
       node_state_subscription_;
-  rclcpp::Subscription<zju_coop_test_msgs::msg::UwbRange>::SharedPtr
+  rclcpp::Subscription<cooperative_interfaces::msg::UwbRange>::SharedPtr
       uwb_subscription_;
   rclcpp::Publisher<
       cooperative_localization_msgs::msg::CooperativePose2DArray>::SharedPtr

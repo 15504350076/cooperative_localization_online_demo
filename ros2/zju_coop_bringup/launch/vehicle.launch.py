@@ -33,6 +33,25 @@ def generate_launch_description():
         enable_lidar_slam, "'.lower() == 'true'",
     ])
     run_fusion = LaunchConfiguration("run_fusion")
+    use_localhost_imu_bridge = LaunchConfiguration("use_localhost_imu_bridge")
+    inherited_localhost_only = EnvironmentVariable(
+        "ROS_LOCALHOST_ONLY", default_value="0"
+    )
+    local_process_localhost = IfElseSubstitution(
+        use_localhost_imu_bridge,
+        if_value="1",
+        else_value=inherited_localhost_only,
+    )
+    shared_process_localhost = IfElseSubstitution(
+        use_localhost_imu_bridge,
+        if_value="0",
+        else_value=inherited_localhost_only,
+    )
+    node_state_output_topic = IfElseSubstitution(
+        use_localhost_imu_bridge,
+        if_value="/cooperative_localization/node_state_local",
+        else_value="/cooperative_localization/node_state",
+    )
     use_gnss_range_fallback = LaunchConfiguration("use_gnss_range_fallback")
     enable_follower_feedback = LaunchConfiguration(
         "enable_follower_feedback"
@@ -78,7 +97,7 @@ def generate_launch_description():
                     [package_share, "config", "fusion.yaml"]
                 ),
             ),
-            DeclareLaunchArgument("imu_topic", default_value="imu/data"),
+            DeclareLaunchArgument("imu_topic", default_value="/imu/raw"),
             DeclareLaunchArgument(
                 "point_cloud_topic", default_value="lidar/points"
             ),
@@ -157,6 +176,19 @@ def generate_launch_description():
                 ),
             ),
             DeclareLaunchArgument(
+                "use_localhost_imu_bridge",
+                default_value="false",
+                description=(
+                    "Keep IMU/local INS in ROS_LOCALHOST_ONLY=1 and relay only "
+                    "NodeState to the shared DDS graph"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "node_state_loopback_port",
+                default_value="45120",
+                description="Local UDP port used only by the NodeState DDS bridge",
+            ),
+            DeclareLaunchArgument(
                 "enable_follower_feedback",
                 default_value="false",
                 description=(
@@ -169,17 +201,11 @@ def generate_launch_description():
                 default_value="false",
                 description=(
                     "Use GNSS-derived ranges instead of /uwb/range; requires "
-                    "live NodeState and NavSatFix stamps in UWB_SYSTEM_TIME"
+                    "live NodeState and GnssPosition stamps in UWB_SYSTEM_TIME"
                 ),
             ),
             DeclareLaunchArgument(
-                "gnss_topic_1", default_value="/vehicle_1/gnss/fix"
-            ),
-            DeclareLaunchArgument(
-                "gnss_topic_2", default_value="/vehicle_2/gnss/fix"
-            ),
-            DeclareLaunchArgument(
-                "gnss_topic_3", default_value="/vehicle_3/gnss/fix"
+                "gnss_topic", default_value="/gnss/fix"
             ),
             DeclareLaunchArgument(
                 "uwb_range_std_m",
@@ -202,6 +228,9 @@ def generate_launch_description():
                 name="zju_local_inertial_node",
                 namespace=namespace,
                 output="screen",
+                additional_env={
+                    "ROS_LOCALHOST_ONLY": local_process_localhost,
+                },
                 parameters=[
                     local_config,
                     {
@@ -230,7 +259,49 @@ def generate_launch_description():
                     ("imu", imu_topic),
                     ("point_cloud", point_cloud_topic),
                     ("camera_image", camera_image_topic),
-                    ("node_state", "/cooperative_localization/node_state"),
+                    ("node_state", node_state_output_topic),
+                ],
+            ),
+            Node(
+                package="zju_coop_ros2",
+                executable="zju_node_state_local_sender",
+                name="zju_node_state_local_sender",
+                namespace=namespace,
+                output="screen",
+                condition=IfCondition(use_localhost_imu_bridge),
+                additional_env={"ROS_LOCALHOST_ONLY": "1"},
+                parameters=[{
+                    "loopback_port": ParameterValue(
+                        LaunchConfiguration("node_state_loopback_port"),
+                        value_type=int,
+                    ),
+                }],
+                remappings=[
+                    (
+                        "node_state_local",
+                        "/cooperative_localization/node_state_local",
+                    ),
+                ],
+            ),
+            Node(
+                package="zju_coop_ros2",
+                executable="zju_node_state_shared_relay",
+                name="zju_node_state_shared_relay",
+                namespace=namespace,
+                output="screen",
+                condition=IfCondition(use_localhost_imu_bridge),
+                additional_env={"ROS_LOCALHOST_ONLY": "0"},
+                parameters=[{
+                    "loopback_port": ParameterValue(
+                        LaunchConfiguration("node_state_loopback_port"),
+                        value_type=int,
+                    ),
+                }],
+                remappings=[
+                    (
+                        "node_state_shared",
+                        "/cooperative_localization/node_state",
+                    ),
                 ],
             ),
             Node(
@@ -240,6 +311,9 @@ def generate_launch_description():
                 namespace=namespace,
                 output="screen",
                 condition=IfCondition(lidar_frontend_enabled),
+                additional_env={
+                    "ROS_LOCALHOST_ONLY": local_process_localhost,
+                },
                 parameters=[{
                     "odom_frame_id": LaunchConfiguration(
                         "lidar_odom_frame_id"
@@ -263,6 +337,9 @@ def generate_launch_description():
                 namespace=namespace,
                 output="screen",
                 condition=IfCondition(enable_lidar_slam),
+                additional_env={
+                    "ROS_LOCALHOST_ONLY": local_process_localhost,
+                },
                 parameters=[{
                     "subscribe_depth": False,
                     "subscribe_rgb": False,
@@ -302,6 +379,9 @@ def generate_launch_description():
                 namespace=namespace,
                 output="screen",
                 condition=IfCondition(run_fusion),
+                additional_env={
+                    "ROS_LOCALHOST_ONLY": shared_process_localhost,
+                },
                 parameters=[
                     fusion_config,
                     {
@@ -336,6 +416,9 @@ def generate_launch_description():
                 condition=IfCondition(
                     AndSubstitution(use_gnss_range_fallback, run_fusion)
                 ),
+                additional_env={
+                    "ROS_LOCALHOST_ONLY": shared_process_localhost,
+                },
                 parameters=[{
                     "node_ids": [1, 2, 3],
                     "max_stamp_skew_ms": ParameterValue(
@@ -347,9 +430,7 @@ def generate_launch_description():
                         "node_state",
                         "/cooperative_localization/node_state",
                     ),
-                    ("fix_1", LaunchConfiguration("gnss_topic_1")),
-                    ("fix_2", LaunchConfiguration("gnss_topic_2")),
-                    ("fix_3", LaunchConfiguration("gnss_topic_3")),
+                    ("fix", LaunchConfiguration("gnss_topic")),
                     (
                         "range",
                         "/cooperative_localization/gnss_derived_range",

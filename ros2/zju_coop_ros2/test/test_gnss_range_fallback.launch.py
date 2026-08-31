@@ -12,6 +12,7 @@ import launch_testing.asserts
 import launch_testing.markers
 import pytest
 import rclpy
+from cooperative_interfaces.msg import GnssPosition, UwbRange
 from cooperative_localization_msgs.msg import NodeState
 from rclpy.qos import (
     DurabilityPolicy,
@@ -19,12 +20,7 @@ from rclpy.qos import (
     ReliabilityPolicy,
     qos_profile_sensor_data,
 )
-from sensor_msgs.msg import NavSatFix, NavSatStatus
-
-from zju_coop_test_msgs.msg import UwbRange
-
-
-FIX_TOPICS = tuple(f"/test/vehicle_{node_id}/gnss/fix" for node_id in (1, 2, 3))
+FIX_TOPIC = "/test/gnss/fix"
 RANGE_TOPIC = "/test/cooperative_localization/gnss_derived_range"
 STATE_TOPIC = "/test/cooperative_localization/node_state"
 WGS84_A_M = 6378137.0
@@ -52,9 +48,7 @@ def generate_test_description():
         }],
         remappings=[
             ("node_state", STATE_TOPIC),
-            ("fix_1", FIX_TOPICS[0]),
-            ("fix_2", FIX_TOPICS[1]),
-            ("fix_3", FIX_TOPICS[2]),
+            ("fix", FIX_TOPIC),
             ("range", RANGE_TOPIC),
         ],
     )
@@ -68,6 +62,30 @@ def generate_test_description():
 
 
 class TestGnssRangeFallback(unittest.TestCase):
+
+    def test_sjtu_message_contracts_are_frozen(self):
+        self.assertEqual(
+            UwbRange.get_fields_and_field_types(),
+            {
+                "header": "std_msgs/Header",
+                "src_id": "uint32",
+                "target_id": "uint32",
+                "distance": "float",
+            },
+        )
+        self.assertEqual(
+            GnssPosition.get_fields_and_field_types(),
+            {
+                "header": "std_msgs/Header",
+                "node_id": "uint32",
+                "status": "int8",
+                "latitude": "double",
+                "longitude": "double",
+                "altitude": "double",
+                "position_covariance": "double[9]",
+                "position_covariance_type": "uint8",
+            },
+        )
 
     @classmethod
     def setUpClass(cls):
@@ -87,10 +105,9 @@ class TestGnssRangeFallback(unittest.TestCase):
         self.state_publisher = self.node.create_publisher(
             NodeState, STATE_TOPIC, state_qos
         )
-        self.fix_publishers = [
-            self.node.create_publisher(NavSatFix, topic, qos_profile_sensor_data)
-            for topic in FIX_TOPICS
-        ]
+        self.fix_publisher = self.node.create_publisher(
+            GnssPosition, FIX_TOPIC, qos_profile_sensor_data
+        )
         self.ranges = []
         self.range_subscription = self.node.create_subscription(
             UwbRange, RANGE_TOPIC, self.ranges.append, qos_profile_sensor_data
@@ -98,8 +115,7 @@ class TestGnssRangeFallback(unittest.TestCase):
 
     def tearDown(self):
         self.node.destroy_publisher(self.state_publisher)
-        for publisher in self.fix_publishers:
-            self.node.destroy_publisher(publisher)
+        self.node.destroy_publisher(self.fix_publisher)
         self.node.destroy_subscription(self.range_subscription)
         self.node.destroy_node()
 
@@ -108,8 +124,7 @@ class TestGnssRangeFallback(unittest.TestCase):
         while time.monotonic() < deadline:
             rclpy.spin_once(self.node, timeout_sec=0.05)
             if (
-                all(publisher.get_subscription_count() == 1
-                    for publisher in self.fix_publishers)
+                self.fix_publisher.get_subscription_count() == 1
                 and self.state_publisher.get_subscription_count() == 1
                 and self.node.count_publishers(RANGE_TOPIC) == 1
             ):
@@ -117,12 +132,15 @@ class TestGnssRangeFallback(unittest.TestCase):
         self.fail("GNSS fallback ROS graph was not ready")
 
     @staticmethod
-    def _fix(stamp_ns, longitude_deg, status=NavSatStatus.STATUS_FIX):
-        message = NavSatFix()
+    def _fix(
+        node_id, stamp_ns, longitude_deg, status=GnssPosition.STATUS_FIX
+    ):
+        message = GnssPosition()
         message.header.stamp.sec = stamp_ns // 1_000_000_000
         message.header.stamp.nanosec = stamp_ns % 1_000_000_000
         message.header.frame_id = "gnss_link"
-        message.status.status = status
+        message.node_id = node_id
+        message.status = status
         message.latitude = 0.0
         message.longitude = longitude_deg
         message.altitude = math.nan
@@ -136,11 +154,15 @@ class TestGnssRangeFallback(unittest.TestCase):
             2.0 * math.asin(4.0 / (2.0 * WGS84_A_M))
         )
         longitudes = (0.0, longitude_3m, longitude_4m)
-        statuses = statuses or (NavSatStatus.STATUS_FIX,) * 3
-        for publisher, offset_ns, longitude, status in zip(
-            self.fix_publishers, offsets_ns, longitudes, statuses
+        statuses = statuses or (GnssPosition.STATUS_FIX,) * 3
+        for node_id, offset_ns, longitude, status in zip(
+            (1, 2, 3), offsets_ns, longitudes, statuses
         ):
-            publisher.publish(self._fix(stamp_ns + offset_ns, longitude, status))
+            self.fix_publisher.publish(
+                self._fix(
+                    node_id, stamp_ns + offset_ns, longitude, status
+                )
+            )
 
     def _publish_common_time(
         self, stamp_ns, valid=True, frame_id="common_enu"
@@ -189,7 +211,9 @@ class TestGnssRangeFallback(unittest.TestCase):
 
         # Updating only one vehicle must not reuse the other two cached fixes.
         self.ranges.clear()
-        self.fix_publishers[0].publish(self._fix(stamp_ns + 1_000_000, 0.0))
+        self.fix_publisher.publish(
+            self._fix(1, stamp_ns + 1_000_000, 0.0)
+        )
         self._spin_until_ranges(1, timeout_s=0.3)
         self.assertEqual(self.ranges, [])
 
@@ -202,21 +226,22 @@ class TestGnssRangeFallback(unittest.TestCase):
         longitude_4m = -math.degrees(
             2.0 * math.asin(4.0 / (2.0 * WGS84_A_M))
         )
-        self.fix_publishers[1].publish(
-            self._fix(next_stamp_ns, longitude_3m)
+        self.fix_publisher.publish(
+            self._fix(2, next_stamp_ns, longitude_3m)
         )
         self._spin_until_ranges(1, timeout_s=0.1)
         self.assertEqual(self.ranges, [])
-        self.fix_publishers[1].publish(self._fix(
+        self.fix_publisher.publish(self._fix(
+            2,
             next_stamp_ns + 1_000_000,
             longitude_3m,
-            NavSatStatus.STATUS_NO_FIX,
+            GnssPosition.STATUS_NO_FIX,
         ))
         self._spin_until_ranges(1, timeout_s=0.1)
         self.assertEqual(self.ranges, [])
-        self.fix_publishers[0].publish(self._fix(next_stamp_ns, 0.0))
-        self.fix_publishers[2].publish(
-            self._fix(next_stamp_ns, longitude_4m)
+        self.fix_publisher.publish(self._fix(1, next_stamp_ns, 0.0))
+        self.fix_publisher.publish(
+            self._fix(3, next_stamp_ns, longitude_4m)
         )
         self._spin_until_ranges(1, timeout_s=0.3)
         self.assertEqual(self.ranges, [])
@@ -270,7 +295,7 @@ class TestGnssRangeFallback(unittest.TestCase):
         self._spin_until_ranges(1, timeout_s=0.3)
         self.assertEqual(self.ranges, [])
 
-        # A real-UTC NavSatFix cannot pass a UWB_SYSTEM_TIME reference gate.
+        # A real-UTC GnssPosition cannot pass a UWB_SYSTEM_TIME reference gate.
         self._publish_common_time(time.monotonic_ns())
         self._publish_epoch(time.time_ns())
         self._spin_until_ranges(1, timeout_s=0.3)
@@ -282,9 +307,9 @@ class TestGnssRangeFallback(unittest.TestCase):
         self._publish_epoch(
             stamp_ns,
             statuses=(
-                NavSatStatus.STATUS_FIX,
-                NavSatStatus.STATUS_NO_FIX,
-                NavSatStatus.STATUS_FIX,
+                GnssPosition.STATUS_FIX,
+                GnssPosition.STATUS_NO_FIX,
+                GnssPosition.STATUS_FIX,
             ),
         )
         self._spin_until_ranges(1, timeout_s=0.3)
@@ -300,16 +325,16 @@ class TestGnssRangeFallback(unittest.TestCase):
         # Cached fixes older than the receive-time timeout are not combined.
         stamp_ns = time.monotonic_ns()
         self._publish_common_time(stamp_ns)
-        self.fix_publishers[0].publish(self._fix(stamp_ns, 0.0))
+        self.fix_publisher.publish(self._fix(1, stamp_ns, 0.0))
         longitude_3m = math.degrees(
             2.0 * math.asin(3.0 / (2.0 * WGS84_A_M))
         )
         longitude_4m = -math.degrees(
             2.0 * math.asin(4.0 / (2.0 * WGS84_A_M))
         )
-        self.fix_publishers[1].publish(self._fix(stamp_ns, longitude_3m))
+        self.fix_publisher.publish(self._fix(2, stamp_ns, longitude_3m))
         time.sleep(0.2)
-        self.fix_publishers[2].publish(self._fix(stamp_ns, longitude_4m))
+        self.fix_publisher.publish(self._fix(3, stamp_ns, longitude_4m))
         self._spin_until_ranges(1, timeout_s=0.3)
         self.assertEqual(self.ranges, [])
 

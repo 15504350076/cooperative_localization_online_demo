@@ -9,8 +9,8 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
   <depend>rclcpp</depend>
   <depend>sensor_msgs</depend>
+  <depend>cooperative_interfaces</depend>
   <depend>cooperative_localization_msgs</depend>
-  <depend>zju_coop_test_msgs</depend>
   <exec_depend>rclpy</exec_depend>
 
   <test_depend>launch_testing_ament_cmake</test_depend>

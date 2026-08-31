@@ -21,7 +21,7 @@ from sensor_msgs.msg import Imu
 import yaml
 
 from cooperative_localization_msgs.msg import CooperativePose2DArray, NodeState
-from zju_coop_test_msgs.msg import UwbRange
+from cooperative_interfaces.msg import UwbRange
 
 
 NODE_IDS = {1, 2, 3}

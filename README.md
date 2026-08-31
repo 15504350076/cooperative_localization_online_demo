@@ -15,17 +15,18 @@
 - UWB NLOS、有效率、频率、残差的滑窗质量评估，以及正常使用、降权、暂缓、剔除和试探恢复。
 - 稳定 C ABI 动态库 `zju_coop`；核心接口只使用普通 C 结构体，不依赖 ROS 2 消息。
 - 分布式首版：每车本地 15 维惯导输出紧凑 NodeState，参考车按 UWB 时刻对齐三车状态并维护独立二维修正；协同修正不覆盖本地惯导。
+- 盒端选择性DDS隔离适配：设置 `use_localhost_imu_bridge:=true` 后，本地惯导在 `ROS_LOCALHOST_ONLY=1` 读取 `/imu/raw`，仅把校验后的紧凑 NodeState 经本机回环转发器发布到 `ROS_LOCALHOST_ONLY=0` 的共享DDS；原始IMU不跨车发送。该开关默认关闭，不影响同机仿真。
 - 整组三车统一算法时刻必须新鲜；非参考车还只有经近期且被滤波接受的测距边连通到参考车时才设置 `position_valid=true`。任一车状态冻结或测距失联后仍保留有限数值用于诊断，但 GCS/规划不得继续使用无效结果。
-- ROS 2 Humble 首版：`cooperative_localization_msgs`、`zju_coop_ros2`、`zju_coop_bringup`，以及可选的 `zju_coop_perception`、`zju_coop_gazebo`，输出 GCS 所需 `CooperativePose2DArray`。
+- ROS 2 Humble 首版：与上交盒端同结构的 `cooperative_interfaces` 输入消息、`cooperative_localization_msgs` 输出消息、`zju_coop_ros2`、`zju_coop_bringup`，以及可选的 `zju_coop_perception`、`zju_coop_gazebo`，输出 GCS 所需 `CooperativePose2DArray`。
 - 从车结果反馈默认关闭；参考车设置 `enable_follower_feedback:=true` 后，才把同一份协同结果发布到专用 `/cooperative_localization/feedback/poses_2d`。该反馈供从车规划模块订阅，不回灌本地惯导；GNSS 距离后备模式禁止用于规划控制。
 - Gazebo 感知、点云配准、视觉定位和激光 SLAM 均默认关闭。按需可启动三车 5 Hz 单线点云的平面 ICP 里程计、已知四色地标板单目平面定位，或一键启动基于 RTAB-Map 的每车独立二维建图。`enable_slam_rviz:=true` 可同时打开预配置的 RViz，默认显示参考车 1 的地图和点云。输出为 `nav_msgs/Odometry` 或 `/vehicle_N/lidar_slam/map`，当前只用于本车评估和录包，尚未反馈 NodeState 或 UWB/GCS 融合，也不跨车发送原始大数据。
-- 默认关闭的 GNSS 距离后备：只在 UWB 测距暂不可用、三车共同 UWB 授时仍有效且 `NavSatFix.header.stamp` 已转换到 `UWB_SYSTEM_TIME` 时显式启动；它与真实 UWB 输入严格互斥，不作为 UWB 或定位精度验收依据。当前输出没有机器可读的测距来源字段，因此该模式只供 GCS 应急显示，禁止接入规划控制。
+- 默认关闭的 GNSS 距离后备：只在 UWB 测距暂不可用、三车共同 UWB 授时仍有效且 `cooperative_interfaces/msg/GnssPosition.header.stamp` 已使用 `UWB_SYSTEM_TIME` 时显式启动；它从共享 `/gnss/fix` 按 `node_id` 分流，与真实 UWB 输入严格互斥，不作为 UWB 或定位精度验收依据。当前输出没有机器可读的测距来源字段，因此该模式只供 GCS 应急显示，禁止接入规划控制。
 - C ABI v1 保留定位/观测/网络输出；Pose2D C ABI v2 通过只读 `zju_coop_get_pose2d_v2()` 输出公共快照时间、参考节点、frame 和各车 x/y/yaw，不会重复推进滤波。
 - 在线程序 `zju_coop_online`、回放程序 `zju_coop_replay`、UWB/IMU＋UWB模拟器和浏览器 GCS 面板；临时 UDP 类型 105 输出 Pose2D，面板按共同时间与参考节点收齐三车后原子更新，按有效位显示位置/航向，并显示参考节点、快照时间和坐标系；在线/回放适配层还根据库的网络结果生成状态和告警帧。
 - 输入、输出统一事件日志；回放会跳过历史输出记录，以历史输入重新计算并重新产生定位、状态和告警。
 - 严格帧长、枚举、保留位、数值范围和 CRC 校验；所有数据携带时间戳、序号和节点号。
 
-尚未实现或未验证：上交正式 UWB 消息包替换、真实 UWB/IMU/GNSS 驱动与时间同步、三盒 DDS/5G Mesh、真实雷达/通用自然场景视觉前端及其融合、绝对位置约束，以及 RK3588/ARM64 真实盒端构建、运行和性能指标。GNSS 后备只把三车位置几何转成低置信度距离，不是 GNSS 绝对位置融合。当前 Ubuntu 22.04 x86-64 同机 ROS 2/Gazebo 结果不能替代上述验证。C ABI v1 `Localization` 仍只发布二维相对位置和速度，`yaw_valid=false`、`z_valid=false`；GCS 航向由 Pose2D v2 链路提供。
+上交当前 `cooperative_interfaces/msg/UwbRange`、`GnssPosition`、`Identity` 的已知字段已在仓库复现，正式 UWB 输入和共享 GNSS 后备已完成 x86-64 构建与回归测试。尚未验证：实盒 UWB 的 `src_id/target_id` 是否使用逻辑车辆号、距离单位与有效数据、IMU单位/轴向及统一时间、三盒 DDS/5G Mesh、真实雷达/通用自然场景视觉前端及其融合、绝对位置约束，以及 RK3588/ARM64 构建、运行和性能指标。GNSS 后备只把三车位置几何转成低置信度距离，不是 GNSS 绝对位置融合。当前 Ubuntu 22.04 x86-64 同机结果不能替代实盒验证。C ABI v1 `Localization` 仍只发布二维相对位置和速度，`yaw_valid=false`、`z_valid=false`；GCS 航向由 Pose2D v2 链路提供。
 
 ## 交付边界与分工
 
@@ -98,7 +99,7 @@
 | ROS 2 适配节点 | 已在 Ubuntu 22.04/ROS 2 Humble x86-64 实现和测试 | 使用同一源码在 RK3588/AArch64 重建；当前未验证 |
 | 临时在线入口  | ZJCL/UDP 独立 Demo                     | 可用于盒端自检；生产链路计划采用浙大 ROS 2 适配节点 |
 
-因此不能把 Windows DLL 复制到 RK3588，也不能把 ARM64 `.so` 放到 Windows。浙大 ROS 2 适配节点源码需要在每个平台各自的 ROS 2、编译器和消息包环境中重新构建。算法库本身不包含 ROS 2 消息依赖；当前仓库已有首版节点与消息包，但尚未取得 RK3588 和上交正式 UWB 包的部署证据。
+因此不能把 Windows DLL 复制到 RK3588，也不能把 ARM64 `.so` 放到 Windows。浙大 ROS 2 适配节点源码需要在每个平台各自的 ROS 2、编译器和消息包环境中重新构建。算法库本身不包含 ROS 2 消息依赖；当前仓库已包含与上交已知字段一致的输入消息及适配节点，但尚未取得 RK3588 实机部署和有效 UWB 数据闭环证据。
 
 ### Windows 本机
 
@@ -254,6 +255,6 @@ C ABI v1 的 `zju_coop_step` 当前直接输出 `Localization`、`Observation` �
 - C ABI v1 的字段顺序、枚举值、`struct_size/abi_version/stride` 握手和调用语义已由 C/C++ 消费者测试保护；C 结构体不是网络字节格式，ARM64 上的实际大小和 ABI 仍须上盒验证。
 - 临时 ZJCL v1 已在既有遥测之外增加类型 105 Pose2D 帧；其 32 字节载荷、`[-π,π)` 航向范围和能力/有效位语义由 C++、Python 测试保护。改变布局必须升级协议版本并同步修改两端测试。
 - AlgorithmStatus/Alert 已在在线、GCS 和回放演示链路实现，但尚未进入 C ABI v1 或首版 ROS 2 GCS 消息；正式映射仍为待确认项。
-- 首版 ROS 2 适配节点、NodeState、GCS 结果消息和发布代码已实现；上交正式 UWB 包名、输入 topic/QoS、同步状态消息以及跨盒 GCS 的 DDS 接入方式仍需三方书面确认。
+- 首版 ROS 2 适配节点、上交已知输入消息结构、NodeState、GCS 结果消息和发布代码已实现；仍需实盒确认 UWB ID语义、距离单位、输入QoS、同步状态消息以及跨盒GCS的DDS接入方式。
 - 第一阶段建议上交至少提供：源/目标节点号、单调递增序号、统一测量时间、同时间基准接收时间、距离、标准差、NLOS 标志/概率、有效标志和设备状态。禁止仅给无时间戳的距离值。
 - Python 以 `-B` 运行可避免生成 `__pycache__`；不带 `-B` 运行时 Python 可能创建该缓存目录，它不是运行依赖。

@@ -18,7 +18,7 @@ from rclpy.serialization import serialize_message
 from sensor_msgs.msg import Image, Imu, PointCloud2, PointField
 
 from cooperative_localization_msgs.msg import CooperativePose2DArray, NodeState
-from zju_coop_test_msgs.msg import UwbRange
+from cooperative_interfaces.msg import UwbRange
 
 
 POSE_TOPIC = "/cooperative_localization/poses_2d"
@@ -411,12 +411,12 @@ class TestMinimalPipeline(unittest.TestCase):
             stamp = self._uwb_stamp(time.monotonic() - start_wall)
             for publisher in self.imu_publishers:
                 publisher.publish(self._imu(stamp))
-            # Give local callbacks and timers time to forward this common-stamp
-            # batch before sending ranges; the loop tolerates timer phase skew.
-            time.sleep(0.06)
+            # Keep consecutive IMU samples safely inside the SDK's 0.1 s
+            # continuity limit while still letting callbacks and timers run.
+            time.sleep(0.02)
             self._publish_ranges(stamp)
 
-            rclpy.spin_once(self.node, timeout_sec=0.05)
+            rclpy.spin_once(self.node, timeout_sec=0.02)
             accepted = next(
                 (message for message in reversed(self.pose_messages)
                  if self._uwb_corrected_pose(message)),

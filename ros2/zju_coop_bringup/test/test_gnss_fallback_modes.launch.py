@@ -15,12 +15,11 @@ import pytest
 import rclpy
 from rcl_interfaces.srv import GetParameters
 from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import NavSatFix
 
-from zju_coop_test_msgs.msg import UwbRange
+from cooperative_interfaces.msg import GnssPosition, UwbRange
 
 
-GNSS_TOPICS = tuple(f"/test/vehicle_{node_id}/gnss/fix" for node_id in (1, 2, 3))
+GNSS_TOPIC = "/test/gnss/fix"
 DERIVED_RANGE_TOPIC = "/cooperative_localization/gnss_derived_range"
 FEEDBACK_TOPIC = "/cooperative_localization/feedback/poses_2d"
 
@@ -47,9 +46,7 @@ def _vehicle_launch(
     if fallback is not None:
         arguments.update({
             "use_gnss_range_fallback": "true" if fallback else "false",
-            "gnss_topic_1": GNSS_TOPICS[0],
-            "gnss_topic_2": GNSS_TOPICS[1],
-            "gnss_topic_3": GNSS_TOPICS[2],
+            "gnss_topic": GNSS_TOPIC,
         })
     if feedback is not None:
         arguments["enable_follower_feedback"] = (
@@ -112,15 +109,13 @@ class TestGnssFallbackModes(unittest.TestCase):
         self.uwb_publisher = self.node.create_publisher(
             UwbRange, "/uwb/range", qos_profile_sensor_data
         )
-        self.gnss_publishers = [
-            self.node.create_publisher(NavSatFix, topic, qos_profile_sensor_data)
-            for topic in GNSS_TOPICS
-        ]
+        self.gnss_publisher = self.node.create_publisher(
+            GnssPosition, GNSS_TOPIC, qos_profile_sensor_data
+        )
 
     def tearDown(self):
         self.node.destroy_publisher(self.uwb_publisher)
-        for publisher in self.gnss_publishers:
-            self.node.destroy_publisher(publisher)
+        self.node.destroy_publisher(self.gnss_publisher)
         self.node.destroy_node()
 
     def _wait_for_graph(self, timeout_s=10.0):
@@ -130,16 +125,13 @@ class TestGnssFallbackModes(unittest.TestCase):
             rclpy.spin_once(self.node, timeout_sec=0.05)
             graph_state = (
                 self.uwb_publisher.get_subscription_count(),
-                tuple(
-                    publisher.get_subscription_count()
-                    for publisher in self.gnss_publishers
-                ),
+                self.gnss_publisher.get_subscription_count(),
                 self.node.count_publishers(DERIVED_RANGE_TOPIC),
                 self.node.count_subscribers(DERIVED_RANGE_TOPIC),
                 self.node.count_publishers(FEEDBACK_TOPIC),
             )
             if (
-                graph_state == (1, (1, 1, 1), 1, 1, 1)
+                graph_state == (1, 1, 1, 1, 1)
                 and any(
                     name == "zju_gnss_range_fallback_node"
                     and namespace == "/fallback_ref"

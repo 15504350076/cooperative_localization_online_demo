@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Minimal ROS 2 graph/data smoke check for an AIBrainBox.
-# UWB payload fields are deliberately not parsed: its formal type is not frozen.
+# Checks the frozen SJTU UWB type and the measured box IMU topic.
 
 set -u
 set -o pipefail
@@ -8,13 +8,15 @@ set -o pipefail
 readonly NODE_STATE_TOPIC="/cooperative_localization/node_state"
 readonly NODE_STATE_TYPE="cooperative_localization_msgs/msg/NodeState"
 readonly UWB_TOPIC="/uwb/range"
+readonly UWB_TYPE="cooperative_interfaces/msg/UwbRange"
 readonly POSES_TOPIC="/cooperative_localization/poses_2d"
 readonly POSES_TYPE="cooperative_localization_msgs/msg/CooperativePose2DArray"
 readonly IMU_TYPE="sensor_msgs/msg/Imu"
 
 WAIT_SECONDS=0
 SPIN_TIME=2
-IMU_TOPIC=""
+IMU_TOPIC="/imu/raw"
+LOCAL_IMU_ONLY=0
 EXPECT_ARCH=""
 EXPECT_RMW=""
 FAILURES=0
@@ -23,12 +25,13 @@ usage() {
   cat <<'EOF'
 Usage: zju_box_smoke_check [options]
 
-Checks the ROS 2 environment and discoverable types/endpoint summary for
-NodeState, UWB range and cooperative result.  Add --imu-topic to check one
-vehicle IMU.  Add --wait N to require one message on every checked topic.
+Checks the shared ROS 2 graph for NodeState, UWB range and cooperative result.
+Use --local-imu-only from a ROS_LOCALHOST_ONLY=1 terminal to check /imu/raw
+instead. Add --wait N for message checks.
 
 Options:
-  --imu-topic TOPIC    Also check TOPIC as sensor_msgs/msg/Imu.
+  --local-imu-only     Check only the localhost IMU graph, not shared topics.
+  --imu-topic TOPIC    Override /imu/raw in --local-imu-only mode.
   --wait SECONDS       Require one message on every checked topic.
   --spin-time SECONDS  ROS 2 discovery wait per graph query (default: 2).
   --expect-arch ARCH   Fail if uname -m differs (e.g. aarch64).
@@ -75,6 +78,10 @@ while (($# > 0)); do
       (($# >= 2)) || invalid_args "--imu-topic requires a topic name"
       IMU_TOPIC="$(normalize_topic "$2")"
       shift 2
+      ;;
+    --local-imu-only)
+      LOCAL_IMU_ONLY=1
+      shift
       ;;
     --wait)
       (($# >= 2)) || invalid_args "--wait requires a positive integer"
@@ -143,8 +150,14 @@ if [[ -n "${RMW_IMPLEMENTATION-}" ]]; then
 else
   fail 'RMW_IMPLEMENTATION is unset; set the same RMW on all boxes'
 fi
-if [[ "${ROS_LOCALHOST_ONLY-0}" == "1" ]]; then
-  fail 'ROS_LOCALHOST_ONLY=1 blocks cross-box DDS; set it to 0'
+if ((LOCAL_IMU_ONLY > 0)); then
+  if [[ "${ROS_LOCALHOST_ONLY-0}" == "1" ]]; then
+    pass 'ROS_LOCALHOST_ONLY=1 keeps the IMU check on this box'
+  else
+    fail 'local IMU mode requires ROS_LOCALHOST_ONLY=1'
+  fi
+elif [[ "${ROS_LOCALHOST_ONLY-0}" == "1" ]]; then
+  fail 'shared graph mode requires ROS_LOCALHOST_ONLY=0'
 else
   pass 'ROS_LOCALHOST_ONLY allows cross-box discovery'
 fi
@@ -229,20 +242,22 @@ check_topic_message() {
   fi
 }
 
-check_topic_graph 'NodeState' "$NODE_STATE_TOPIC" "$NODE_STATE_TYPE"
-# Do not assume the platform team's not-yet-frozen UWB package/type.
-check_topic_graph 'UWB range' "$UWB_TOPIC" ''
-check_topic_graph 'Cooperative result' "$POSES_TOPIC" "$POSES_TYPE"
-if [[ -n "$IMU_TOPIC" ]]; then
+if ((LOCAL_IMU_ONLY > 0)); then
   check_topic_graph 'IMU' "$IMU_TOPIC" "$IMU_TYPE"
+else
+  check_topic_graph 'NodeState' "$NODE_STATE_TOPIC" "$NODE_STATE_TYPE"
+  # The interface package mirrors the currently measured SJTU box schema.
+  check_topic_graph 'UWB range' "$UWB_TOPIC" "$UWB_TYPE"
+  check_topic_graph 'Cooperative result' "$POSES_TOPIC" "$POSES_TYPE"
 fi
 
 if ((WAIT_SECONDS > 0)); then
-  check_topic_message 'NodeState' "$NODE_STATE_TOPIC"
-  check_topic_message 'UWB range' "$UWB_TOPIC"
-  check_topic_message 'Cooperative result' "$POSES_TOPIC"
-  if [[ -n "$IMU_TOPIC" ]]; then
+  if ((LOCAL_IMU_ONLY > 0)); then
     check_topic_message 'IMU' "$IMU_TOPIC"
+  else
+    check_topic_message 'NodeState' "$NODE_STATE_TOPIC"
+    check_topic_message 'UWB range' "$UWB_TOPIC"
+    check_topic_message 'Cooperative result' "$POSES_TOPIC"
   fi
 fi
 

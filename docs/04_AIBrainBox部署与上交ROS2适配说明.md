@@ -10,7 +10,7 @@
 
 Windows 与 RK3588 使用同一份算法源码、`c_api.h`、配置语义和调用顺序；不能使用同一个编译产物。Windows x64 由 MSVC 生成 `zju_coop.dll`，RK3588/AArch64 由 Ubuntu GCC/Clang 生成 `libzju_coop.so`。两者的处理器指令集、目标文件格式和系统 ABI 不同，禁止直接复制替换。
 
-浙大 ROS 2 适配节点已作为独立包实现，并保持算法库本体不包含 `rclcpp` 或 ROS 2 消息头；ROS 2 依赖只进入适配层。节点必须在目标 ROS 2 发行版、消息包和编译器环境中重新构建。当前首版节点、消息、topic 和 QoS 已在 x86-64 同机验证，但上交正式 UWB 包替换、跨盒 DDS 和 RK3588 仍未验证。
+浙大 ROS 2 适配节点已作为独立包实现，并保持算法库本体不包含 `rclcpp` 或 ROS 2 消息头；ROS 2 依赖只进入适配层。节点必须在目标 ROS 2 发行版、消息包和编译器环境中重新构建。当前已按上交已知字段接入 `cooperative_interfaces/msg/UwbRange`、`GnssPosition`、`Identity` 并在 x86-64 同机完成构建和回归测试；有效实测UWB、跨盒DDS和RK3588仍未验证。
 
 ## 2. 首版生产链路与双方分工
 
@@ -29,7 +29,7 @@ IMU驱动 + UWB/MCU UART TLV
 - 浙大已实现并计划交付算法动态库、ROS 2 适配节点、最小结果消息定义和发布逻辑。算法库保持纯 C/C++，适配节点负责 ROS 2 输入到 C ABI 的逐字段转换，以及 C ABI 输出到结果消息的转换。
 - 上交负责驱动、TLV/厂商协议解析、单平台与多平台统一时间、输入 ROS 2 消息与 topic、DDS 和盒端构建运行环境、无线转发/路由，并向浙大提供可编译的消息包和接口约定。
 - 交大 GCS 在另一盒子上通过 DDS 消费结果消息，不直接调用浙大算法库。
-- 首版节点、结果消息、topic 和 QoS 已在 Ubuntu x86-64 落地；上交正式 UWB 类型、跨盒 DDS 和 RK3588 部署尚未落地，不能由同机测试替代。
+- 首版节点、正式 UWB/GNSS 输入结构、结果消息和 topic 已在 Ubuntu x86-64 落地；实盒输入QoS、有效UWB数据、跨盒DDS和RK3588部署尚未验证，不能由同机测试替代。
 
 ## 3. ARM64 原生构建步骤
 
@@ -37,6 +37,12 @@ IMU驱动 + UWB/MCU UART TLV
 这些属于默认关闭的可选感知功能；只有明确启用 `enable_lidar_frontend`、
 `enable_lidar_slam` 或视觉前端时，才另外安装对应依赖并构建
 `zju_coop_perception`。
+
+上交当前要求 `navcore` 与 `/imu/raw` 运行在 `ROS_LOCALHOST_ONLY=1`，而
+NodeState/UWB/协同结果运行在共享DDS。`vehicle.launch.py` 已提供
+`use_localhost_imu_bridge:=true`：本地惯导和发送端留在localhost DDS，经过
+仅绑定 `127.0.0.1` 的校验数据报，把NodeState交给共享DDS转发端；不会转发
+IMU、雷达或RGB。每个物理盒只启动一套车辆launch，默认回环端口45120。
 
 在盒端安装 CMake、C/C++ 编译器和 Python 3 后：
 
@@ -217,7 +223,7 @@ C ABI v1 仍可补充以下诊断与状态：
 - Observation：边、窗口、计数、比例、频率、state、action、reason_mask、scale；
 - AlgorithmStatus 与 Alert：后续由浙大适配节点复用参考适配层语义，或在正式接口评审中扩展 C ABI。
 
-首版结果消息、`/cooperative_localization/poses_2d` 和 QoS 已实现，适配时逐字段赋值，没有把 C 结构内存直接作为 ROS 2 serialized bytes。上交正式 UWB 包名、输入 QoS、时间同步状态以及 GCS 跨盒 DDS 行为仍待冻结；`zju_coop_test_msgs/UwbRange` 只能作为当前四字段接口的构建与测试替身。实盒统一时间的冻结口径见 `docs/19_上交盒端UWB统一时间接入约定.md`。
+首版结果消息、`/cooperative_localization/poses_2d` 和 QoS 已实现，适配时逐字段赋值，没有把 C 结构内存直接作为 ROS 2 serialized bytes。融合节点已直接订阅 `/uwb/range` 的 `cooperative_interfaces/msg/UwbRange`；旧 `zju_coop_test_msgs` 仅为历史回归包，不再进入运行主链。输入QoS、UWB ID语义、距离单位、时间同步状态以及GCS跨盒DDS行为仍待实盒确认。实盒统一时间的冻结口径见 `docs/19_上交盒端UWB统一时间接入约定.md`。
 
 ## 7. 平台状态接口
 
@@ -229,7 +235,7 @@ topic、QoS、单位、失锁/重锁和 Master 重启语义。在接口冻结前
 ## 8. 盒端必做验证
 
 安装并 source 目标 ROS 2 工作区后，可先用轻量自检确认盒端环境和跨盒
-topic 图；它不读取或解析正式 UWB 消息字段：
+topic 图，并核对正式 UWB 消息类型；它不判断实测字段值是否合理：
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -242,16 +248,17 @@ export ROS_LOCALHOST_ONLY=0
 ros2 run zju_coop_bringup zju_box_smoke_check \
   --expect-arch aarch64 --expect-rmw rmw_fastrtps_cpp
 
-# 指定本盒 IMU，并要求每个已检查 topic 在 5 秒内至少收到一帧。
+# 另开 ROS_LOCALHOST_ONLY=1 终端，只检查本盒 /imu/raw。
+export ROS_LOCALHOST_ONLY=1
 ros2 run zju_coop_bringup zju_box_smoke_check \
   --expect-arch aarch64 --expect-rmw rmw_fastrtps_cpp \
-  --imu-topic /vehicle_2/imu/data --wait 5
+  --local-imu-only --imu-topic /imu/raw --wait 5
 ```
 
-退出码 `0` 表示请求的图/首帧检查通过，`1` 表示环境、topic、类型或数据
-检查失败，`2` 表示参数错误或缺少 `ros2`/标准 `timeout` 命令。默认不检查
-IMU；每个盒子的实际 IMU topic 由 `--imu-topic` 显式传入。UWB 只检查
-`/uwb/range` 可发现且类型可见，不假定上交尚未冻结的正式消息包名或字段。
+退出码 `0` 表示请求的检查通过，`1` 表示环境、topic、类型或数据检查失败，
+`2` 表示参数错误或缺少 `ros2`/标准 `timeout` 命令。默认在共享DDS只检查
+NodeState、UWB和协同结果；增加 `--wait 5` 要求三者都收到数据。
+`--local-imu-only --wait 5` 则在localhost DDS只检查IMU，两种模式必须分终端执行。
 
 1. ARM64 原生/交叉构建与 `ctest`；
 2. `libzju_coop.so` 加载、C header smoke 和导出符号；
@@ -273,14 +280,14 @@ IMU；每个盒子的实际 IMU topic 由 `--imu-topic` 显式传入。UWB 只�
 
 当前 C ABI 已增加与主 `Engine` 隔离的 `zju_coop_gnss_context_t`，用于：
 
-1. 把标准 `sensor_msgs/msg/NavSatFix` 转换为失锁前的节点位置、速度和协方差初值；
+1. 把 GNSS 经纬高转换为失锁前的节点位置、速度和协方差初值；
 2. 把后续 RTK 输出转换为固定公共 ENU 下、相对主参考节点的位置真值；
 3. 保证 RTK 真值不进入 IMU＋测距 EKF。
 
-计划中的浙大 GNSS 适配扩展必须逐字段映射上交发布的标准消息，并额外取得 `node_id`、`sequence`、
-同时间基准的 `receive_timestamp_ns` 和经过设备质量门控的 `valid`。标准
-`NavSatStatus` 无法区分 RTK Fixed/Float，所以上交必须通过专用 RTK Fixed
-topic 或独立接收机状态消息提供解状态，浙大适配节点据此门控；算法库不猜测接收机解类型。
+当前距离兜底节点直接订阅共享 `/gnss/fix` 的
+`cooperative_interfaces/msg/GnssPosition`，按 `node_id` 分流并使用其 status、
+经纬高和位置协方差。该消息仍不能区分RTK Fixed/Float；若后续将GNSS用于正式
+初始化或真值，上交仍需提供独立解状态，浙大适配节点据此门控，算法库不猜测接收机解类型。
 
 完整接口、默认门限、杆臂定义、初始化调用顺序和真值输出规则见
 `docs/14_GNSS初始化与RTK相对真值接口说明.md`。盒端验收清单还应增加：

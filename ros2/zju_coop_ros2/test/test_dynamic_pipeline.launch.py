@@ -18,7 +18,7 @@ from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Imu
 
 from cooperative_localization_msgs.msg import CooperativePose2DArray, NodeState
-from zju_coop_test_msgs.msg import UwbRange
+from cooperative_interfaces.msg import UwbRange
 
 
 POSE_TOPIC = "/cooperative_localization/poses_2d"
@@ -314,9 +314,21 @@ class TestDynamicPipeline(unittest.TestCase):
             for _ in range(4):
                 rclpy.spin_once(self.node, timeout_sec=0.0)
 
-        collect_deadline = time.monotonic() + 0.5
-        while time.monotonic() < collect_deadline:
-            rclpy.spin_once(self.node, timeout_sec=0.05)
+        # Keep the 100 Hz IMU stream alive while allowing ROS outputs to drain;
+        # this phase intentionally stops only UWB ranges.
+        collect_samples = int(0.5 / IMU_DT_S)
+        collect_wall = time.monotonic()
+        for offset in range(1, collect_samples + 1):
+            target_wall = collect_wall + offset * IMU_DT_S
+            remaining = target_wall - time.monotonic()
+            if remaining > 0.0:
+                time.sleep(remaining)
+            elapsed_s = RUN_DURATION_S + offset * IMU_DT_S
+            timestamp_ns = start_ns + int(round(elapsed_s * 1.0e9))
+            for node_id, publisher in self.imu_publishers.items():
+                publisher.publish(self._imu(node_id, timestamp_ns, elapsed_s))
+            for _ in range(4):
+                rclpy.spin_once(self.node, timeout_sec=0.0)
 
         complete = [
             message for message in self.pose_messages
@@ -385,7 +397,7 @@ class TestDynamicPipeline(unittest.TestCase):
         dropout_start = len(self.pose_messages)
         dropout_samples = int(0.5 / IMU_DT_S)
         dropout_wall = time.monotonic()
-        dropout_start_ns = self.node.get_clock().now().nanoseconds
+        dropout_start_ns = timestamp_ns
         for offset in range(1, dropout_samples + 1):
             target_wall = dropout_wall + offset * IMU_DT_S
             remaining = target_wall - time.monotonic()

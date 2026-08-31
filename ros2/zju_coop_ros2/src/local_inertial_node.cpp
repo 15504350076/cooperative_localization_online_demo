@@ -3,6 +3,7 @@
 // NodeState 只发送公共 ENU 下的位置、速度和姿态；零偏及 15x15 协方差留在本机。
 // 点云和图像是默认关闭的预留输入，当前仅完成格式/时间校验，不参与状态更新。
 #include "cooperative_localization_msgs/msg/node_state.hpp"
+#include "imu_input_transform.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "sensor_msgs/msg/imu.hpp"
@@ -95,6 +96,12 @@ class LocalInertialNode final : public rclcpp::Node {
         declare_parameter<std::string>("expected_imu_frame_id", "imu_link");
     common_enu_frame_id_ =
         declare_parameter<std::string>("common_enu_frame_id", "common_enu");
+    const auto sensor_to_flu = vector_parameter(
+        *this, "imu_sensor_to_flu_xyzw", {0.0, 0.0, 0.0, 1.0}, 4U);
+    const double gyro_scale_to_rad_s =
+        declare_parameter<double>("gyro_scale_to_rad_s", 1.0);
+    const double accel_scale_to_m_s2 =
+        declare_parameter<double>("accel_scale_to_m_s2", 1.0);
     const bool enable_point_cloud_input =
         declare_parameter<bool>("enable_point_cloud_input", false);
     const bool enable_camera_input =
@@ -131,6 +138,11 @@ class LocalInertialNode final : public rclcpp::Node {
     point_cloud_sensor_id_ =
         static_cast<std::uint32_t>(configured_point_cloud_sensor_id);
     camera_id_ = static_cast<std::uint32_t>(configured_camera_id);
+    std::array<double, 4> sensor_to_flu_xyzw{};
+    std::copy_n(sensor_to_flu.begin(), sensor_to_flu_xyzw.size(),
+                sensor_to_flu_xyzw.begin());
+    imu_input_transform_ = zju_coop_ros2::ImuInputTransform(
+        sensor_to_flu_xyzw, gyro_scale_to_rad_s, accel_scale_to_m_s2);
 
     const auto position = vector_parameter(
         *this, "initial_position_enu_m", {}, 3U);
@@ -237,8 +249,10 @@ class LocalInertialNode final : public rclcpp::Node {
 
     RCLCPP_INFO(
         get_logger(),
-        "local INS ready: node_id=%u, imu frame=%s, point_cloud=%s, camera=%s",
+        "local INS ready: node_id=%u, imu frame=%s, gyro_scale=%.9g, "
+        "accel_scale=%.9g, point_cloud=%s, camera=%s",
         node_id_, expected_imu_frame_id_.c_str(),
+        gyro_scale_to_rad_s, accel_scale_to_m_s2,
         enable_point_cloud_input ? "enabled" : "disabled",
         enable_camera_input ? "enabled" : "disabled");
   }
@@ -264,35 +278,49 @@ class LocalInertialNode final : public rclcpp::Node {
     return ros_time > 0 ? static_cast<std::uint64_t>(ros_time) : 0U;
   }
 
+  // 运行中时间纪元变化或采样间断后，纯惯导无法补回丢失的运动。
+  // 故障一旦锁存，本进程停止解算和发布，必须重启以重新建立完整时间基线。
+  void latch_imu_time_fault(const char* reason) {
+    if (imu_time_faulted_) {
+      return;
+    }
+    imu_time_faulted_ = true;
+    RCLCPP_ERROR(get_logger(),
+                 "IMU time fault latched (%s); restart the local inertial "
+                 "node after fixing the upstream clock",
+                 reason);
+  }
+
   // 接收一帧本车 IMU，校验时间顺序后转换成稳定 C ABI 数据包并推进惯导。
   void on_imu(const sensor_msgs::msg::Imu& message) {
+    if (imu_time_faulted_) {
+      return;
+    }
     const std::uint64_t measurement_time_ns = stamp_ns(message.header.stamp);
     const std::uint64_t steady_receive_time_ns = steady_time_ns();
     const std::uint64_t receive_time = receive_time_ns(
         measurement_time_ns, steady_receive_time_ns, imu_time_bridge_);
     if (measurement_time_ns == 0U || receive_time == 0U) {
+      if (last_imu_measurement_time_ns_ != 0U) {
+        latch_imu_time_fault("timestamp reset to zero/invalid");
+        return;
+      }
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                            "rejecting IMU with zero/invalid timestamp");
       return;
     }
     if (last_imu_measurement_time_ns_ != 0U &&
         measurement_time_ns <= last_imu_measurement_time_ns_) {
-      // 中点积分要求严格递增的采样时间；回拨通常表示 UWB 时间纪元变化。
       if (measurement_time_ns < last_imu_measurement_time_ns_) {
-        RCLCPP_WARN_THROTTLE(
-            get_logger(), *get_clock(), 2000,
-            "rejecting out-of-order/UWB-time-rollback IMU sample; restart "
-            "all localization nodes after a UWB epoch reset");
+        latch_imu_time_fault("timestamp rollback");
       }
+      // 相等时间戳只是重复帧，丢弃即可，不破坏已有时间基线。
       return;
     }
     if (!use_sim_time_ && !imu_time_bridge_.measurement_is_plausible(
             measurement_time_ns, steady_receive_time_ns,
             kMaxImuFutureSkewNs, kMaxImuReceiveDelayNs)) {
-      RCLCPP_WARN_THROTTLE(
-          get_logger(), *get_clock(), 2000,
-          "rejecting IMU outside the established UWB time window; check "
-          "the upstream timestamp domain or restart after an epoch change");
+      latch_imu_time_fault("timestamp outside established UWB time window");
       return;
     }
 
@@ -304,36 +332,50 @@ class LocalInertialNode final : public rclcpp::Node {
     packet.sequence = ++imu_sequence_;
     packet.timestamp_ns = measurement_time_ns;
     packet.receive_timestamp_ns = receive_time;
-    packet.angular_velocity_rad_s[0] = message.angular_velocity.x;
-    packet.angular_velocity_rad_s[1] = message.angular_velocity.y;
-    packet.angular_velocity_rad_s[2] = message.angular_velocity.z;
-    packet.linear_acceleration_m_s2[0] = message.linear_acceleration.x;
-    packet.linear_acceleration_m_s2[1] = message.linear_acceleration.y;
-    packet.linear_acceleration_m_s2[2] = message.linear_acceleration.z;
-    std::copy(message.orientation_covariance.begin(),
-              message.orientation_covariance.end(),
+    const auto angular_velocity = imu_input_transform_.angular_velocity(
+        {message.angular_velocity.x, message.angular_velocity.y,
+         message.angular_velocity.z});
+    const auto linear_acceleration = imu_input_transform_.linear_acceleration(
+        {message.linear_acceleration.x, message.linear_acceleration.y,
+         message.linear_acceleration.z});
+    const auto orientation_covariance =
+        imu_input_transform_.orientation_covariance(
+            message.orientation_covariance);
+    const auto angular_velocity_covariance =
+        imu_input_transform_.angular_velocity_covariance(
+            message.angular_velocity_covariance);
+    const auto linear_acceleration_covariance =
+        imu_input_transform_.linear_acceleration_covariance(
+            message.linear_acceleration_covariance);
+    std::copy(angular_velocity.begin(), angular_velocity.end(),
+              packet.angular_velocity_rad_s);
+    std::copy(linear_acceleration.begin(), linear_acceleration.end(),
+              packet.linear_acceleration_m_s2);
+    std::copy(orientation_covariance.begin(), orientation_covariance.end(),
               packet.orientation_covariance);
-    std::copy(message.angular_velocity_covariance.begin(),
-              message.angular_velocity_covariance.end(),
+    std::copy(angular_velocity_covariance.begin(),
+              angular_velocity_covariance.end(),
               packet.angular_velocity_covariance);
-    std::copy(message.linear_acceleration_covariance.begin(),
-              message.linear_acceleration_covariance.end(),
+    std::copy(linear_acceleration_covariance.begin(),
+              linear_acceleration_covariance.end(),
               packet.linear_acceleration_covariance);
 
     // ROS Imu 约定 covariance[0] < 0 表示未提供姿态。
     // 只有声明可用且四元数归一化时，才把姿态观测交给 SDK。
+    const auto orientation =
+        imu_input_transform_.orientation_flu_to_navigation(
+            {message.orientation.x, message.orientation.y,
+             message.orientation.z, message.orientation.w});
     const double orientation_norm =
-        std::sqrt(message.orientation.x * message.orientation.x +
-                  message.orientation.y * message.orientation.y +
-                  message.orientation.z * message.orientation.z +
-                  message.orientation.w * message.orientation.w);
+        std::sqrt(orientation[0] * orientation[0] +
+                  orientation[1] * orientation[1] +
+                  orientation[2] * orientation[2] +
+                  orientation[3] * orientation[3]);
     if (message.orientation_covariance[0] >= 0.0 &&
         std::isfinite(orientation_norm) &&
         std::abs(orientation_norm - 1.0) <= 1.0e-3) {
-      packet.orientation_xyzw[0] = message.orientation.x;
-      packet.orientation_xyzw[1] = message.orientation.y;
-      packet.orientation_xyzw[2] = message.orientation.z;
-      packet.orientation_xyzw[3] = message.orientation.w;
+      std::copy(orientation.begin(), orientation.end(),
+                packet.orientation_xyzw);
       packet.orientation_valid = ZJU_COOP_TRUE;
     }
     if (message.header.frame_id.size() >= sizeof(packet.frame_id)) {
@@ -357,6 +399,10 @@ class LocalInertialNode final : public rclcpp::Node {
                            zju_coop_error_string(code));
       return;
     }
+    if (result.disposition == ZJU_COOP_IMU_INTERVAL_REJECTED) {
+      latch_imu_time_fault("integration interval rejected");
+      return;
+    }
     if (result.disposition != ZJU_COOP_IMU_BASELINE_ESTABLISHED &&
         result.disposition != ZJU_COOP_IMU_PROPAGATED) {
       RCLCPP_WARN_THROTTLE(
@@ -365,10 +411,7 @@ class LocalInertialNode final : public rclcpp::Node {
           static_cast<unsigned int>(result.disposition));
     }
     if (result.disposition == ZJU_COOP_IMU_BASELINE_ESTABLISHED ||
-        result.disposition == ZJU_COOP_IMU_PROPAGATED ||
-        result.disposition == ZJU_COOP_IMU_INTERVAL_REJECTED) {
-      // SDK 已处理过这些时刻，包括已判定间隔不合格的样本；记录时间可防止
-      // 重复/乱序样本重新进入，并用该传感器时刻持续约束时间桥。
+        result.disposition == ZJU_COOP_IMU_PROPAGATED) {
       last_imu_measurement_time_ns_ = measurement_time_ns;
       if (!use_sim_time_) {
         static_cast<void>(imu_time_bridge_.observe(
@@ -542,6 +585,9 @@ class LocalInertialNode final : public rclcpp::Node {
   // 以固定频率读取 SDK 最新状态；仅在出现新的 IMU 状态时发布一次 NodeState。
   // header.stamp 是该状态最后接受的 IMU 样本时刻，不是定时器触发时刻。
   void publish_state() {
+    if (imu_time_faulted_) {
+      return;
+    }
     zju_coop_node_state_t state{};
     if (zju_coop_node_state_init(&state) != ZJU_COOP_OK) {
       return;
@@ -592,12 +638,14 @@ class LocalInertialNode final : public rclcpp::Node {
   bool point_cloud_input_seen_{};
   bool camera_input_seen_{};
   bool use_sim_time_{};
+  bool imu_time_faulted_{};
   std::string expected_imu_frame_id_;
   std::string common_enu_frame_id_;
   std::string point_cloud_frame_alias_;
   std::string camera_frame_alias_;
   // 不同传感器可能有独立驱动延迟，分别维护时间桥，避免相互污染。
   zju_coop_ros2::SensorTimeBridge imu_time_bridge_;
+  zju_coop_ros2::ImuInputTransform imu_input_transform_;
   zju_coop_ros2::SensorTimeBridge point_cloud_time_bridge_;
   zju_coop_ros2::SensorTimeBridge camera_time_bridge_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_subscription_;

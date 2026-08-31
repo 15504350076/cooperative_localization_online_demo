@@ -22,7 +22,7 @@ from sensor_msgs.msg import CameraInfo, Image, Imu, PointCloud2
 from tf2_msgs.msg import TFMessage
 
 from cooperative_localization_msgs.msg import CooperativePose2DArray, NodeState
-from zju_coop_test_msgs.msg import UwbRange
+from cooperative_interfaces.msg import UwbRange
 
 
 NODE_IDS = (1, 2, 3)

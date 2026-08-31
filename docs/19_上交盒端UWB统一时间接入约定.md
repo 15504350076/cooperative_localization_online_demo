@@ -39,7 +39,7 @@
   数据的时刻；
 - 正式 UWB 测距消息：对应双方冻结的实际测距事件时刻，不得使用结果计算或
   ROS 发布时间；
-- GNSS 后备使用的 `sensor_msgs/msg/NavSatFix`：必须先把 GNSS 测量时刻转换到
+- GNSS 后备使用的 `cooperative_interfaces/msg/GnssPosition`：必须先把 GNSS 测量时刻转换到
   `UWB_SYSTEM_TIME`，不得把真实 UTC 原样混入；
 - 浙大 `NodeState` 和协同结果会继承上述 UWB 时间戳。
 

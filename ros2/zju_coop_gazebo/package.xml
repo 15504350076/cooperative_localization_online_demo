@@ -10,6 +10,7 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <exec_depend>cooperative_localization_msgs</exec_depend>
+  <exec_depend>cooperative_interfaces</exec_depend>
   <exec_depend>ament_index_python</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>launch</exec_depend>
@@ -25,7 +26,6 @@
   <exec_depend>tf2_msgs</exec_depend>
   <exec_depend>zju_coop_ros2</exec_depend>
   <exec_depend>zju_coop_perception</exec_depend>
-  <exec_depend>zju_coop_test_msgs</exec_depend>
 
   <test_depend>python3-yaml</test_depend>
   <test_depend>launch_testing_ament_cmake</test_depend>

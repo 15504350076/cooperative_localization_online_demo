@@ -20,7 +20,7 @@ from launch_ros.substitutions import FindPackageShare
 from sensor_msgs.msg import Imu
 
 from cooperative_localization_msgs.msg import CooperativePose2DArray
-from zju_coop_test_msgs.msg import UwbRange
+from cooperative_interfaces.msg import UwbRange
 
 
 POSE_TOPIC = "/cooperative_localization/poses_2d"

@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
-"""Explicitly enabled NavSatFix-to-range fallback for three ground vehicles."""
+"""Explicitly enabled SJTU GnssPosition-to-range fallback."""
 
 from itertools import combinations
 import math
 import time
 
 import rclpy
+from cooperative_interfaces.msg import GnssPosition, UwbRange
 from cooperative_localization_msgs.msg import NodeState
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import NavSatFix, NavSatStatus
-
-from zju_coop_test_msgs.msg import UwbRange
 
 
 _WGS84_SEMI_MAJOR_M = 6378137.0
@@ -90,15 +88,9 @@ class GnssRangeFallbackNode(Node):
         self._last_common_stamp = {node_id: 0 for node_id in self._node_ids}
         self._last_input_stamp = {node_id: 0 for node_id in self._node_ids}
         self._last_emitted_stamp = {node_id: 0 for node_id in self._node_ids}
-        self._subscriptions = [
-            self.create_subscription(
-                NavSatFix,
-                f"fix_{node_id}",
-                lambda message, node_id=node_id: self._on_fix(node_id, message),
-                qos_profile_sensor_data,
-            )
-            for node_id in self._node_ids
-        ]
+        self._fix_subscription = self.create_subscription(
+            GnssPosition, "fix", self._on_fix, qos_profile_sensor_data
+        )
         state_qos = QoSProfile(
             depth=5,
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -115,7 +107,7 @@ class GnssRangeFallbackNode(Node):
         self._publisher = self.create_publisher(UwbRange, "range", range_qos)
         self.get_logger().warning(
             "GNSS-derived range fallback ACTIVE: output is not UWB and must "
-            "not be used for UWB timing or accuracy acceptance; NavSatFix "
+            "not be used for UWB timing or accuracy acceptance; GnssPosition "
             "header stamps must already use UWB_SYSTEM_TIME; use_sim_time "
             "selects /clock, otherwise live NodeState advances with steady time"
         )
@@ -142,7 +134,7 @@ class GnssRangeFallbackNode(Node):
         altitude_valid = math.isfinite(message.altitude) or not self._use_altitude
         return (
             stamp_ns > 0
-            and message.status.status >= NavSatStatus.STATUS_FIX
+            and message.status >= GnssPosition.STATUS_FIX
             and math.isfinite(message.latitude)
             and -90.0 <= message.latitude <= 90.0
             and math.isfinite(message.longitude)
@@ -185,7 +177,10 @@ class GnssRangeFallbackNode(Node):
             for stamp_ns, received_ns in states
         )
 
-    def _on_fix(self, node_id, message):
+    def _on_fix(self, message):
+        node_id = int(message.node_id)
+        if node_id not in self._node_ids:
+            return
         stamp_ns = self._stamp_ns(message)
         if stamp_ns <= self._last_input_stamp[node_id]:
             return
