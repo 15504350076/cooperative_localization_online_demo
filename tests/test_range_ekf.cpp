@@ -15,10 +15,12 @@ namespace {
 
 using zju::coop::FilterConfig;
 using zju::coop::DenseMatrix;
+using zju::coop::FormationDisposition;
 using zju::coop::NodeEstimate;
 using zju::coop::NodeInitialization;
 using zju::coop::RangeEkf;
 using zju::coop::RangePacket;
+using zju::coop::ThreeNodeRanges;
 using zju::coop::UpdateDisposition;
 
 // kTolerance：常规状态与协方差比较使用的默认绝对误差上限。
@@ -226,6 +228,42 @@ double minimum_symmetric_eigenvalue(DenseMatrix matrix) {
 }
 
 }  // namespace
+
+TEST_CASE(three_ranges_form_a_canonical_triangle_and_line_bearings) {
+  // 节点10是原点，节点20定义+X；3-4-5三角形的节点30由正Y约定消除镜像二义性。
+  const ThreeNodeRanges ranges{{10U, 20U, 30U}, 3.0, 4.0, 5.0};
+  const auto formation = zju::coop::solve_three_node_formation(ranges);
+
+  EXPECT_TRUE(formation.disposition == FormationDisposition::kSolved);
+  EXPECT_TRUE(near(formation.points[0].x_m, 0.0));
+  EXPECT_TRUE(near(formation.points[0].y_m, 0.0));
+  EXPECT_TRUE(near(formation.points[1].x_m, 3.0));
+  EXPECT_TRUE(near(formation.points[1].y_m, 0.0));
+  EXPECT_TRUE(near(formation.points[2].x_m, 0.0));
+  EXPECT_TRUE(near(formation.points[2].y_m, 4.0));
+  EXPECT_TRUE(near(formation.interior_angles_rad[0], std::acos(-1.0) / 2.0));
+  EXPECT_TRUE(near(formation.interior_angles_rad[1], std::atan2(4.0, 3.0)));
+  EXPECT_TRUE(near(formation.interior_angles_rad[0] +
+                       formation.interior_angles_rad[1] +
+                       formation.interior_angles_rad[2],
+                   std::acos(-1.0)));
+  EXPECT_TRUE(near(formation.bearing_01_rad, 0.0));
+  EXPECT_TRUE(near(formation.bearing_02_rad, std::acos(-1.0) / 2.0));
+  EXPECT_TRUE(near(formation.bearing_12_rad, std::atan2(4.0, -3.0)));
+  EXPECT_TRUE(near(formation.twice_area_m2, 12.0));
+}
+
+TEST_CASE(three_range_geometry_rejects_invalid_or_degenerate_triangles) {
+  EXPECT_TRUE(zju::coop::solve_three_node_formation(
+                  {{10U, 20U, 30U}, 1.0, 1.0, 3.0})
+                  .disposition == FormationDisposition::kTriangleInequality);
+  EXPECT_TRUE(zju::coop::solve_three_node_formation(
+                  {{10U, 10U, 30U}, 1.0, 1.0, 1.0})
+                  .disposition == FormationDisposition::kInvalidInput);
+  EXPECT_TRUE(zju::coop::solve_three_node_formation(
+                  {{10U, 20U, 30U}, 2.0, 1.0, 1.000001}, 0.01)
+                  .disposition == FormationDisposition::kDegenerate);
+}
 
 // 构造组：冻结主参考相对化、稀疏节点编号、初始方差和资源/溢出拒绝语义。
 TEST_CASE(range_ekf_translates_all_initial_positions_to_reference_origin) {

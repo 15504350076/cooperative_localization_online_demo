@@ -573,7 +573,8 @@ typedef struct zju_coop_range_processing_result {
 
 /*
  * 主参考节点坐标系下的二维相对定位输出；当前yaw和z均明确标记无效。
- * x/y/vx/vy是“节点减参考节点”的ENU平面相对量，2×2位置协方差按
+ * x/y/vx/vy是“节点减参考节点”的平面相对量；惯性模式的轴可为共同ENU，
+ * 纯测距模式的轴只由人为初值固定。2×2位置协方差按
  * [cov_xx cov_xy; cov_xy cov_yy]解释，不能当作经纬度或地图绝对坐标。
  */
 typedef struct zju_coop_localization {
@@ -582,10 +583,10 @@ typedef struct zju_coop_localization {
   uint64_t timestamp_ns;/* 快照对应的统一算法时间，单位ns。 */
   uint32_t node_id;     /* 本条相对定位所属平台编号。 */
   uint32_t reference_node_id; /* x/y/vx/vy所相对的参考平台编号。 */
-  double x;  /* node-reference在ENU平面的东向相对位置，单位m。 */
-  double y;  /* node-reference在ENU平面的北向相对位置，单位m。 */
-  double vx; /* node-reference的东向相对速度，单位m/s。 */
-  double vy; /* node-reference的北向相对速度，单位m/s。 */
+  double x;  /* node-reference的x向相对位置，单位m；轴由运行模式决定。 */
+  double y;  /* node-reference的y向相对位置，单位m；轴由运行模式决定。 */
+  double vx; /* node-reference的x向相对速度，单位m/s。 */
+  double vy; /* node-reference的y向相对速度，单位m/s。 */
   double cov_xx; /* 平面位置2×2协方差的(0,0)项，单位m²。 */
   double cov_xy; /* 平面位置2×2协方差的对称非对角项，单位m²。 */
   double cov_yy; /* 平面位置2×2协方差的(1,1)项，单位m²。 */
@@ -637,8 +638,9 @@ typedef struct zju_coop_observation {
 } zju_coop_observation_t;
 
 /*
- * Pose2D v2单车元素：x/y是node-reference且坐标轴与公共ENU平行，单位m；
- * yaw_rad是本车FLU前向+x相对ENU东向+x的逆时针航向，单位rad、范围[-pi,pi)。
+ * Pose2D v2单车元素：x/y是node-reference，单位m；惯性模式的轴与公共ENU平行，
+ * 纯测距模式的轴只由人为初值固定。yaw_rad仅在yaw_valid=true时表示本车FLU
+ * 前向+x相对ENU东向+x的逆时针航向，单位rad、范围[-pi,pi)。
  * 数值字段始终保持有限；调用方必须分别检查position_valid和yaw_valid后再使用。
  */
 typedef struct zju_coop_vehicle_pose2d_v2 {
@@ -646,8 +648,8 @@ typedef struct zju_coop_vehicle_pose2d_v2 {
   uint32_t abi_version; /* 必须为ZJU_COOP_POSE2D_ABI_VERSION_V2。 */
   uint32_t node_id; /* 本元素所属车辆编号。 */
   uint32_t reserved0; /* 必须为0。 */
-  double x_m; /* node-reference的ENU东向相对位置，单位m。 */
-  double y_m; /* node-reference的ENU北向相对位置，单位m。 */
+  double x_m; /* node-reference的x向相对位置，单位m；轴语义见快照frame_id。 */
+  double y_m; /* node-reference的y向相对位置，单位m；轴语义见快照frame_id。 */
   double yaw_rad; /* 本车自身ENU航向，单位rad，规范范围[-pi,pi)。 */
   zju_coop_bool_t position_valid; /* true时x_m/y_m可以使用。 */
   zju_coop_bool_t yaw_valid; /* true时yaw_rad可以使用。 */
@@ -657,7 +659,8 @@ typedef struct zju_coop_vehicle_pose2d_v2 {
 /*
  * Pose2D v2数组公共头；timestamp_ns是全部车辆共同IMU测量历元，单位ns；
  * 无法形成共同非零历元时timestamp_ns=0且本批车辆有效位均为false。
- * frame_id格式为coop_ref_<reference_node_id>_enu。
+ * 惯性模式frame_id为coop_ref_<reference_node_id>_enu；纯测距模式为
+ * coop_ref_<reference_node_id>_relative，后者不表示北向、地图或任一车体轴。
  */
 typedef struct zju_coop_pose2d_snapshot_v2 {
   uint32_t struct_size; /* 调用方分配的快照头字节数，写回时保留原值。 */
@@ -665,7 +668,7 @@ typedef struct zju_coop_pose2d_snapshot_v2 {
   uint64_t timestamp_ns; /* 同批全部车辆共同测量历元，单位ns；0表示无共同历元。 */
   uint32_t reference_node_id; /* 动态坐标原点所在车辆编号。 */
   uint32_t reserved0; /* 必须为0。 */
-  char frame_id[32]; /* NUL结尾的coop_ref_<reference_node_id>_enu。 */
+  char frame_id[32]; /* NUL结尾的当前坐标系名称；具体语义见上方说明。 */
 } zju_coop_pose2d_snapshot_v2_t;
 
 /* 版本查询不需要创建handle，可用于浙大ROS 2适配节点启动时的兼容性检查。 */

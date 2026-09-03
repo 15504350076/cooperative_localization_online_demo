@@ -11,6 +11,7 @@
 #include "core/dense_matrix.hpp"
 #include "zju_coop/types.hpp"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <unordered_map>
@@ -28,6 +29,51 @@ struct NodeInitialization {
   double position_std_m{};  ///< x、y位置共用的初始标准差，单位m。
   double velocity_std_mps{};  ///< vx、vy速度共用的初始标准差，单位m/s。
 };
+
+/** 三个单标签节点在同一历元获得的完整三边测距。 */
+struct ThreeNodeRanges {
+  std::array<std::uint32_t, 3> node_ids{};  ///< 顺序固定为原点、+X基准点、第三点。
+  double range_01_m{};
+  double range_02_m{};
+  double range_12_m{};
+};
+
+/** 纯测距规范坐标系的二维标签点。 */
+struct FormationPoint2d {
+  std::uint32_t node_id{};
+  double x_m{};
+  double y_m{};
+};
+
+enum class FormationDisposition {
+  kSolved,
+  kInvalidInput,
+  kTriangleInequality,
+  kDegenerate,
+  kNumericalFailure,
+};
+
+/**
+ * 三边测距的规范几何解。坐标系以node_ids[0]为原点、0->1为+X，
+ * 第三点按约定置于+Y半平面；这只是队形坐标，不是ENU/地图/任一车体坐标。
+ */
+struct ThreeNodeFormation {
+  FormationDisposition disposition{FormationDisposition::kInvalidInput};
+  std::array<FormationPoint2d, 3> points{};
+  std::array<double, 3> interior_angles_rad{};  ///< 与points同序的三个[0,pi]内角。
+  double bearing_01_rad{};  ///< 0->1相对队形+X的方向，规范值为0。
+  double bearing_02_rad{};  ///< 0->2相对队形+X的方向。
+  double bearing_12_rad{};  ///< 1->2相对队形+X的方向。
+  double twice_area_m2{};   ///< 三角形面积的两倍；越接近0，几何越退化。
+};
+
+/**
+ * 从三条同步标量距离恢复规范二维三角形。minimum_height_m用于拒绝近共线几何；
+ * 仅能得到标签点与连线角，不能得到北向或任何车辆自身yaw。
+ */
+[[nodiscard]] ThreeNodeFormation solve_three_node_formation(
+    const ThreeNodeRanges& ranges,
+    double minimum_height_m = 1.0e-3) noexcept;
 
 /** 恒速过程模型、NIS门限和数值稳定参数。 */
 struct FilterConfig {

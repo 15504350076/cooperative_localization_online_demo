@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <vector>
 
 namespace {
 
@@ -17,6 +18,9 @@ using zju::coop::ImuPacket;
 using zju::coop::InertialConfig;
 using zju::coop::InertialEskf15;
 using zju::coop::InertialNodeInitialization;
+using zju::coop::StaticImuInitializationConfig;
+using zju::coop::StaticImuInitializationDisposition;
+using zju::coop::StaticImuSample;
 using zju::coop::Vec3;
 
 InertialConfig make_config() {
@@ -70,6 +74,62 @@ double vector_norm(const Vec3& value) {
 }
 
 }  // namespace
+
+TEST_CASE(static_imu_initialization_levels_gravity_and_estimates_gyro_bias) {
+  const double gravity = 9.80665;
+  const double yaw = 0.7;
+  const auto true_orientation =
+      zju::coop::Quaternion::exp({0.0, 0.0, yaw}) *
+      zju::coop::Quaternion::exp({0.0, 0.2, 0.0}) *
+      zju::coop::Quaternion::exp({-0.15, 0.0, 0.0});
+  const Vec3 stationary_force =
+      true_orientation.conjugate().rotate({0.0, 0.0, gravity});
+  const Vec3 expected_bias{0.01, -0.02, 0.005};
+  std::vector<StaticImuSample> samples;
+  samples.reserve(250U);
+  for (std::size_t index = 0U; index < 250U; ++index) {
+    const double sign = index % 2U == 0U ? 1.0 : -1.0;
+    samples.push_back(
+        {{expected_bias.x + sign * 1.0e-4,
+          expected_bias.y - sign * 2.0e-4,
+          expected_bias.z + sign * 1.5e-4},
+         {stationary_force.x + sign * 1.0e-3,
+          stationary_force.y - sign * 1.0e-3,
+          stationary_force.z + sign * 2.0e-3}});
+  }
+  StaticImuInitializationConfig config{};
+  config.minimum_sample_count = 200U;
+  config.initial_yaw_rad = yaw;
+
+  const auto result = zju::coop::initialize_static_imu(samples, config);
+
+  EXPECT_EQ(result.disposition, StaticImuInitializationDisposition::kReady);
+  EXPECT_TRUE(vector_norm(result.gyro_bias_rad_s - expected_bias) < 1.0e-10);
+  const Vec3 leveled =
+      result.orientation_b_to_n.rotate(result.mean_specific_force_m_s2);
+  EXPECT_TRUE(std::hypot(leveled.x, leveled.y) < 1.0e-9);
+  EXPECT_TRUE(std::abs(leveled.z - gravity) < 1.0e-5);
+  double initialized_yaw = 0.0;
+  EXPECT_TRUE(zju::coop::yaw_enu_rad(result.orientation_b_to_n,
+                                    initialized_yaw));
+  EXPECT_TRUE(std::abs(initialized_yaw - yaw) < 1.0e-12);
+}
+
+TEST_CASE(static_imu_initialization_rejects_short_or_moving_windows) {
+  StaticImuInitializationConfig config{};
+  config.minimum_sample_count = 5U;
+  std::vector<StaticImuSample> samples(
+      4U, {{0.0, 0.0, 0.0}, {0.0, 0.0, 9.80665}});
+  EXPECT_EQ(zju::coop::initialize_static_imu(samples, config).disposition,
+            StaticImuInitializationDisposition::kInsufficientSamples);
+
+  samples.push_back({{0.2, 0.0, 0.0}, {0.0, 0.0, 9.80665}});
+  for (auto& sample : samples) {
+    sample.angular_velocity_rad_s.x = 0.2;
+  }
+  EXPECT_EQ(zju::coop::initialize_static_imu(samples, config).disposition,
+            StaticImuInitializationDisposition::kNotStationary);
+}
 
 // 时间/运动组：首帧不积分，静止比力抵消重力，恒加速度和恒角速率符合解析结果。
 TEST_CASE(inertial_eskf_first_sample_only_establishes_timebase) {

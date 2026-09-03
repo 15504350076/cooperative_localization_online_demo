@@ -209,7 +209,115 @@ bool finite_matrix(const DenseMatrix& matrix) {
   return true;
 }
 
+double max_abs_component(const Vec3& value) {
+  return std::max({std::abs(value.x), std::abs(value.y),
+                   std::abs(value.z)});
+}
+
 }  // namespace
+
+StaticImuInitializationResult initialize_static_imu(
+    const std::vector<StaticImuSample>& samples,
+    const StaticImuInitializationConfig& config) noexcept {
+  StaticImuInitializationResult result{};
+  result.sample_count = samples.size();
+  if (config.minimum_sample_count < 2U ||
+      !positive_finite(config.gravity_mps2) ||
+      !std::isfinite(config.initial_yaw_rad) ||
+      !positive_finite(config.max_mean_gyro_norm_rad_s) ||
+      !positive_finite(config.max_gyro_std_rad_s) ||
+      !positive_finite(config.max_accel_std_m_s2) ||
+      !positive_finite(config.max_gravity_magnitude_error_m_s2)) {
+    result.disposition = StaticImuInitializationDisposition::kInvalidInput;
+    return result;
+  }
+
+  Vec3 mean_gyro{};
+  Vec3 mean_accel{};
+  Vec3 gyro_m2{};
+  Vec3 accel_m2{};
+  std::size_t count = 0U;
+  for (const auto& sample : samples) {
+    if (!finite(sample.angular_velocity_rad_s) ||
+        !finite(sample.specific_force_m_s2)) {
+      result.disposition = StaticImuInitializationDisposition::kInvalidInput;
+      return result;
+    }
+    ++count;
+    const double divisor = static_cast<double>(count);
+
+    const Vec3 gyro_delta = sample.angular_velocity_rad_s - mean_gyro;
+    mean_gyro = mean_gyro + gyro_delta / divisor;
+    const Vec3 gyro_delta_after = sample.angular_velocity_rad_s - mean_gyro;
+    gyro_m2 = gyro_m2 +
+              Vec3{gyro_delta.x * gyro_delta_after.x,
+                   gyro_delta.y * gyro_delta_after.y,
+                   gyro_delta.z * gyro_delta_after.z};
+
+    const Vec3 accel_delta = sample.specific_force_m_s2 - mean_accel;
+    mean_accel = mean_accel + accel_delta / divisor;
+    const Vec3 accel_delta_after = sample.specific_force_m_s2 - mean_accel;
+    accel_m2 = accel_m2 +
+               Vec3{accel_delta.x * accel_delta_after.x,
+                    accel_delta.y * accel_delta_after.y,
+                    accel_delta.z * accel_delta_after.z};
+  }
+  if (count < config.minimum_sample_count) {
+    result.disposition =
+        StaticImuInitializationDisposition::kInsufficientSamples;
+    return result;
+  }
+
+  const double variance_divisor = static_cast<double>(count - 1U);
+  const Vec3 gyro_std{
+      std::sqrt(std::max(0.0, gyro_m2.x / variance_divisor)),
+      std::sqrt(std::max(0.0, gyro_m2.y / variance_divisor)),
+      std::sqrt(std::max(0.0, gyro_m2.z / variance_divisor))};
+  const Vec3 accel_std{
+      std::sqrt(std::max(0.0, accel_m2.x / variance_divisor)),
+      std::sqrt(std::max(0.0, accel_m2.y / variance_divisor)),
+      std::sqrt(std::max(0.0, accel_m2.z / variance_divisor))};
+  result.gyro_bias_rad_s = mean_gyro;
+  result.mean_specific_force_m_s2 = mean_accel;
+  result.gyro_std_rad_s = gyro_std;
+  result.accel_std_m_s2 = accel_std;
+
+  const double mean_accel_norm = norm(mean_accel);
+  if (!std::isfinite(mean_accel_norm) ||
+      std::abs(mean_accel_norm - config.gravity_mps2) >
+          config.max_gravity_magnitude_error_m_s2 ||
+      norm(mean_gyro) > config.max_mean_gyro_norm_rad_s ||
+      max_abs_component(gyro_std) > config.max_gyro_std_rad_s ||
+      max_abs_component(accel_std) > config.max_accel_std_m_s2) {
+    result.disposition = StaticImuInitializationDisposition::kNotStationary;
+    return result;
+  }
+
+  // 对R_b_to_n=Rz(yaw)Ry(pitch)Rx(roll)，静止比力满足
+  // f_b/g=[-sin(pitch), cos(pitch)sin(roll), cos(pitch)cos(roll)]。
+  const double horizontal = std::hypot(mean_accel.y, mean_accel.z);
+  if (!std::isfinite(horizontal) ||
+      horizontal <= std::numeric_limits<double>::min()) {
+    result.disposition =
+        StaticImuInitializationDisposition::kNumericalFailure;
+    return result;
+  }
+  const double roll = std::atan2(mean_accel.y, mean_accel.z);
+  const double pitch = std::atan2(-mean_accel.x, horizontal);
+  Quaternion orientation =
+      Quaternion::exp({0.0, 0.0, config.initial_yaw_rad}) *
+      Quaternion::exp({0.0, pitch, 0.0}) *
+      Quaternion::exp({roll, 0.0, 0.0});
+  if (!orientation.normalize() ||
+      !finite(orientation.rotate(mean_accel))) {
+    result.disposition =
+        StaticImuInitializationDisposition::kNumericalFailure;
+    return result;
+  }
+  result.orientation_b_to_n = orientation;
+  result.disposition = StaticImuInitializationDisposition::kReady;
+  return result;
+}
 
 InertialEskf15::InertialEskf15(InertialNodeInitialization initialization,
                                InertialConfig config)

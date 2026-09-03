@@ -593,10 +593,10 @@ zju_coop_localization_t localization_output(
   output.timestamp_ns = source.timestamp_ns;  // 结果对应的统一算法时刻，而不是网络接收时刻。
   output.node_id = source.node_id;  // 标识这一条结果属于哪辆车。
   output.reference_node_id = source.reference_node_id;  // 标识位置和速度相对于哪个参考节点。
-  output.x = source.x;  // ENU相对坐标的东向位置。
-  output.y = source.y;  // ENU相对坐标的北向位置。
-  output.vx = source.vx;  // 东向相对速度。
-  output.vy = source.vy;  // 北向相对速度。
+  output.x = source.x;  // 惯性模式为ENU东向；纯测距模式为人为相对x轴。
+  output.y = source.y;  // 惯性模式为ENU北向；纯测距模式为人为相对y轴。
+  output.vx = source.vx;  // 与x位置相同坐标轴下的相对速度。
+  output.vy = source.vy;  // 与y位置相同坐标轴下的相对速度。
   output.cov_xx = source.cov_xx;  // x位置方差，反映估计不确定度而不是误差真值。
   output.cov_xy = source.cov_xy;  // x和y位置误差的互协方差。
   output.cov_yy = source.cov_yy;  // y位置方差。
@@ -2006,8 +2006,10 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_get_pose2d_v2(
     snapshot_value.abi_version = ZJU_COOP_POSE2D_ABI_VERSION_V2;
     snapshot_value.timestamp_ns = current.timestamp_ns;
     snapshot_value.reference_node_id = current.reference_node_id;
+    // 惯性模式的轴由公共ENU给定；纯测距模式只继承人为初值的相对轴，不能冒充ENU。
     const std::string frame_id =
-        "coop_ref_" + std::to_string(current.reference_node_id) + "_enu";
+        "coop_ref_" + std::to_string(current.reference_node_id) +
+        (handle->engine->inertial_enabled() ? "_enu" : "_relative");
     if (frame_id.size() >= sizeof(snapshot_value.frame_id)) {
       return ZJU_COOP_INTERNAL_ERROR;
     }

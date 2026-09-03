@@ -143,7 +143,7 @@ zju_coop_get_pose2d_v2(handle, &pose_snapshot,
 |---|---|
 | `timestamp_ns` | 三车同一 IMU 测量历元；无法形成共同历元时为 0 |
 | `reference_node_id` | 当前参考车辆编号 |
-| `frame_id[32]` | `coop_ref_<reference_node_id>_enu` |
+| `frame_id[32]` | 惯性模式为 `coop_ref_<reference_node_id>_enu`；纯测距模式为 `coop_ref_<reference_node_id>_relative` |
 
 ### 6.2 单车元素
 
@@ -152,12 +152,12 @@ zju_coop_get_pose2d_v2(handle, &pose_snapshot,
 | 字段 | 语义 |
 |---|---|
 | `node_id` | 本元素所属车辆 |
-| `x_m/y_m` | `node-reference` 的 ENU 东/北相对位置，单位 m |
+| `x_m/y_m` | `node-reference` 的相对位置，单位 m；坐标轴以快照 `frame_id` 为准 |
 | `yaw_rad` | 本车 FLU 前向 +X 在公共 ENU 平面内的航向，范围 `[-π, π)` |
 | `position_valid` | `x_m/y_m` 当前是否可以使用 |
 | `yaw_valid` | `yaw_rad` 当前是否可以使用 |
 
-坐标原点随参考车当前位置动态移动，坐标轴始终与固定公共 ENU 平行，不跟随参考车航向旋转。参考车自身 `x_m=0、y_m=0`，其 `yaw_rad` 仍保留本车相对公共 ENU 的航向。其他车辆的航向同样是各自的 ENU 航向，不做 `yaw_node-yaw_reference`。
+惯性模式的坐标原点随参考车当前位置动态移动，坐标轴与固定公共 ENU 平行，不跟随参考车航向旋转。纯测距模式只保留由初值固定的人为相对轴，不能解释为东/北。参考车自身 `x_m=0、y_m=0`；只有 `yaw_valid=true` 时才能把 `yaw_rad` 解释为本车相对公共 ENU 的航向。
 
 惯性模式要求所有配置节点具有相同、非零的姿态历元。任一节点落后时，快照 `timestamp_ns=0`，本批 `position_valid/yaw_valid=false`，从而避免把异步车辆拼成伪同步快照。仅测距模式无法观测航向，`yaw_valid=false`。
 

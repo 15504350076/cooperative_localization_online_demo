@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace zju::coop {
 
@@ -72,6 +73,51 @@ struct InertialNominalState {
   Vec3 gyro_bias_rad_s{};   ///< 车体FLU陀螺名义零偏bg，单位rad/s。
   Vec3 accel_bias_m_s2{};   ///< 车体FLU加速度计名义零偏ba，单位m/s²。
 };
+
+/** 静止初始对准使用的一帧已完成坐标/单位转换的IMU样本。 */
+struct StaticImuSample {
+  Vec3 angular_velocity_rad_s{};  ///< 车体FLU三轴角速度，单位rad/s。
+  Vec3 specific_force_m_s2{};     ///< 车体FLU三轴比力，静止时指向上方，单位m/s²。
+};
+
+/** 静止窗口判定门限；yaw只固定不可观的水平旋转自由度，不代表北向。 */
+struct StaticImuInitializationConfig {
+  std::size_t minimum_sample_count{200U};
+  double gravity_mps2{9.80665};
+  double initial_yaw_rad{};
+  double max_mean_gyro_norm_rad_s{0.1};
+  double max_gyro_std_rad_s{0.02};
+  double max_accel_std_m_s2{0.2};
+  double max_gravity_magnitude_error_m_s2{0.5};
+};
+
+/** 静止初始对准结论；单姿态不估计三轴加计零偏，避免与倾斜误差混淆。 */
+enum class StaticImuInitializationDisposition {
+  kReady,
+  kInsufficientSamples,
+  kInvalidInput,
+  kNotStationary,
+  kNumericalFailure,
+};
+
+struct StaticImuInitializationResult {
+  StaticImuInitializationDisposition disposition{
+      StaticImuInitializationDisposition::kInvalidInput};
+  Quaternion orientation_b_to_n{};  ///< 保留给定yaw、由重力确定roll/pitch的FLU到导航系姿态。
+  Vec3 gyro_bias_rad_s{};            ///< 静止窗口角速度均值；低精度MEMS中包含不可分辨的地球自转。
+  Vec3 mean_specific_force_m_s2{};
+  Vec3 gyro_std_rad_s{};
+  Vec3 accel_std_m_s2{};
+  std::size_t sample_count{};
+};
+
+/**
+ * 对完整静止窗口做一次确定性初始化：重力给出roll/pitch，角速度均值给出启动bg。
+ * 该函数不声称估计北向，也不从单一姿态估计三轴加速度计零偏。
+ */
+[[nodiscard]] StaticImuInitializationResult initialize_static_imu(
+    const std::vector<StaticImuSample>& samples,
+    const StaticImuInitializationConfig& config) noexcept;
 
 /** IMU结果区分“未传播的合法首帧”和各种拒绝原因，便于上海交大ROS 2侧诊断。 */
 enum class ImuDisposition {

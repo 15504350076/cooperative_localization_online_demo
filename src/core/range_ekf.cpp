@@ -181,6 +181,83 @@ bool stabilize_positive_definite(DenseMatrix& covariance,
 
 }  // namespace
 
+ThreeNodeFormation solve_three_node_formation(
+    const ThreeNodeRanges& ranges, double minimum_height_m) noexcept {
+  ThreeNodeFormation result{};
+  if (ranges.node_ids[0] == ranges.node_ids[1] ||
+      ranges.node_ids[0] == ranges.node_ids[2] ||
+      ranges.node_ids[1] == ranges.node_ids[2] ||
+      !finite(ranges.range_01_m) || ranges.range_01_m <= 0.0 ||
+      !finite(ranges.range_02_m) || ranges.range_02_m <= 0.0 ||
+      !finite(ranges.range_12_m) || ranges.range_12_m <= 0.0 ||
+      !finite(minimum_height_m) || minimum_height_m <= 0.0) {
+    result.disposition = FormationDisposition::kInvalidInput;
+    return result;
+  }
+
+  const double d01 = ranges.range_01_m;
+  const double d02 = ranges.range_02_m;
+  const double d12 = ranges.range_12_m;
+  if (d01 + d02 <= d12 || d01 + d12 <= d02 || d02 + d12 <= d01) {
+    result.disposition = FormationDisposition::kTriangleInequality;
+    return result;
+  }
+  if (d01 <= minimum_height_m) {
+    result.disposition = FormationDisposition::kDegenerate;
+    return result;
+  }
+
+  // 先按最长边归一化，避免距离平方在极端输入下中间上溢。
+  const double scale = std::max({d01, d02, d12});
+  const double a = d01 / scale;
+  const double b = d02 / scale;
+  const double c = d12 / scale;
+  const double x_normalized = (a * a + b * b - c * c) / (2.0 * a);
+  double y_squared_normalized = b * b - x_normalized * x_normalized;
+  const double roundoff = 64.0 * std::numeric_limits<double>::epsilon();
+  if (!finite(x_normalized) || !finite(y_squared_normalized) ||
+      y_squared_normalized < -roundoff) {
+    result.disposition = FormationDisposition::kNumericalFailure;
+    return result;
+  }
+  y_squared_normalized = std::max(0.0, y_squared_normalized);
+  const double x2 = x_normalized * scale;
+  const double y2 = std::sqrt(y_squared_normalized) * scale;
+  const double twice_area = d01 * y2;
+  if (!finite(x2) || !finite(y2) || !finite(twice_area)) {
+    result.disposition = FormationDisposition::kNumericalFailure;
+    return result;
+  }
+  if (y2 < minimum_height_m) {
+    result.disposition = FormationDisposition::kDegenerate;
+    return result;
+  }
+
+  const double pi = std::acos(-1.0);
+  const double angle0 = std::atan2(y2, x2);
+  const double angle1 = std::atan2(y2, d01 - x2);
+  const double angle2 = pi - angle0 - angle1;
+  const double bearing02 = std::atan2(y2, x2);
+  const double bearing12 = std::atan2(y2, x2 - d01);
+  if (!finite(angle0) || !finite(angle1) || !finite(angle2) ||
+      angle0 <= 0.0 || angle1 <= 0.0 || angle2 <= 0.0 ||
+      !finite(bearing02) || !finite(bearing12)) {
+    result.disposition = FormationDisposition::kNumericalFailure;
+    return result;
+  }
+
+  result.points = {{{ranges.node_ids[0], 0.0, 0.0},
+                    {ranges.node_ids[1], d01, 0.0},
+                    {ranges.node_ids[2], x2, y2}}};
+  result.interior_angles_rad = {angle0, angle1, angle2};
+  result.bearing_01_rad = 0.0;
+  result.bearing_02_rad = bearing02;
+  result.bearing_12_rad = bearing12;
+  result.twice_area_m2 = twice_area;
+  result.disposition = FormationDisposition::kSolved;
+  return result;
+}
+
 RangeEkf::RangeEkf(FilterConfig config,
                    std::vector<NodeInitialization> initializations)
     // config和initializations按值接收，使构造函数拥有独立副本；成员初始化列表先保存配置并建立0×0矩阵。

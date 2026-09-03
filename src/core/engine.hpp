@@ -63,7 +63,7 @@ struct LocalizationSnapshot {
   LocalizationState state{LocalizationState::kUninitialized};  ///< 结合节点有效性与网络状态的定位状态。
 };
 
-/** Pose2D v2只读查询使用的单车内部元素；位置轴与公共ENU平行。 */
+/** Pose2D v2只读查询使用的单车内部元素；轴语义由惯性/纯测距模式决定。 */
 struct VehiclePose2dSnapshot {
   std::uint32_t node_id{};
   double x_m{};

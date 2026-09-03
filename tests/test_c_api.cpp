@@ -781,6 +781,7 @@ TEST_CASE(c_api_pose2d_v2_keeps_range_only_yaw_invalid) {
                 static_cast<std::uint32_t>(sizeof(vehicles[0])), &count),
             ZJU_COOP_OK);
   EXPECT_EQ(count, 3U);
+  EXPECT_TRUE(std::strcmp(snapshot.frame_id, "coop_ref_1_relative") == 0);
   for (const auto& vehicle : vehicles) {
     EXPECT_EQ(vehicle.yaw_valid, ZJU_COOP_FALSE);
   }
