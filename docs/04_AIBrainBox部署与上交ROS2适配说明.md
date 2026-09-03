@@ -107,7 +107,7 @@ Linux 构建包含导出符号检查：动态库必须导出公开 C API，且�
 
 ### 4.1 IMU
 
-当前首版浙大适配节点订阅上交发布的 `sensor_msgs/msg/Imu`，并把以下字段逐项映射到 `zju_coop_imu_packet_t`：
+当前首版浙大适配节点订阅上交发布的 `sensor_msgs/msg/Imu`，先把原始轴系和单位统一为 FLU/SI，再把以下字段映射到 `zju_coop_imu_packet_t`：
 
 - `header.stamp` → `UWB_SYSTEM_TIME` 纳秒 `timestamp_ns`；实盒适配层以该时间戳和
   本机 `steady_clock` 估计同域 `receive_timestamp_ns`，不会把 Linux/ROS UTC
@@ -119,7 +119,7 @@ Linux 构建包含导出符号检查：动态库必须导出公开 C API，且�
 - 三组3×3协方差均按行主序；首元素 `-1` 表示不可用，全零表示未知；
 - 标准消息没有温度，温度属于模组私有消息，可由上交驱动单独记录，不是当前融合必需输入。
 
-上交必须给出 IMU 到车体 FLU 的安装外参。当前 Demo 假设消息已在 `imu_link`/FLU 轴系；若原始模组轴系不同，转换责任和执行位置需在联调接口中冻结，浙大适配节点按双方确认的外参完成映射，不能仅改 `frame_id` 字符串。初始航向表示车体 FLU 前向 `+x` 轴相对公共 ENU 东向 `+x` 轴的逆时针夹角，范围 `[-π,π)`。
+上交已确认当前 `imu_link` 消息采用 FRD（`+x` 前、`+y` 右、`+z` 下）。三车适配参数使用 `imu_sensor_to_flu_xyzw=[1,0,0,0]`，即绕 `+X` 轴180°变换为 FLU；`frame_id` 字符串本身不执行该变换。初始航向表示车体 FLU 前向 `+x` 轴相对公共 ENU 东向 `+x` 轴的逆时针夹角，范围 `[-π,π)`。
 
 ### 4.2 UWB
 
@@ -165,8 +165,8 @@ SDK 会拒绝该包并报告 `TIME_SYNC_TIMEOUT`。
 
 ## 5. 浙大 ROS 2 适配节点调用模型（首版已实现）
 
-- 每车 `zju_local_inertial_node` 从部署配置读取 node_id、公共 ENU 初始 `p/v/q` 和 `bg/ba`，创建本地惯导 handle；
-- 本车 IMU 回调把 `sensor_msgs/msg/Imu` 逐字段映射到普通 C 结构并推入本地 15 维惯导，首帧只建立时间基准；
+- 每车 `zju_local_inertial_node` 从部署配置读取 node_id、公共 ENU 初始 `p/v/q`、`bg/ba` 和 IMU 轴变换/单位比例，创建本地惯导 handle；
+- 本车 IMU 回调先把上交 FRD 向量、姿态和协方差转为 FLU/SI，再填入普通 C 结构并推入本地 15 维惯导，首帧只建立时间基准；
 - 本地节点以 20 Hz 发布紧凑 NodeState，其中 stamp 是最后一帧被惯导接受的 IMU 测量时刻；
 - 参考车 `zju_cooperative_fusion_node` 创建独立二维融合 handle，订阅三车 NodeState 和 `/uwb/range`；
 - fusion 按 UWB 测量时刻插值或有限外推两端状态，接受更新后保存二维修正，并以 10 Hz 发布 `CooperativePose2DArray`；

@@ -175,7 +175,7 @@ def run(args):
         output = Path(args.output).expanduser().resolve()
         csv_output = output.with_name(f"{output.stem}_window.csv")
     else:
-        output = bag / "imu_orientation_jump_analysis.png"
+        output = bag / "IMU姿态连续性与跳变分析.png"
         csv_output = bag / "imu_orientation_jump_window.csv"
     if output.suffix.lower() != ".png":
         raise ValueError("--output must end with .png")
@@ -237,7 +237,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("bag", help="ROS 2 bag directory")
     parser.add_argument("--topic", default="/imu/raw", help="IMU topic (default: /imu/raw)")
-    parser.add_argument("--output", help="output PNG path (default: BAG/imu_orientation_jump_analysis.png)")
+    parser.add_argument("--output", help="output PNG path (default: BAG/IMU姿态连续性与跳变分析.png)")
     parser.add_argument(
         "--window", type=positive_float, default=0.01,
         help="seconds shown/exported on each side of the jump (default: 0.01)",

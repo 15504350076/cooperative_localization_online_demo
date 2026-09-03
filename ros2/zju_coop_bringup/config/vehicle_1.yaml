@@ -4,8 +4,9 @@
     publish_rate_hz: 20.0
     expected_imu_frame_id: imu_link
     common_enu_frame_id: common_enu
-    # 上交确认轴向和单位后填写；当前恒等变换不会猜测实测负Z/陀螺单位。
-    imu_sensor_to_flu_xyzw: [0.0, 0.0, 0.0, 1.0]
+    # 上交 IMU 为 FRD（前/右/下）；绕 +X 180° 转为算法 FLU（前/左/上）。
+    imu_sensor_to_flu_xyzw: [1.0, 0.0, 0.0, 0.0]
+    # 单位尚未由这条消息确认；比例暂留 1.0，实测验收后再改。
     gyro_scale_to_rad_s: 1.0
     accel_scale_to_m_s2: 1.0
     initial_position_enu_m: [0.0, 0.0, 0.0]

@@ -56,7 +56,11 @@ set_target_properties(zju_coop_core PROPERTIES
 )
 
 # 第二层：对外交付动态库只导出include/zju_coop/c_api.h声明的稳定C符号。
-add_library(zju_coop SHARED src/api/c_api.cpp)
+# raw输入校验独立成翻译单元，避免未来点云/相机前端反向耦合定位Engine。
+add_library(zju_coop SHARED
+    src/api/c_api.cpp
+    src/api/c_api_raw_input.cpp
+)
 target_compile_features(zju_coop PRIVATE cxx_std_17)
 target_include_directories(zju_coop
     PUBLIC
