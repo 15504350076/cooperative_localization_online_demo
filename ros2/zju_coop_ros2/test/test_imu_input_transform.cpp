@@ -30,7 +30,7 @@ int main() {
   const std::array<double, 4> asymmetric_xyzw{0.1, 0.2, 0.3,
                                                std::sqrt(0.86)};
   const auto unchanged_orientation =
-      identity.orientation_flu_to_navigation(asymmetric_xyzw);
+      identity.orientation_flu_to_enu(asymmetric_xyzw);
   for (std::size_t index = 0U; index < asymmetric_xyzw.size(); ++index) {
     require(close(unchanged_orientation[index], asymmetric_xyzw[index]));
   }
@@ -63,6 +63,19 @@ int main() {
       frd_degrees_to_flu.angular_velocity_covariance(unavailable);
   require(close(preserved[0], -1.0));
   require(close(preserved[1], 0.0));
+
+  // 上交姿态为 FRD->NED：右侧乘 FRD<-FLU，左侧乘 ENU<-NED。
+  // 车头向东时，FRD->NED为绕D轴+90度，转换后应为单位FLU->ENU姿态。
+  const double inverse_sqrt_two = std::sqrt(0.5);
+  const zju_coop_ros2::ImuInputTransform frd_ned_to_flu_enu(
+      {1.0, 0.0, 0.0, 0.0}, 1.0, 1.0,
+      {inverse_sqrt_two, inverse_sqrt_two, 0.0, 0.0});
+  const auto flu_to_enu = frd_ned_to_flu_enu.orientation_flu_to_enu(
+      {0.0, 0.0, inverse_sqrt_two, inverse_sqrt_two});
+  require(close(flu_to_enu[0], 0.0));
+  require(close(flu_to_enu[1], 0.0));
+  require(close(flu_to_enu[2], 0.0));
+  require(close(std::abs(flu_to_enu[3]), 1.0));
 
   bool rejected = false;
   try {

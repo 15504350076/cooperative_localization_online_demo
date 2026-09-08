@@ -15,6 +15,8 @@
 
 - `src/core/inertial_eskf15.hpp`：输入、配置、返回值和处置枚举；
 - `src/core/inertial_eskf15.cpp`：`initialize_static_imu()`；
+- `include/zju_coop/c_api.h`、`src/api/c_api.cpp`：稳定 C ABI；
+- `ros2/zju_coop_ros2/src/local_inertial_node.cpp`：启动窗口缓存、静止失败重试和成功后惯导配置；
 - `tests/test_inertial_eskf15.cpp`：水平化、零偏均值、样本不足和非静止拒绝测试。
 
 输入 `StaticImuSample` 必须已经转换为本工程内部 FLU/SI 口径：
@@ -106,13 +108,14 @@ if (formation.disposition == zju::coop::FormationDisposition::kSolved) {
 
 ## 5. 与在线工程的衔接状态
 
-当前算法层已经实现并通过测试，但没有修改 ROS 2 节点启动时序。正式接入建议按以下顺序进行：
+静止 IMU 初始化已经接入本地 ROS 2 惯导节点。三车盒端配置默认启用 10 秒启动窗口；窗口未通过时不配置惯导、不发布 `NodeState`，窗口出现运动或超过 0.1 秒断流时清空后重采。通过后将重力 roll/pitch 和本次启动陀螺零偏写入惯导初值，yaw 仍使用配置的公共相对航向种子。
 
 ```text
 每车缓存静止IMU窗口
-  → FRD转FLU、单位转SI
+  → FRD/NED转FLU/ENU、单位转SI
   → initialize_static_imu
   → 写入该车惯性初值的roll/pitch和gyro bias
+  → 配置15维ESKF并开始连续传播
 
 同一历元收齐三边UWB
   → solve_three_node_formation
@@ -120,7 +123,9 @@ if (formation.disposition == zju::coop::FormationDisposition::kSolved) {
   → 配置滤波器并开始在线处理
 ```
 
-只有在静止判定和三边解都成功后才允许进入对应模式；失败时应继续收集新窗口或报告初始化未完成，不能偷偷使用全零初值。
+静止初始化已在线接通；三边规范解目前仍是独立的核心几何能力，尚未自动替换现有车辆配置中的初始位置。只有在静止判定和三边解都成功后才允许进入对应模式；失败时应继续收集新窗口或报告初始化未完成，不能偷偷使用全零初值。
+
+历史实测回放的过程和结果见 `data/imu_static_20260805_053052/静止初始化验证.md`、`静止初始化后姿态对比.csv.gz` 与 `静止初始化后姿态对比.png`。
 
 ## 6. 参考实现
 

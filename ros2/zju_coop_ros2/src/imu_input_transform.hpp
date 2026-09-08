@@ -13,7 +13,9 @@ class ImuInputTransform {
 
   ImuInputTransform(const std::array<double, 4>& sensor_to_flu_xyzw,
                     double gyro_scale_to_rad_s,
-                    double accel_scale_to_m_s2)
+                    double accel_scale_to_m_s2,
+                    const std::array<double, 4>& navigation_to_enu_xyzw =
+                        {0.0, 0.0, 0.0, 1.0})
       : gyro_scale_(gyro_scale_to_rad_s),
         accel_scale_(accel_scale_to_m_s2) {
     const double norm = std::sqrt(
@@ -21,7 +23,14 @@ class ImuInputTransform {
         sensor_to_flu_xyzw[1] * sensor_to_flu_xyzw[1] +
         sensor_to_flu_xyzw[2] * sensor_to_flu_xyzw[2] +
         sensor_to_flu_xyzw[3] * sensor_to_flu_xyzw[3]);
+    const double navigation_norm = std::sqrt(
+        navigation_to_enu_xyzw[0] * navigation_to_enu_xyzw[0] +
+        navigation_to_enu_xyzw[1] * navigation_to_enu_xyzw[1] +
+        navigation_to_enu_xyzw[2] * navigation_to_enu_xyzw[2] +
+        navigation_to_enu_xyzw[3] * navigation_to_enu_xyzw[3]);
     if (!std::isfinite(norm) || std::abs(norm - 1.0) > 1.0e-3 ||
+        !std::isfinite(navigation_norm) ||
+        std::abs(navigation_norm - 1.0) > 1.0e-3 ||
         !std::isfinite(gyro_scale_) || gyro_scale_ <= 0.0 ||
         !std::isfinite(accel_scale_) || accel_scale_ <= 0.0) {
       throw std::invalid_argument("invalid IMU input transform");
@@ -30,6 +39,10 @@ class ImuInputTransform {
     sensor_to_flu_xyzw_ = sensor_to_flu_xyzw;
     for (double& value : sensor_to_flu_xyzw_) {
       value /= norm;
+    }
+    navigation_to_enu_xyzw_ = navigation_to_enu_xyzw;
+    for (double& value : navigation_to_enu_xyzw_) {
+      value /= navigation_norm;
     }
     const double x = sensor_to_flu_xyzw_[0];
     const double y = sensor_to_flu_xyzw_[1];
@@ -68,13 +81,21 @@ class ImuInputTransform {
     return transform_covariance(sensor_covariance, 1.0);
   }
 
-  // 输入是 sensor->navigation；输出是 FLU->navigation。
-  std::array<double, 4> orientation_flu_to_navigation(
+  // 输入是 sensor->上游导航系；输出统一为 FLU->ENU。
+  std::array<double, 4> orientation_flu_to_enu(
       const std::array<double, 4>& sensor_to_navigation_xyzw) const {
     const std::array<double, 4> flu_to_sensor{
         -sensor_to_flu_xyzw_[0], -sensor_to_flu_xyzw_[1],
         -sensor_to_flu_xyzw_[2], sensor_to_flu_xyzw_[3]};
-    return quaternion_product(sensor_to_navigation_xyzw, flu_to_sensor);
+    return quaternion_product(
+        navigation_to_enu_xyzw_,
+        quaternion_product(sensor_to_navigation_xyzw, flu_to_sensor));
+  }
+
+  // 保留旧名称，避免只做 sensor 轴变换的既有调用方破坏兼容性。
+  std::array<double, 4> orientation_flu_to_navigation(
+      const std::array<double, 4>& sensor_to_navigation_xyzw) const {
+    return orientation_flu_to_enu(sensor_to_navigation_xyzw);
   }
 
  private:
@@ -128,6 +149,7 @@ class ImuInputTransform {
   }
 
   std::array<double, 4> sensor_to_flu_xyzw_{0.0, 0.0, 0.0, 1.0};
+  std::array<double, 4> navigation_to_enu_xyzw_{0.0, 0.0, 0.0, 1.0};
   std::array<double, 9> sensor_to_flu_rotation_{
       1.0, 0.0, 0.0,
       0.0, 1.0, 0.0,

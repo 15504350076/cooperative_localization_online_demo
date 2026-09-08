@@ -28,6 +28,7 @@ constexpr std::uint64_t kNanosecondsPerSecond = 1'000'000'000ULL;
 // 只用于拒绝明显超前或滞后的数据包，不代表 UWB 授时精度指标。
 constexpr std::uint64_t kMaxImuFutureSkewNs = 100'000'000ULL;
 constexpr std::uint64_t kMaxImuReceiveDelayNs = 500'000'000ULL;
+constexpr std::uint64_t kMaxStaticImuGapNs = 100'000'000ULL;
 
 // SDK C 接口在初始化阶段失败时直接终止节点，避免带着半初始化状态运行。
 void require_ok(zju_coop_error_code_t code, const char* operation) {
@@ -68,11 +69,6 @@ std::vector<double> vector_parameter(rclcpp::Node& node, const char* name,
   return value;
 }
 
-template <std::size_t Size>
-void copy_values(double (&destination)[Size], const std::vector<double>& source) {
-  std::copy_n(source.begin(), Size, destination);
-}
-
 // C ABI 使用定长字符数组；拒绝空字符串和会被截断的内容。
 template <std::size_t Capacity>
 bool copy_c_string(char (&destination)[Capacity], const std::string& source) {
@@ -81,6 +77,16 @@ bool copy_c_string(char (&destination)[Capacity], const std::string& source) {
   }
   std::memcpy(destination, source.c_str(), source.size() + 1U);
   return true;
+}
+
+// q=Rz(yaw)Ry(pitch)Rx(roll)；只取配置中的水平初值，roll/pitch由重力覆盖。
+double zyx_yaw_rad(const std::vector<double>& quaternion_xyzw) {
+  const double x = quaternion_xyzw[0];
+  const double y = quaternion_xyzw[1];
+  const double z = quaternion_xyzw[2];
+  const double w = quaternion_xyzw[3];
+  return std::atan2(2.0 * (w * z + x * y),
+                    1.0 - 2.0 * (y * y + z * z));
 }
 
 class LocalInertialNode final : public rclcpp::Node {
@@ -98,10 +104,16 @@ class LocalInertialNode final : public rclcpp::Node {
         declare_parameter<std::string>("common_enu_frame_id", "common_enu");
     const auto sensor_to_flu = vector_parameter(
         *this, "imu_sensor_to_flu_xyzw", {0.0, 0.0, 0.0, 1.0}, 4U);
+    const auto navigation_to_enu = vector_parameter(
+        *this, "imu_navigation_to_enu_xyzw", {0.0, 0.0, 0.0, 1.0}, 4U);
     const double gyro_scale_to_rad_s =
         declare_parameter<double>("gyro_scale_to_rad_s", 1.0);
     const double accel_scale_to_m_s2 =
         declare_parameter<double>("accel_scale_to_m_s2", 1.0);
+    enable_static_imu_initialization_ =
+        declare_parameter<bool>("enable_static_imu_initialization", false);
+    static_imu_initialization_duration_s_ = declare_parameter<double>(
+        "static_imu_initialization_duration_s", 10.0);
     const bool enable_point_cloud_input =
         declare_parameter<bool>("enable_point_cloud_input", false);
     const bool enable_camera_input =
@@ -130,6 +142,11 @@ class LocalInertialNode final : public rclcpp::Node {
         expected_imu_frame_id_.size() >= 32U || common_enu_frame_id_.empty()) {
       throw std::invalid_argument("invalid local inertial node parameters");
     }
+    if (!std::isfinite(static_imu_initialization_duration_s_) ||
+        static_imu_initialization_duration_s_ <= 0.0) {
+      throw std::invalid_argument(
+          "static_imu_initialization_duration_s must be positive");
+    }
     if (point_cloud_frame_alias_.size() >= 32U ||
         camera_frame_alias_.size() >= 32U) {
       throw std::invalid_argument("raw input frame aliases must fit the C ABI");
@@ -139,10 +156,14 @@ class LocalInertialNode final : public rclcpp::Node {
         static_cast<std::uint32_t>(configured_point_cloud_sensor_id);
     camera_id_ = static_cast<std::uint32_t>(configured_camera_id);
     std::array<double, 4> sensor_to_flu_xyzw{};
+    std::array<double, 4> navigation_to_enu_xyzw{};
     std::copy_n(sensor_to_flu.begin(), sensor_to_flu_xyzw.size(),
                 sensor_to_flu_xyzw.begin());
+    std::copy_n(navigation_to_enu.begin(), navigation_to_enu_xyzw.size(),
+                navigation_to_enu_xyzw.begin());
     imu_input_transform_ = zju_coop_ros2::ImuInputTransform(
-        sensor_to_flu_xyzw, gyro_scale_to_rad_s, accel_scale_to_m_s2);
+        sensor_to_flu_xyzw, gyro_scale_to_rad_s, accel_scale_to_m_s2,
+        navigation_to_enu_xyzw);
 
     const auto position = vector_parameter(
         *this, "initial_position_enu_m", {}, 3U);
@@ -155,6 +176,37 @@ class LocalInertialNode final : public rclcpp::Node {
         *this, "initial_gyro_bias_flu_rad_s", {0.0, 0.0, 0.0}, 3U);
     const auto accel_bias = vector_parameter(
         *this, "initial_accel_bias_flu_m_s2", {0.0, 0.0, 0.0}, 3U);
+    const auto configured_static_sample_count = declare_parameter<std::int64_t>(
+        "static_imu_minimum_sample_count", 200);
+
+    require_ok(zju_coop_static_imu_config_init(&static_imu_config_),
+               "zju_coop_static_imu_config_init");
+    static_imu_config_.initial_yaw_rad = zyx_yaw_rad(orientation);
+    static_imu_config_.max_mean_gyro_norm_rad_s = declare_parameter<double>(
+        "static_imu_max_mean_gyro_norm_rad_s",
+        static_imu_config_.max_mean_gyro_norm_rad_s);
+    static_imu_config_.max_gyro_std_rad_s = declare_parameter<double>(
+        "static_imu_max_gyro_std_rad_s",
+        static_imu_config_.max_gyro_std_rad_s);
+    static_imu_config_.max_accel_std_m_s2 = declare_parameter<double>(
+        "static_imu_max_accel_std_m_s2",
+        static_imu_config_.max_accel_std_m_s2);
+    static_imu_config_.max_gravity_magnitude_error_m_s2 =
+        declare_parameter<double>(
+            "static_imu_max_gravity_magnitude_error_m_s2",
+            static_imu_config_.max_gravity_magnitude_error_m_s2);
+    if (!(std::isfinite(static_imu_config_.max_mean_gyro_norm_rad_s) &&
+          static_imu_config_.max_mean_gyro_norm_rad_s > 0.0 &&
+          std::isfinite(static_imu_config_.max_gyro_std_rad_s) &&
+          static_imu_config_.max_gyro_std_rad_s > 0.0 &&
+          std::isfinite(static_imu_config_.max_accel_std_m_s2) &&
+          static_imu_config_.max_accel_std_m_s2 > 0.0 &&
+          std::isfinite(
+              static_imu_config_.max_gravity_magnitude_error_m_s2) &&
+          static_imu_config_.max_gravity_magnitude_error_m_s2 > 0.0)) {
+      throw std::invalid_argument(
+          "static IMU initialization thresholds must be positive");
+    }
 
     // SDK 要求 FLU->ENU 四元数已归一化，不在节点内静默修正错误初值。
     const double orientation_norm =
@@ -167,6 +219,23 @@ class LocalInertialNode final : public rclcpp::Node {
       throw std::invalid_argument(
           "initial_orientation_flu_to_enu_xyzw must be a unit quaternion");
     }
+    if (configured_static_sample_count < 2 ||
+        configured_static_sample_count > 1'000'000) {
+      throw std::invalid_argument(
+          "static_imu_minimum_sample_count must be in [2, 1000000]");
+    }
+    static_imu_config_.minimum_sample_count =
+        static_cast<std::uint32_t>(configured_static_sample_count);
+    std::copy_n(position.begin(), initial_position_enu_m_.size(),
+                initial_position_enu_m_.begin());
+    std::copy_n(velocity.begin(), initial_velocity_enu_mps_.size(),
+                initial_velocity_enu_mps_.begin());
+    std::copy_n(orientation.begin(), initial_orientation_xyzw_.size(),
+                initial_orientation_xyzw_.begin());
+    std::copy_n(gyro_bias.begin(), initial_gyro_bias_rad_s_.size(),
+                initial_gyro_bias_rad_s_.begin());
+    std::copy_n(accel_bias.begin(), initial_accel_bias_m_s2_.size(),
+                initial_accel_bias_m_s2_.begin());
 
     // 先建立只含本车的 SDK 基础实例。本节点不是三车集中式滤波器：
     // reference_node_id 设成本车，仅用于满足单车 SDK 实例的基础配置。
@@ -190,28 +259,11 @@ class LocalInertialNode final : public rclcpp::Node {
     handle_ = candidate;
 
     try {
-      // 给单车惯导装载名义状态 p/v/q/bg/ba。误差状态和协方差由 SDK 持有，
-      // 后续每个有效 IMU 样本通过 zju_coop_push_imu 推进。
-      zju_coop_inertial_node_initialization_t initial{};
-      require_ok(zju_coop_inertial_node_initialization_init(&initial),
-                 "zju_coop_inertial_node_initialization_init");
-      initial.node_id = node_id_;
-      copy_values(initial.position_n_m, position);
-      copy_values(initial.velocity_n_mps, velocity);
-      copy_values(initial.orientation_xyzw, orientation);
-      copy_values(initial.gyro_bias_rad_s, gyro_bias);
-      copy_values(initial.accel_bias_m_s2, accel_bias);
-
-      zju_coop_inertial_config_t inertial_config{};
-      require_ok(zju_coop_inertial_config_init(&inertial_config),
-                 "zju_coop_inertial_config_init");
-      inertial_config.nodes = &initial;
-      inertial_config.node_count = 1U;
-      std::memcpy(inertial_config.expected_frame_id,
-                  expected_imu_frame_id_.c_str(),
-                  expected_imu_frame_id_.size() + 1U);
-      require_ok(zju_coop_configure_inertial(handle_, &inertial_config),
-                 "zju_coop_configure_inertial");
+      if (!enable_static_imu_initialization_) {
+        configure_inertial(initial_orientation_xyzw_,
+                           initial_gyro_bias_rad_s_);
+        inertial_ready_ = true;
+      }
     } catch (...) {
       static_cast<void>(zju_coop_destroy(handle_));
       handle_ = nullptr;
@@ -249,10 +301,11 @@ class LocalInertialNode final : public rclcpp::Node {
 
     RCLCPP_INFO(
         get_logger(),
-        "local INS ready: node_id=%u, imu frame=%s, gyro_scale=%.9g, "
-        "accel_scale=%.9g, point_cloud=%s, camera=%s",
+        "local INS node ready: node_id=%u, imu frame=%s, gyro_scale=%.9g, "
+        "accel_scale=%.9g, static_init=%s, point_cloud=%s, camera=%s",
         node_id_, expected_imu_frame_id_.c_str(),
         gyro_scale_to_rad_s, accel_scale_to_m_s2,
+        enable_static_imu_initialization_ ? "waiting" : "disabled",
         enable_point_cloud_input ? "enabled" : "disabled",
         enable_camera_input ? "enabled" : "disabled");
   }
@@ -264,6 +317,113 @@ class LocalInertialNode final : public rclcpp::Node {
   }
 
  private:
+  void configure_inertial(
+      const std::array<double, 4>& orientation_xyzw,
+      const std::array<double, 3>& gyro_bias_rad_s) {
+    zju_coop_inertial_node_initialization_t initial{};
+    require_ok(zju_coop_inertial_node_initialization_init(&initial),
+               "zju_coop_inertial_node_initialization_init");
+    initial.node_id = node_id_;
+    std::copy(initial_position_enu_m_.begin(), initial_position_enu_m_.end(),
+              initial.position_n_m);
+    std::copy(initial_velocity_enu_mps_.begin(),
+              initial_velocity_enu_mps_.end(), initial.velocity_n_mps);
+    std::copy(orientation_xyzw.begin(), orientation_xyzw.end(),
+              initial.orientation_xyzw);
+    std::copy(gyro_bias_rad_s.begin(), gyro_bias_rad_s.end(),
+              initial.gyro_bias_rad_s);
+    std::copy(initial_accel_bias_m_s2_.begin(), initial_accel_bias_m_s2_.end(),
+              initial.accel_bias_m_s2);
+
+    zju_coop_inertial_config_t inertial_config{};
+    require_ok(zju_coop_inertial_config_init(&inertial_config),
+               "zju_coop_inertial_config_init");
+    inertial_config.nodes = &initial;
+    inertial_config.node_count = 1U;
+    std::memcpy(inertial_config.expected_frame_id,
+                expected_imu_frame_id_.c_str(),
+                expected_imu_frame_id_.size() + 1U);
+    require_ok(zju_coop_configure_inertial(handle_, &inertial_config),
+               "zju_coop_configure_inertial");
+  }
+
+  // 收满连续静止窗口后一次估计roll/pitch和本次启动陀螺零偏；READY后冻结初值。
+  bool collect_static_imu(
+      std::uint64_t timestamp_ns,
+      const std::array<double, 3>& angular_velocity_rad_s,
+      const std::array<double, 3>& specific_force_m_s2) {
+    if (static_imu_last_timestamp_ns_ != 0U &&
+        timestamp_ns - static_imu_last_timestamp_ns_ >
+            kMaxStaticImuGapNs) {
+      static_imu_samples_.clear();
+      static_imu_start_timestamp_ns_ = 0U;
+      RCLCPP_WARN(get_logger(),
+                  "static IMU initialization restarted after a data gap");
+    }
+    static_imu_last_timestamp_ns_ = timestamp_ns;
+    if (static_imu_start_timestamp_ns_ == 0U) {
+      static_imu_start_timestamp_ns_ = timestamp_ns;
+    }
+
+    zju_coop_static_imu_sample_t sample{};
+    require_ok(zju_coop_static_imu_sample_init(&sample),
+               "zju_coop_static_imu_sample_init");
+    std::copy(angular_velocity_rad_s.begin(), angular_velocity_rad_s.end(),
+              sample.angular_velocity_rad_s);
+    std::copy(specific_force_m_s2.begin(), specific_force_m_s2.end(),
+              sample.specific_force_m_s2);
+    static_imu_samples_.push_back(sample);
+
+    const double elapsed_s = static_cast<double>(
+        timestamp_ns - static_imu_start_timestamp_ns_) / 1.0e9;
+    if (elapsed_s < static_imu_initialization_duration_s_ ||
+        static_imu_samples_.size() < static_imu_config_.minimum_sample_count) {
+      return false;
+    }
+
+    zju_coop_static_imu_result_t result{};
+    require_ok(zju_coop_static_imu_result_init(&result),
+               "zju_coop_static_imu_result_init");
+    require_ok(zju_coop_initialize_static_imu(
+                   &static_imu_config_, static_imu_samples_.data(),
+                   static_cast<std::uint32_t>(static_imu_samples_.size()),
+                   sizeof(static_imu_samples_.front()), &result),
+               "zju_coop_initialize_static_imu");
+    if (result.disposition == ZJU_COOP_STATIC_IMU_NOT_STATIONARY) {
+      RCLCPP_WARN(
+          get_logger(),
+          "static IMU initialization rejected %zu samples as moving; "
+          "keep the vehicle still for %.1f s and retry",
+          static_imu_samples_.size(), static_imu_initialization_duration_s_);
+      static_imu_samples_.clear();
+      static_imu_start_timestamp_ns_ = 0U;
+      return false;
+    }
+    if (result.disposition != ZJU_COOP_STATIC_IMU_READY) {
+      throw std::runtime_error(
+          "static IMU initialization failed with disposition " +
+          std::to_string(result.disposition));
+    }
+
+    std::array<double, 4> orientation{};
+    std::array<double, 3> gyro_bias{};
+    std::copy(std::begin(result.orientation_flu_to_enu_xyzw),
+              std::end(result.orientation_flu_to_enu_xyzw),
+              orientation.begin());
+    std::copy(std::begin(result.gyro_bias_flu_rad_s),
+              std::end(result.gyro_bias_flu_rad_s), gyro_bias.begin());
+    configure_inertial(orientation, gyro_bias);
+    inertial_ready_ = true;
+    RCLCPP_INFO(
+        get_logger(),
+        "static IMU initialization ready: samples=%llu, gyro_bias=[%.9g, "
+        "%.9g, %.9g] rad/s; configured yaw is a relative seed, not north",
+        static_cast<unsigned long long>(result.sample_count), gyro_bias[0],
+        gyro_bias[1], gyro_bias[2]);
+    static_imu_samples_.clear();
+    return true;
+  }
+
   // 实盒：把本机 steady 到达时刻映射到传感器头中的 UWB 时间域。
   // Gazebo：所有消息和 /clock 已在同一仿真时间域，直接使用 ROS 时间。
   std::uint64_t receive_time_ns(
@@ -363,7 +523,7 @@ class LocalInertialNode final : public rclcpp::Node {
     // ROS Imu 约定 covariance[0] < 0 表示未提供姿态。
     // 只有声明可用且四元数归一化时，才把姿态观测交给 SDK。
     const auto orientation =
-        imu_input_transform_.orientation_flu_to_navigation(
+        imu_input_transform_.orientation_flu_to_enu(
             {message.orientation.x, message.orientation.y,
              message.orientation.z, message.orientation.w});
     const double orientation_norm =
@@ -386,6 +546,19 @@ class LocalInertialNode final : public rclcpp::Node {
     std::memcpy(packet.frame_id, message.header.frame_id.c_str(),
                 message.header.frame_id.size() + 1U);
     packet.valid = ZJU_COOP_TRUE;
+
+    if (!inertial_ready_) {
+      const bool initialized = collect_static_imu(
+          measurement_time_ns, angular_velocity, linear_acceleration);
+      last_imu_measurement_time_ns_ = measurement_time_ns;
+      if (!use_sim_time_) {
+        static_cast<void>(imu_time_bridge_.observe(
+            measurement_time_ns, steady_receive_time_ns));
+      }
+      if (!initialized) {
+        return;
+      }
+    }
 
     // 第一个 IMU 样本只建立积分基线；从第二个合格样本开始进行传播。
     zju_coop_imu_processing_result_t result{};
@@ -585,7 +758,7 @@ class LocalInertialNode final : public rclcpp::Node {
   // 以固定频率读取 SDK 最新状态；仅在出现新的 IMU 状态时发布一次 NodeState。
   // header.stamp 是该状态最后接受的 IMU 样本时刻，不是定时器触发时刻。
   void publish_state() {
-    if (imu_time_faulted_) {
+    if (imu_time_faulted_ || !inertial_ready_) {
       return;
     }
     zju_coop_node_state_t state{};
@@ -626,6 +799,13 @@ class LocalInertialNode final : public rclcpp::Node {
 
   // SDK 生命周期与车辆/传感器标识。
   zju_coop_handle_t* handle_{};
+  std::array<double, 3> initial_position_enu_m_{};
+  std::array<double, 3> initial_velocity_enu_mps_{};
+  std::array<double, 4> initial_orientation_xyzw_{0.0, 0.0, 0.0, 1.0};
+  std::array<double, 3> initial_gyro_bias_rad_s_{};
+  std::array<double, 3> initial_accel_bias_m_s2_{};
+  zju_coop_static_imu_config_t static_imu_config_{};
+  std::vector<zju_coop_static_imu_sample_t> static_imu_samples_;
   std::uint32_t node_id_{};
   std::uint32_t point_cloud_sensor_id_{1U};
   std::uint32_t camera_id_{1U};
@@ -634,11 +814,16 @@ class LocalInertialNode final : public rclcpp::Node {
   std::uint64_t camera_sequence_{};
   // 输入顺序和重复发布保护。
   std::uint64_t last_imu_measurement_time_ns_{};
+  std::uint64_t static_imu_start_timestamp_ns_{};
+  std::uint64_t static_imu_last_timestamp_ns_{};
   std::uint64_t last_published_timestamp_ns_{};
   bool point_cloud_input_seen_{};
   bool camera_input_seen_{};
   bool use_sim_time_{};
   bool imu_time_faulted_{};
+  bool enable_static_imu_initialization_{};
+  bool inertial_ready_{};
+  double static_imu_initialization_duration_s_{10.0};
   std::string expected_imu_frame_id_;
   std::string common_enu_frame_id_;
   std::string point_cloud_frame_alias_;

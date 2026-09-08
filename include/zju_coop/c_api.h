@@ -117,6 +117,18 @@ typedef int32_t zju_coop_imu_disposition_t;
 #define ZJU_COOP_IMU_FRAME_MISMATCH ((zju_coop_imu_disposition_t)7)
 #define ZJU_COOP_IMU_NUMERICAL_FAILURE ((zju_coop_imu_disposition_t)8)
 
+/* 静止IMU初始化结论；READY时姿态和启动陀螺零偏可以用于惯导配置。 */
+typedef int32_t zju_coop_static_imu_disposition_t;
+#define ZJU_COOP_STATIC_IMU_READY ((zju_coop_static_imu_disposition_t)0)
+#define ZJU_COOP_STATIC_IMU_INSUFFICIENT_SAMPLES \
+  ((zju_coop_static_imu_disposition_t)1)
+#define ZJU_COOP_STATIC_IMU_INVALID_INPUT \
+  ((zju_coop_static_imu_disposition_t)2)
+#define ZJU_COOP_STATIC_IMU_NOT_STATIONARY \
+  ((zju_coop_static_imu_disposition_t)3)
+#define ZJU_COOP_STATIC_IMU_NUMERICAL_FAILURE \
+  ((zju_coop_static_imu_disposition_t)4)
+
 /*
  * 原始视觉/点云预留入口的输入种类。
  * 当前版本只负责验证ROS 2消息映射后的元数据和缓冲区布局，不运行视觉或点云算法。
@@ -278,6 +290,42 @@ typedef struct zju_coop_range_packet {
   zju_coop_bool_t valid;    /* 上游是否认可整条测距输入可供算法处理。 */
   zju_coop_range_status_t status; /* 设备侧OK/DEGRADED/INVALID质量状态。 */
 } zju_coop_range_packet_t;
+
+/* 已由适配层转换为算法FLU和SI单位的一帧静止初始化样本。 */
+typedef struct zju_coop_static_imu_sample {
+  uint32_t struct_size;
+  uint32_t abi_version;
+  double angular_velocity_rad_s[3];
+  double specific_force_m_s2[3];
+} zju_coop_static_imu_sample_t;
+
+/* 静止窗口门限；initial_yaw只固定不可观的水平旋转，不代表北向。 */
+typedef struct zju_coop_static_imu_config {
+  uint32_t struct_size;
+  uint32_t abi_version;
+  uint32_t minimum_sample_count;
+  uint32_t reserved0;
+  double gravity_mps2;
+  double initial_yaw_rad;
+  double max_mean_gyro_norm_rad_s;
+  double max_gyro_std_rad_s;
+  double max_accel_std_m_s2;
+  double max_gravity_magnitude_error_m_s2;
+} zju_coop_static_imu_config_t;
+
+/* 静止初始化输出；单姿态窗口不估计三轴加速度计零偏。 */
+typedef struct zju_coop_static_imu_result {
+  uint32_t struct_size;
+  uint32_t abi_version;
+  zju_coop_static_imu_disposition_t disposition;
+  uint32_t reserved0;
+  uint64_t sample_count;
+  double orientation_flu_to_enu_xyzw[4];
+  double gyro_bias_flu_rad_s[3];
+  double mean_specific_force_flu_m_s2[3];
+  double gyro_std_rad_s[3];
+  double accel_std_m_s2[3];
+} zju_coop_static_imu_result_t;
 
 /*
  * 单节点15维惯性状态初值；坐标为ENU，姿态为车体FLU到ENU的xyzw四元数。
@@ -707,6 +755,12 @@ zju_coop_vehicle_pose2d_v2_init(zju_coop_vehicle_pose2d_v2_t* value);
 ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 zju_coop_pose2d_snapshot_v2_init(zju_coop_pose2d_snapshot_v2_t* value);
 ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_static_imu_sample_init(zju_coop_static_imu_sample_t* value);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_static_imu_config_init(zju_coop_static_imu_config_t* value);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_static_imu_result_init(zju_coop_static_imu_result_t* value);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 zju_coop_inertial_node_initialization_init(
     /* value为调用方可写惯性节点初值，成功时写单位四元数与各状态块默认1σ。 */
     zju_coop_inertial_node_initialization_t* value);
@@ -796,6 +850,12 @@ zju_coop_gnss_get_relative_truth(
     zju_coop_gnss_context_t* context, uint64_t now_ns,
     zju_coop_gnss_relative_truth_t* truths, uint32_t truth_capacity,
     uint32_t truth_stride, uint32_t* truth_count);
+/* 仅计算静止窗口结果，不创建或修改handle；samples在调用期间只读。 */
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_initialize_static_imu(
+    const zju_coop_static_imu_config_t* config,
+    const zju_coop_static_imu_sample_t* samples, uint32_t sample_count,
+    uint32_t sample_stride, zju_coop_static_imu_result_t* result);
 /* configure成功后节点集合和状态维度被冻结，处理开始后不允许重新配置。 */
 ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 /* handle为尚未开始处理的会话；config仅在调用期间借用并由库深拷贝。 */

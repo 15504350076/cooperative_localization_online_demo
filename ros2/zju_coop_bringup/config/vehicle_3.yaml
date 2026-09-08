@@ -6,7 +6,9 @@
     common_enu_frame_id: common_enu
     # 上交 IMU 为 FRD（前/右/下）；绕 +X 180° 转为算法 FLU（前/左/上）。
     imu_sensor_to_flu_xyzw: [1.0, 0.0, 0.0, 0.0]
-    # 单位尚未由这条消息确认；比例暂留 1.0，实测验收后再改。
+    # 上交AHRS为NED；[N,E,D]转为算法ENU的固定旋转。
+    imu_navigation_to_enu_xyzw: [0.7071067811865475, 0.7071067811865475, 0.0, 0.0]
+    # sensor_msgs/Imu 标准单位为 rad/s 和 m/s²；上交已修正角速度单位，故比例为1。
     gyro_scale_to_rad_s: 1.0
     accel_scale_to_m_s2: 1.0
     initial_position_enu_m: [0.0, 4.0, 0.0]
@@ -14,3 +16,5 @@
     initial_orientation_flu_to_enu_xyzw: [0.0, 0.0, -0.9238795325112867, 0.3826834323650898]
     initial_gyro_bias_flu_rad_s: [0.0, 0.0, 0.0]
     initial_accel_bias_flu_m_s2: [0.0, 0.0, 0.0]
+    enable_static_imu_initialization: true
+    static_imu_initialization_duration_s: 10.0

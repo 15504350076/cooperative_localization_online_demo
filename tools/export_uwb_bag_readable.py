@@ -142,13 +142,17 @@ def read_bag(bag):
                     "uwb_id": int(message.uwb_id),
                 }
             )
-    if not ranges:
-        raise ValueError(f"{RANGE_TOPIC}没有消息")
     return ranges, identities
 
 
 def write_csv_files(bag, ranges, identities):
-    first_receive = ranges[0]["receive_ns"]
+    first_receive = (
+        ranges[0]["receive_ns"]
+        if ranges
+        else identities[0]["receive_ns"]
+        if identities
+        else 0
+    )
     first_header_by_edge = {}
     range_path = bag / "UWB测距数据.csv"
     with range_path.open("w", encoding="utf-8-sig", newline="") as stream:
@@ -225,15 +229,27 @@ def write_report(bag, ranges, identities, true_distance_m):
         "## 结论",
         "",
         f"- `/uwb/range`共{len(ranges)}条；非法或非正距离{invalid}条。",
-        "- 标准差由本文件全部距离样本离线计算，采用总体标准差（分母为N），不是ROS消息字段。",
     ]
+    if not ranges:
+        lines.extend(
+            (
+                "- **这表示测距消息数为0，不是测距消息中的`distance`全为0。**",
+                "- 因为没有任何距离样本，无法计算均值、标准差、频率、时间戳或三角形。",
+            )
+        )
+    else:
+        lines.append(
+            "- 标准差由本文件全部距离样本离线计算，采用总体标准差（分母为N），不是ROS消息字段。"
+        )
     scales = [item["time_scale"] for item in stats.values() if math.isfinite(item["time_scale"])]
     if scales and not all(0.98 <= value <= 1.02 for value in scales):
         lines.append(
             f"- **时间戳异常：实际接收时间/header时间跨度约为{statistics.fmean(scales):.2f}倍，"
             "消息时间没有按真实秒速前进。**"
         )
-    if true_distance_m is None:
+    if not ranges:
+        lines.append("- 本包没有距离样本，即使有卷尺真值也无法计算误差。")
+    elif true_distance_m is None:
         lines.append("- 未提供卷尺真值，只能评价波动，不能计算绝对测距误差。")
     else:
         lines.append(f"- 卷尺真值：{true_distance_m:.3f} m。")
@@ -251,15 +267,16 @@ def write_report(bag, ranges, identities, true_distance_m):
         lines.append(f"| {node_id} | {uwb_id} | {count} |")
 
     error_header = " | 相对真值误差(m)" if true_distance_m is not None else ""
-    lines.extend(
-        (
-            "",
-            "## 分方向测距统计",
-            "",
-            f"| 方向 | 样本数 | 接收频率(Hz) | 均值(m) | 中位数(m) | 总体标准差(m) | P05～P95(m) | 最小～最大(m) | 每分钟线性变化(m){error_header} |",
-            f"|---|---:|---:|---:|---:|---:|---:|---:|---:|{'---:|' if true_distance_m is not None else ''}",
+    lines.extend(("", "## 分方向测距统计", ""))
+    if not ranges:
+        lines.append("无测距样本，本节无可统计的方向。")
+    else:
+        lines.extend(
+            (
+                f"| 方向 | 样本数 | 接收频率(Hz) | 均值(m) | 中位数(m) | 总体标准差(m) | P05～P95(m) | 最小～最大(m) | 每分钟线性变化(m){error_header} |",
+                f"|---|---:|---:|---:|---:|---:|---:|---:|---:|{'---:|' if true_distance_m is not None else ''}",
+            )
         )
-    )
     for edge, item in stats.items():
         error_value = (
             f" | {item['mean'] - true_distance_m:+.4f}"
@@ -273,15 +290,16 @@ def write_report(bag, ranges, identities, true_distance_m):
             f"{item['slope_m_per_min']:+.4f}{error_value} |"
         )
 
-    lines.extend(
-        (
-            "",
-            "## 时间与连续性",
-            "",
-            "| 方向 | 接收跨度(s) | header跨度(s) | 时间尺度比 | 零时间戳 | 回退 | 重复 | 接收间隔>200ms |",
-            "|---|---:|---:|---:|---:|---:|---:|---:|",
+    lines.extend(("", "## 时间与连续性", ""))
+    if not ranges:
+        lines.append("无测距时间戳可检查。")
+    else:
+        lines.extend(
+            (
+                "| 方向 | 接收跨度(s) | header跨度(s) | 时间尺度比 | 零时间戳 | 回退 | 重复 | 接收间隔>200ms |",
+                "|---|---:|---:|---:|---:|---:|---:|---:|",
+            )
         )
-    )
     for edge, item in stats.items():
         lines.append(
             f"| {edge[0]}→{edge[1]} | {item['receive_span']:.6f} | "
@@ -297,7 +315,7 @@ def write_report(bag, ranges, identities, true_distance_m):
             "",
             "- `UWB测距数据.csv`：逐条测距、接收时间和消息时间，UTF-8 BOM，可直接用Excel打开。",
             "- `UWB节点身份数据.csv`：逐条车辆逻辑ID与UWB硬件ID。",
-            "- `UWB测距曲线与时间戳.png`：测距时序、距离分布和消息时间推进速度。",
+            "- `UWB测距曲线与时间戳.png`：仅在存在测距样本时生成。",
             "- 原始`.db3`和`metadata.yaml`未修改。",
             "",
         )
@@ -358,8 +376,9 @@ def export_bag(bag, true_distance_m):
     outputs = [
         *write_csv_files(bag, ranges, identities),
         write_report(bag, ranges, identities, true_distance_m),
-        write_plot(bag, ranges),
     ]
+    if ranges:
+        outputs.append(write_plot(bag, ranges))
     print(f"{bag}: {len(ranges)}条测距，{len(identities)}条身份")
     for output in outputs:
         print(f"  {output}")

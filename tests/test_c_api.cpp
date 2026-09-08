@@ -618,6 +618,39 @@ TEST_CASE(c_api_buffer_query_does_not_advance_engine_timebase) {
 }
 
 // 惯性集成组证明标准ROS字段可映射为普通C结构，核心库本身不链接ROS 2。
+TEST_CASE(c_api_static_imu_initialization_estimates_gravity_attitude_and_bias) {
+  std::array<zju_coop_static_imu_sample_t, 300U> samples{};
+  for (auto& sample : samples) {
+    EXPECT_EQ(zju_coop_static_imu_sample_init(&sample), ZJU_COOP_OK);
+    sample.angular_velocity_rad_s[0] = 0.001;
+    sample.angular_velocity_rad_s[1] = -0.002;
+    sample.angular_velocity_rad_s[2] = 0.003;
+    sample.specific_force_m_s2[2] = 9.80665;
+  }
+  zju_coop_static_imu_config_t config{};
+  EXPECT_EQ(zju_coop_static_imu_config_init(&config), ZJU_COOP_OK);
+  config.initial_yaw_rad = std::acos(-1.0) / 2.0;
+  zju_coop_static_imu_result_t result{};
+  EXPECT_EQ(zju_coop_static_imu_result_init(&result), ZJU_COOP_OK);
+
+  EXPECT_EQ(zju_coop_initialize_static_imu(
+                &config, samples.data(),
+                static_cast<std::uint32_t>(samples.size()), sizeof(samples[0]),
+                &result),
+            ZJU_COOP_OK);
+  EXPECT_EQ(result.disposition, ZJU_COOP_STATIC_IMU_READY);
+  EXPECT_EQ(result.sample_count, samples.size());
+  EXPECT_TRUE(std::abs(result.orientation_flu_to_enu_xyzw[0]) < 1.0e-12);
+  EXPECT_TRUE(std::abs(result.orientation_flu_to_enu_xyzw[1]) < 1.0e-12);
+  EXPECT_TRUE(std::abs(result.orientation_flu_to_enu_xyzw[2] -
+                       std::sqrt(0.5)) < 1.0e-12);
+  EXPECT_TRUE(std::abs(result.orientation_flu_to_enu_xyzw[3] -
+                       std::sqrt(0.5)) < 1.0e-12);
+  EXPECT_TRUE(std::abs(result.gyro_bias_flu_rad_s[0] - 0.001) < 1.0e-12);
+  EXPECT_TRUE(std::abs(result.gyro_bias_flu_rad_s[1] + 0.002) < 1.0e-12);
+  EXPECT_TRUE(std::abs(result.gyro_bias_flu_rad_s[2] - 0.003) < 1.0e-12);
+}
+
 TEST_CASE(c_api_configures_and_pushes_standard_imu_without_ros_dependency) {
   // engine：有效C句柄；nodes/index：三节点惯导初值及逐项编号索引；config：仅在配置调用期间借用节点数组。
   TestEngine engine;

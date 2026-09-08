@@ -21,6 +21,7 @@
 #include "core/distributed_fusion2d.hpp"
 #include "core/engine.hpp"
 #include "core/gnss_reference.hpp"
+#include "core/inertial_eskf15.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -909,6 +910,47 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_pose2d_snapshot_v2_init(
   return ZJU_COOP_OK;
 }
 
+zju_coop_error_code_t ZJU_COOP_CALL zju_coop_static_imu_sample_init(
+    zju_coop_static_imu_sample_t* value) {
+  if (value == nullptr) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+  *value = {};
+  value->struct_size = sizeof(*value);
+  value->abi_version = ZJU_COOP_ABI_VERSION_V1;
+  return ZJU_COOP_OK;
+}
+
+zju_coop_error_code_t ZJU_COOP_CALL zju_coop_static_imu_config_init(
+    zju_coop_static_imu_config_t* value) {
+  if (value == nullptr) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+  *value = {};
+  value->struct_size = sizeof(*value);
+  value->abi_version = ZJU_COOP_ABI_VERSION_V1;
+  value->minimum_sample_count = 200U;
+  value->gravity_mps2 = 9.80665;
+  value->max_mean_gyro_norm_rad_s = 0.1;
+  value->max_gyro_std_rad_s = 0.02;
+  value->max_accel_std_m_s2 = 0.2;
+  value->max_gravity_magnitude_error_m_s2 = 0.5;
+  return ZJU_COOP_OK;
+}
+
+zju_coop_error_code_t ZJU_COOP_CALL zju_coop_static_imu_result_init(
+    zju_coop_static_imu_result_t* value) {
+  if (value == nullptr) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+  *value = {};
+  value->struct_size = sizeof(*value);
+  value->abi_version = ZJU_COOP_ABI_VERSION_V1;
+  value->disposition = ZJU_COOP_STATIC_IMU_INVALID_INPUT;
+  value->orientation_flu_to_enu_xyzw[3] = 1.0;
+  return ZJU_COOP_OK;
+}
+
 zju_coop_error_code_t ZJU_COOP_CALL
 zju_coop_inertial_node_initialization_init(
     zju_coop_inertial_node_initialization_t* value) {
@@ -1431,6 +1473,117 @@ zju_coop_gnss_get_relative_truth(
       destination->struct_size = caller_size;
     }
     *truth_count = required;
+    return ZJU_COOP_OK;
+  } catch (...) {
+    return exception_code();
+  }
+}
+
+zju_coop_error_code_t ZJU_COOP_CALL zju_coop_initialize_static_imu(
+    const zju_coop_static_imu_config_t* config,
+    const zju_coop_static_imu_sample_t* samples, uint32_t sample_count,
+    uint32_t sample_stride, zju_coop_static_imu_result_t* result) {
+  const auto config_status = validate_header(config);
+  if (config_status != ZJU_COOP_OK) {
+    return config_status;
+  }
+  const auto result_status = validate_header(result);
+  if (result_status != ZJU_COOP_OK) {
+    return result_status;
+  }
+  if (config->reserved0 != 0U || config->minimum_sample_count < 2U ||
+      !is_finite_value(config->gravity_mps2) ||
+      !is_finite_value(config->initial_yaw_rad) ||
+      !is_finite_value(config->max_mean_gyro_norm_rad_s) ||
+      !is_finite_value(config->max_gyro_std_rad_s) ||
+      !is_finite_value(config->max_accel_std_m_s2) ||
+      !is_finite_value(config->max_gravity_magnitude_error_m_s2) ||
+      !valid_array_span<zju_coop_static_imu_sample_t>(
+          samples, sample_count, sample_stride)) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+
+  try {
+    zju::coop::StaticImuInitializationConfig converted_config{};
+    converted_config.minimum_sample_count = config->minimum_sample_count;
+    converted_config.gravity_mps2 = config->gravity_mps2;
+    converted_config.initial_yaw_rad = config->initial_yaw_rad;
+    converted_config.max_mean_gyro_norm_rad_s =
+        config->max_mean_gyro_norm_rad_s;
+    converted_config.max_gyro_std_rad_s = config->max_gyro_std_rad_s;
+    converted_config.max_accel_std_m_s2 = config->max_accel_std_m_s2;
+    converted_config.max_gravity_magnitude_error_m_s2 =
+        config->max_gravity_magnitude_error_m_s2;
+
+    std::vector<zju::coop::StaticImuSample> converted_samples;
+    converted_samples.reserve(sample_count);
+    for (std::uint32_t index = 0U; index < sample_count; ++index) {
+      const auto* sample = array_element<zju_coop_static_imu_sample_t>(
+          samples, index, sample_stride);
+      const auto sample_status = validate_header(sample);
+      if (sample_status != ZJU_COOP_OK) {
+        return sample_status;
+      }
+      if (sample->struct_size > sample_stride ||
+          !finite_array(sample->angular_velocity_rad_s) ||
+          !finite_array(sample->specific_force_m_s2)) {
+        return ZJU_COOP_INVALID_ARGUMENT;
+      }
+      converted_samples.push_back({
+          {sample->angular_velocity_rad_s[0],
+           sample->angular_velocity_rad_s[1],
+           sample->angular_velocity_rad_s[2]},
+          {sample->specific_force_m_s2[0], sample->specific_force_m_s2[1],
+           sample->specific_force_m_s2[2]}});
+    }
+
+    const auto initialized =
+        zju::coop::initialize_static_imu(converted_samples, converted_config);
+    zju_coop_static_imu_result_t converted_result{};
+    (void)zju_coop_static_imu_result_init(&converted_result);
+    switch (initialized.disposition) {
+      case zju::coop::StaticImuInitializationDisposition::kReady:
+        converted_result.disposition = ZJU_COOP_STATIC_IMU_READY;
+        break;
+      case zju::coop::StaticImuInitializationDisposition::kInsufficientSamples:
+        converted_result.disposition =
+            ZJU_COOP_STATIC_IMU_INSUFFICIENT_SAMPLES;
+        break;
+      case zju::coop::StaticImuInitializationDisposition::kInvalidInput:
+        converted_result.disposition = ZJU_COOP_STATIC_IMU_INVALID_INPUT;
+        break;
+      case zju::coop::StaticImuInitializationDisposition::kNotStationary:
+        converted_result.disposition = ZJU_COOP_STATIC_IMU_NOT_STATIONARY;
+        break;
+      case zju::coop::StaticImuInitializationDisposition::kNumericalFailure:
+        converted_result.disposition =
+            ZJU_COOP_STATIC_IMU_NUMERICAL_FAILURE;
+        break;
+    }
+    converted_result.sample_count = initialized.sample_count;
+    converted_result.orientation_flu_to_enu_xyzw[0] =
+        initialized.orientation_b_to_n.x;
+    converted_result.orientation_flu_to_enu_xyzw[1] =
+        initialized.orientation_b_to_n.y;
+    converted_result.orientation_flu_to_enu_xyzw[2] =
+        initialized.orientation_b_to_n.z;
+    converted_result.orientation_flu_to_enu_xyzw[3] =
+        initialized.orientation_b_to_n.w;
+    const zju::coop::Vec3 output_vectors[] = {
+        initialized.gyro_bias_rad_s, initialized.mean_specific_force_m_s2,
+        initialized.gyro_std_rad_s, initialized.accel_std_m_s2};
+    double* output_arrays[] = {
+        converted_result.gyro_bias_flu_rad_s,
+        converted_result.mean_specific_force_flu_m_s2,
+        converted_result.gyro_std_rad_s, converted_result.accel_std_m_s2};
+    for (std::size_t index = 0U; index < 4U; ++index) {
+      output_arrays[index][0] = output_vectors[index].x;
+      output_arrays[index][1] = output_vectors[index].y;
+      output_arrays[index][2] = output_vectors[index].z;
+    }
+    const std::uint32_t caller_size = result->struct_size;
+    *result = converted_result;
+    result->struct_size = caller_size;
     return ZJU_COOP_OK;
   } catch (...) {
     return exception_code();
