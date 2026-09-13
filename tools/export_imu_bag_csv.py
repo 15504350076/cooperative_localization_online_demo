@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Export a ROS 2 sensor_msgs/Imu bag to complete and human-sized CSV files."""
 
+# 流式解码并导出，不把整包装进内存；不估姿态、不补零偏、不转换消息单位。
 import argparse
 import csv
 import gzip
@@ -12,12 +13,14 @@ from rclpy.serialization import deserialize_message
 from sensor_msgs.msg import Imu
 
 
+# 主表顺序必须与main_row一致；四元数采用ROS的xyzw顺序。
 MAIN_FIELDS = (
     "index", "bag_receive_ns", "bag_elapsed_s", "header_sec", "header_nanosec",
     "header_elapsed_s", "header_dt_ms", "frame_id", "qx", "qy", "qz", "qw",
     "gyro_x_message_unit", "gyro_y_message_unit", "gyro_z_message_unit",
     "accel_x_message_unit", "accel_y_message_unit", "accel_z_message_unit",
 )
+# 三组3×3协方差各展开9列，完整CSV保留；抽样表省略它们以便阅读。
 COVARIANCE_FIELDS = tuple(
     f"{name}_{index}"
     for name in ("orientation_covariance", "gyro_covariance", "accel_covariance")
@@ -31,12 +34,15 @@ TIMING_FIELDS = (
 
 
 def stamp_ns(message):
+    # 整数时间用于精确差分，避免浮点绝对秒吞掉纳秒低位。
     return int(message.header.stamp.sec) * 1_000_000_000 + int(
         message.header.stamp.nanosec
     )
 
 
 def timing_event(delta_ns):
+    # 以1000Hz/1ms为基准分级，优先判回退和重复；每间隔只归一个类别。
+    # 不是1ms的间隔都会被列出，并非都属于故障（如时钟微调或其他采样率）。
     if delta_ns < 0:
         return "rollback"
     if delta_ns == 0:
@@ -51,6 +57,8 @@ def timing_event(delta_ns):
 
 
 def main_row(index, received_ns, first_received_ns, message, first_stamp_ns, previous_stamp_ns):
+    # 返回一条完整CSV行；首帧没有前帧，header_dt_ms留空。
+    # 两种elapsed各自减本包首值，仅用于看本包变化，不是跨盒同步时间。
     current_stamp_ns = stamp_ns(message)
     return (
         index,
@@ -78,6 +86,7 @@ def main_row(index, received_ns, first_received_ns, message, first_stamp_ns, pre
 
 
 def export_bag(bag, topic, stride):
+    # 单包导出：完整gzip CSV、抽样CSV、时间事件CSV、阅读说明。
     if not bag.is_dir() or not (bag / "metadata.yaml").is_file():
         raise ValueError(f"not a ROS 2 bag directory: {bag}")
 
@@ -99,11 +108,13 @@ def export_bag(bag, topic, stride):
     preview_path = bag / "imu_10hz.csv"
     timing_path = bag / "imu_timing_events.csv"
     readme_path = bag / "EXTRACTED_README.md"
+    # 先写临时文件，读完并关闭后逐个替换，避免读取失败时覆盖旧报告。
+    # 三次替换不是跨文件事务；不要并发导出同一个bag目录。
     temporary_paths = [Path(f"{path}.tmp") for path in (full_path, preview_path, timing_path)]
 
     event_counts = {}
     count = 0
-    first_received_ns = None
+    first_received_ns = None  # 用None区分尚未初始化与合法的零时间戳。
     first_stamp_ns = None
     previous_stamp_ns = None
     previous_stamp_parts = None
@@ -121,6 +132,7 @@ def export_bag(bag, topic, stride):
             preview_writer.writerow(MAIN_FIELDS)
             timing_writer.writerow(TIMING_FIELDS)
 
+            # 保留reader读取顺序，不按header排序；全部消息写入full_writer。
             while reader.has_next():
                 current_topic, serialized, received_ns = reader.read_next()
                 if current_topic != topic:
@@ -136,10 +148,12 @@ def export_bag(bag, topic, stride):
                     previous_stamp_ns,
                 )
                 full_writer.writerow(row)
+                # 只有预览表抽样；stride=100且原频率1000Hz时才约10Hz。
                 if count % stride == 0:
                     preview_writer.writerow(row[: len(MAIN_FIELDS)])
                     last_preview_index = count
 
+                # 异常表从全量帧计算，不从预览表计算，避免漏掉瞬间跳变。
                 if previous_stamp_ns is not None:
                     delta_ns = current_stamp_ns - previous_stamp_ns
                     event = timing_event(delta_ns)
@@ -169,12 +183,14 @@ def export_bag(bag, topic, stride):
 
             if count == 0:
                 raise ValueError(f"no messages on {topic}")
+            # 额外保存末帧，便于直观看首末跨度；避免末帧重复。
             if last_preview_index != count - 1:
                 preview_writer.writerow(last_row[: len(MAIN_FIELDS)])
 
         for temporary, final in zip(temporary_paths, (full_path, preview_path, timing_path)):
             temporary.replace(final)
     except Exception:
+        # 清理本次临时文件并向调用方抛错；不删除原始bag。
         for path in temporary_paths:
             path.unlink(missing_ok=True)
         raise
@@ -182,6 +198,7 @@ def export_bag(bag, topic, stride):
     event_summary = ", ".join(
         f"`{name}`={value}" for name, value in sorted(event_counts.items())
     ) or "无"
+    # 此说明还列举其他工具可生成的imu_analysis.txt/PNG，本脚本自身不生成它们。
     readme_path.write_text(
         "\n".join(
             (
@@ -214,6 +231,7 @@ def export_bag(bag, topic, stride):
 
 
 def main():
+    # 命令行支持多包与自定义抽样步长；抽样不影响原始包和完整CSV。
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("bags", nargs="+", type=Path)
     parser.add_argument("--topic", default="/imu/raw")
@@ -222,6 +240,7 @@ def main():
     if args.stride <= 0:
         parser.error("--stride must be positive")
 
+    # 四个轻量断言验证关键分类边界。
     assert timing_event(-1) == "rollback"
     assert timing_event(0) == "duplicate"
     assert timing_event(1_000_000) == ""

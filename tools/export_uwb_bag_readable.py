@@ -10,6 +10,7 @@
 标准差由包内distance样本离线计算（总体标准差，分母为N），不是消息字段。
 """
 
+# 标准库处理CSV/统计；ROS解析消息；matplotlib将结果保存为文件。
 import argparse
 import csv
 import math
@@ -20,7 +21,7 @@ import statistics
 
 import matplotlib
 
-matplotlib.use("Agg")
+matplotlib.use("Agg")  # 无窗口绘图后端，必须在导入pyplot之前设置。
 import matplotlib.pyplot as plt
 from matplotlib.font_manager import FontProperties
 import rosbag2_py
@@ -33,12 +34,14 @@ IDENTITY_TOPIC = "/node/id"
 
 
 def stamp_ns(message):
+    # header原始整秒和纳秒拼成整数，后续先相减再转浮点秒。
     return int(message.header.stamp.sec) * 1_000_000_000 + int(
         message.header.stamp.nanosec
     )
 
 
 def percentile(values, ratio):
+    # 对非空样本排序，在相邻秩之间线性插值；ratio=0.05/0.95得到P05/P95。
     ordered = sorted(values)
     position = (len(ordered) - 1) * ratio
     lower = int(position)
@@ -48,6 +51,8 @@ def percentile(values, ratio):
 
 
 def edge_stats(rows):
+    # 输入为同一有向边的非空消息列表，保留接收顺序，包含离群值。
+    # 1→2与2→1分开统计；不将双方消息交织后计算频率。
     distances = [row["distance_m"] for row in rows]
     receive = [row["receive_ns"] for row in rows]
     header = [row["header_ns"] for row in rows]
@@ -58,6 +63,7 @@ def edge_stats(rows):
     elapsed = [(value - receive[0]) / 1e9 for value in receive]
     mean_elapsed = statistics.fmean(elapsed)
     mean_distance = statistics.fmean(distances)
+    # 最小二乘拟合distance=a+b*接收相对时间；b是趋势，不是车辆速度真值。
     denominator = sum((value - mean_elapsed) ** 2 for value in elapsed)
     slope = (
         sum(
@@ -72,7 +78,7 @@ def edge_stats(rows):
         "count": len(rows),
         "mean": mean_distance,
         "median": statistics.median(distances),
-        "std": statistics.pstdev(distances),
+        "std": statistics.pstdev(distances),  # 分母N，统计波动；不表示绝对精度。
         "min": min(distances),
         "p05": percentile(distances, 0.05),
         "p95": percentile(distances, 0.95),
@@ -81,16 +87,18 @@ def edge_stats(rows):
         "receive_rate": (len(rows) - 1) / receive_span if receive_span else math.nan,
         "header_span": header_span,
         "header_rate": (len(rows) - 1) / header_span if header_span else math.nan,
+        # 跨度比≈1只能说明首末推进量相近，中途跳变仍可能相互抵消。
         "time_scale": receive_span / header_span if header_span else math.inf,
         "zero_stamp": sum(value == 0 for value in header),
         "rollback": sum(value < 0 for value in header_dt),
         "duplicate": sum(value == 0 for value in header_dt),
         "receive_gap_gt_200ms": sum(value > 0.2 for value in receive_dt),
-        "slope_m_per_min": slope * 60.0,
+        "slope_m_per_min": slope * 60.0,  # m/s换成m/min。
     }
 
 
 def read_bag(bag):
+    # 从metadata获取存储格式，再通过ROS消息类反序列化CDR；原始包只读。
     if not bag.is_dir() or not (bag / "metadata.yaml").is_file():
         raise ValueError(f"不是有效的ROS 2 bag目录：{bag}")
 
@@ -114,6 +122,7 @@ def read_bag(bag):
             "未加载cooperative_interfaces；请先source ROS 2及本仓库的上交适配overlay"
         ) from error
 
+    # 两类输出：每次测距及每次身份广播；身份广播不能代替真实测距。
     ranges = []
     identities = []
     while reader.has_next():
@@ -129,7 +138,7 @@ def read_bag(bag):
                     "header_sec": int(message.header.stamp.sec),
                     "header_nanosec": int(message.header.stamp.nanosec),
                     "frame_id": message.header.frame_id,
-                    "src_id": int(message.src_id),
+                    "src_id": int(message.src_id),  # 消息源ID，不是保存bag的盒号。
                     "target_id": int(message.target_id),
                     "distance_m": float(message.distance),
                 }
@@ -146,6 +155,8 @@ def read_bag(bag):
 
 
 def write_csv_files(bag, ranges, identities):
+    # 全量导出：序号从0开始，BOM便于Excel读中文；保留sec/nanosec原始整数。
+    # UTC文本仅是对接收时间的Unix解释，不验证盒子日历时钟是否正确。
     first_receive = (
         ranges[0]["receive_ns"]
         if ranges
@@ -153,6 +164,8 @@ def write_csv_files(bag, ranges, identities):
         if identities
         else 0
     )
+    # 接收相对时间共用本包首测距时刻；消息相对时间各方向独立置零。
+    # 因此消息相对时间适合看推进速度，不能证明跨方向绝对同步。
     first_header_by_edge = {}
     range_path = bag / "UWB测距数据.csv"
     with range_path.open("w", encoding="utf-8-sig", newline="") as stream:
@@ -193,6 +206,7 @@ def write_csv_files(bag, ranges, identities):
                 )
             )
 
+    # 身份表沿用相同接收原点；早于首测距的身份消息可能出现负相对时间。
     identity_path = bag / "UWB节点身份数据.csv"
     with identity_path.open("w", encoding="utf-8-sig", newline="") as stream:
         writer = csv.writer(stream)
@@ -211,10 +225,12 @@ def write_csv_files(bag, ranges, identities):
 
 
 def write_report(bag, ranges, identities, true_distance_m):
+    # 按有向边汇总报告；不做剔除、平滑或三角形求解。
     grouped = defaultdict(list)
     for row in ranges:
         grouped[(row["src_id"], row["target_id"])].append(row)
     stats = {edge: edge_stats(rows) for edge, rows in sorted(grouped.items())}
+    # 仅计非有限/非正距离；448米等正离群值不会计入invalid，需看范围和图。
     invalid = sum(
         not math.isfinite(row["distance_m"]) or row["distance_m"] <= 0.0
         for row in ranges
@@ -241,6 +257,7 @@ def write_report(bag, ranges, identities, true_distance_m):
         lines.append(
             "- 标准差由本文件全部距离样本离线计算，采用总体标准差（分母为N），不是ROS消息字段。"
         )
+    # ±2%为时间尺度提示阈值；依赖接收时钟，不能据此断言硬件时钟根因。
     scales = [item["time_scale"] for item in stats.values() if math.isfinite(item["time_scale"])]
     if scales and not all(0.98 <= value <= 1.02 for value in scales):
         lines.append(
@@ -266,6 +283,8 @@ def write_report(bag, ranges, identities, true_distance_m):
     for (node_id, uwb_id), count in sorted(identity_counts.items()):
         lines.append(f"| {node_id} | {uwb_id} | {count} |")
 
+    # 单一真值参数会用于全部边，适合单对测试；不适合三边真值各异的实验。
+    # 这里的误差=均值-真值，不是RMSE。
     error_header = " | 相对真值误差(m)" if true_distance_m is not None else ""
     lines.extend(("", "## 分方向测距统计", ""))
     if not ranges:
@@ -326,8 +345,10 @@ def write_report(bag, ranges, identities, true_distance_m):
 
 
 def write_plot(bag, ranges):
+    # 三幅图：全样本时序、分布直方图、header与接收时间推进。
     plt.rcParams["font.sans-serif"] = ["DejaVu Sans"]
     plt.rcParams["axes.unicode_minus"] = False
+    # 使用系统文泉驿微米黑文件；迁移电脑需安装fonts-wqy-microhei。
     chinese_font = FontProperties(
         fname="/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"
     )
@@ -339,9 +360,11 @@ def write_plot(bag, ranges):
     figure, axes = plt.subplots(3, 1, figsize=(13, 11))
     for edge, rows in sorted(grouped.items()):
         label = f"{chinese_number.get(edge[0], '未知')}至{chinese_number.get(edge[1], '未知')}"
+        # 图中每方向各自置零；与CSV共用接收原点的定义有区别。
         elapsed = [(row["receive_ns"] - rows[0]["receive_ns"]) / 1e9 for row in rows]
         header_elapsed = [(row["header_ns"] - rows[0]["header_ns"]) / 1e9 for row in rows]
         distances = [row["distance_m"] for row in rows]
+        # 不裁剪离群值；极端值可能压缩正常波动的显示范围。
         axes[0].plot(elapsed, distances, linewidth=0.7, alpha=0.8, label=label)
         axes[0].axhline(statistics.fmean(distances), linewidth=1.0, linestyle="--")
         axes[1].hist(distances, bins=30, alpha=0.45, label=label)
@@ -350,6 +373,7 @@ def write_plot(bag, ranges):
     receive_max = max(
         (row["receive_ns"] - ranges[0]["receive_ns"]) / 1e9 for row in ranges
     )
+    # y=x表示推进速度一致，因各自置零无法反映绝对时间起点偏差。
     axes[2].plot([0.0, receive_max], [0.0, receive_max], "k--", linewidth=1.0, label="理想一比一")
     axes[0].set_title("静态测距时序", fontproperties=chinese_font)
     axes[0].set_xlabel("实际接收相对时间（秒）", fontproperties=chinese_font)
@@ -372,6 +396,7 @@ def write_plot(bag, ranges):
 
 
 def export_bag(bag, true_distance_m):
+    # 单包总入口：读取一次，在同目录生成CSV、报告；非空测距才绘图。
     ranges, identities = read_bag(bag)
     outputs = [
         *write_csv_files(bag, ranges, identities),
@@ -385,6 +410,7 @@ def export_bag(bag, true_distance_m):
 
 
 def self_test():
+    # 确定性小样本检查均值、总体标准差和时间尺度比，不访问传感器。
     rows = [
         {"receive_ns": 0, "header_ns": 0, "distance_m": 1.0},
         {"receive_ns": 1_000_000_000, "header_ns": 1_000_000_000, "distance_m": 2.0},
@@ -399,6 +425,7 @@ def self_test():
 
 
 def main():
+    # 支持多个包依次导出，或--self-test仅检查统计公式。
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("bags", nargs="*", type=Path)
     parser.add_argument("--true-distance-m", type=float)

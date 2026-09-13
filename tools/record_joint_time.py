@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """电脑端一键录包（Python 3.9+）；只连接已启动传感器的盒子，不启动或停止驱动。"""
+# 本文件有采集和离线分析两条路径；ROS依赖放在analyze内部，Windows录包不需ROS。
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -12,19 +13,22 @@ import tarfile
 import time
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[1]  # tools上一级；不依赖启动命令所在目录。
 SSH = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8']
 ENV = 'source /opt/ros/humble/setup.bash\nsource /home/firefly/imu_ws/install/setup.bash\nexport ROS_DOMAIN_ID=107 RMW_IMPLEMENTATION=rmw_fastrtps_cpp\n'
 
 
 def seconds_text(ns):
+    # 整数纳秒格式化为sec.nanosec，固定9位小数，保留原始精度。
     seconds, nanos = divmod(ns, 10**9)
     return f'{seconds}.{nanos:09d}'
 
 
 def remote_command(bag, topics, duration):
     """独立进程组内有限时录制；SIGINT落盘后才压缩，断线仍有时间上限。"""
+    # IMU仅收本机，UWB允许共享DDS；这些设置不改变已启动驱动的环境。
     local = 1 if topics == ['/imu/raw'] else 0
+    # 引号保护远程路径；timeout的124表示到时结束，其他非零状态不压缩。
     return ENV + f'''export ROS_LOCALHOST_ONLY={local}
 test ! -e {shlex.quote(bag)} || exit 2
 mkdir -p /home/firefly/time_test
@@ -38,6 +42,7 @@ tar -C /home/firefly/time_test -czf {shlex.quote(bag + '.tar.gz')} {shlex.quote(
 
 
 def unpack(archive, destination):
+    # 解压前逐项检查目录边界及类型，拒绝路径穿越与符号链接。
     with tarfile.open(archive) as tar:
         for item in tar.getmembers():
             target = (destination / item.name).resolve()
@@ -47,6 +52,7 @@ def unpack(archive, destination):
 
 
 def analyze(directory):
+    # 离线入口：逐包、逐有向流统计header，输出JSON及Markdown，不连接SSH。
     # 复用ROS官方反序列化，电脑需source含cooperative_interfaces的工作空间。
     import rosbag2_py
     from rclpy.serialization import deserialize_message
@@ -55,9 +61,11 @@ def analyze(directory):
     for bag in sorted(directory.iterdir()):
         if not (bag / 'metadata.yaml').exists():
             continue
+        # 只处理直接子目录中的sqlite3包；保持读取顺序，不按header排序。
         reader = rosbag2_py.SequentialReader()
         reader.open(rosbag2_py.StorageOptions(uri=str(bag), storage_id='sqlite3'),
                     rosbag2_py.ConverterOptions('', ''))
+        # 从bag记录的类型名加载消息类，自定义接口必须已经构建并source。
         types = {t.name: get_message(t.type) for t in reader.get_all_topics_and_types()}
         streams = {}
         while reader.has_next():
@@ -65,11 +73,13 @@ def analyze(directory):
             if topic not in ('/imu/raw', '/uwb/range'):
                 continue
             msg = deserialize_message(data, types[topic])
+            # 一个包内的IMU为一条流；UWB拆成有向流，避免交错时间造成假回退。
             key = topic if topic == '/imu/raw' else f'/uwb/range {msg.src_id}→{msg.target_id}'
             stamp = msg.header.stamp.sec * 10**9 + msg.header.stamp.nanosec
+            # first只在首次出现时赋值；last随读取更新，均不是全局min/max。
             s = streams.setdefault(key, dict(count=0, first=stamp, last=stamp,
                                             zero=0, rollback=0, duplicate=0))
-            if s['count']:
+            if s['count']:  # 第一帧无前帧，不作回退/重复比较。
                 s['rollback'] += stamp < s['last']
                 s['duplicate'] += stamp == s['last']
             s['zero'] += stamp == 0
@@ -77,12 +87,15 @@ def analyze(directory):
             s['count'] += 1
         for key, s in streams.items():
             rows.append(dict(bag=bag.name, stream=key, **s))
+    # 数值JSON供后续处理，中文Markdown供人查看；同名派生报告会更新。
     (directory / '时间戳统计.json').write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding='utf-8')
     lines = ['# 联合时间初查', '', '本报告只检查消息时间范围及连续性，不证明传感器同步精度。', '',
              '| 包 / 数据流 | 数量 | 首消息时间(s) | 末消息时间(s) | 零值 / 回退 / 重复 |',
              '|---|---:|---:|---:|---:|']
     for r in rows:
         lines.append(f"| {r['bag']} / {r['stream']} | {r['count']} | {seconds_text(r['first'])} | {seconds_text(r['last'])} | {r['zero']} / {r['rollback']} / {r['duplicate']} |")
+    # 区间交集=最早结束-最晚开始，负值输出0；缺失流未参与，回退会削弱意义。
+    # 非零交集仅是必要初查，不是采样同步证明。
     overlap = (min(r['last'] for r in rows) - max(r['first'] for r in rows)) / 1e9 if rows else 0
     lines += ['', f'各已收到数据流的首末消息区间交集长度：{max(0, overlap):.6f} 秒。', '',
               '区间无交集：检查录制是否覆盖共同过程、各盒epoch及授时源。区间有交集：仍需核对动作事件及PPS诊断。',
@@ -94,6 +107,7 @@ def analyze(directory):
 
 
 def main():
+    # 参数调度：--analyze提前返回，下面的SSH、录包、下载完全不会执行。
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--boxes', nargs='+', default=['1=192.168.1.201', '2=192.168.1.202', '3=192.168.1.203'])
     parser.add_argument('--uwb-recorder', default='3', help='共享UWB录包盒号')
@@ -107,6 +121,7 @@ def main():
         return
     if not re.fullmatch(r'[A-Za-z0-9_-]+', args.run_id) or args.duration < 150:
         parser.error('实验编号只能用字母数字下划线横线；录制至少150秒')
+    # 采集路径：解析盒号与地址，校验重复及字符，避免远程命令歧义。
     boxes = {}
     for spec in args.boxes:
         if not re.fullmatch(r'[1-9][0-9]*=[A-Za-z0-9.]+', spec):
@@ -121,6 +136,7 @@ def main():
         parser.error(f'本轮至少录制{90 + 20 * len(boxes)}秒，给所有盒子的动作留出时间')
     directory = ROOT / 'data' / args.run_id
     directory.mkdir(parents=True, exist_ok=False)
+    # N个本机IMU包+1个共享UWB包；rec_v标记记录盒，不过滤UWB测距来源。
     jobs = [(v, ['/imu/raw'], f'{args.run_id}_imu_rec_v{v}') for v in boxes]
     jobs.append((args.uwb_recorder, ['/uwb/range', '/node/id'],
                  f'{args.run_id}_uwb_rec_v{args.uwb_recorder}'))
@@ -128,12 +144,14 @@ def main():
     (directory / '实验备注.txt').write_text('请填写实际动作、初始摆放、是否重启、异常情况。\n电脑动作口令采用单调计时，不是传感器时钟真值。\n', encoding='utf-8')
 
     def preflight(item):
+        # 只查SSH、timeout与驱动进程存在，不保证消息质量及驱动域号正确。
         vehicle, host = item
         command = ENV + "command -v timeout >/dev/null\npgrep -f '^/home/firefly/imu_ws/install/navcore/lib/navcore/navcore( |$)' >/dev/null && pgrep -f '^/home/firefly/imu_ws/install/gnss_uwb/lib/gnss_uwb/gnss_uwb( |$)' >/dev/null"
         subprocess.run(SSH + ['-T', f'{args.user}@{host}', 'bash -c ' + shlex.quote(command)],
                        check=True, timeout=20, stdin=subprocess.DEVNULL)
         print(f'盒{vehicle}：SSH和驱动进程检查完成', flush=True)
 
+    # 并行预检减少等待；每路采集独立启动，不提供硬件同时触发。
     with ThreadPoolExecutor(max_workers=len(boxes)) as pool:
         list(pool.map(preflight, boxes.items()))
     processes = []
@@ -146,11 +164,13 @@ def main():
                                     stdin=subprocess.PIPE, stdout=output, stderr=subprocess.STDOUT)
         processes.append((proc, logfile, vehicle, remote, topics))
     print('等待所有录包订阅就绪，暂时保持静止……', flush=True)
+    # 用单调钟控制等待和口令时间，不受电脑日历校时影响，也非传感器真值。
     deadline = time.monotonic() + 40
     ready = False
     while time.monotonic() < deadline:
         if any(p.poll() is not None for p, *_ in processes):
             break
+        # 订阅日志仅表示已建立订阅，不保证持续收到数据、三边齐全或时钟同步。
         ready = all(all(f"Subscribed to topic '{t}'" in log.read_text(encoding='utf-8', errors='replace') for t in topics)
                     for _, log, _, _, topics in processes)
         if ready:
@@ -169,6 +189,7 @@ def main():
             print(f'{at:3d}s：{instruction}', flush=True)
     else:
         print('40秒内未全部就绪，本轮只作诊断，不执行动作；等待有限时录包结束。', flush=True)
+    # 逐路等结束、下载并解压；失败记录到采集状态，远端数据仍保留。
     failures = []
     for proc, logfile, vehicle, remote, topics in processes:
         try:

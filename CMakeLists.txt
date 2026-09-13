@@ -285,7 +285,7 @@ install(FILES config/demo.ini config/range_only_demo.ini
 )
 install(FILES
     README.md
-    临时UDP演示协议_v1.md
+    33_临时UDP演示协议_v1.md
     DESTINATION ${CMAKE_INSTALL_DATADIR}/zju_coop
 )
 install(DIRECTORY docs/

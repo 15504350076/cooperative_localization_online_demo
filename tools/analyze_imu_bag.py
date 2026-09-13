@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Analyze timing, values, orientation and covariance in a ROS 2 IMU bag."""
 
+# 模块分工：命令行/路径校验 → ROS解码 → numpy全样本统计 → 标准输出报告。
+# 本程序不估计姿态、不补偿零偏、不转换单位；只检查上游消息已有数值。
 import argparse
 import math
 from pathlib import Path
@@ -13,15 +15,18 @@ from rosidl_runtime_py.utilities import get_message
 
 
 def _stamp_ns(stamp):
+    # sec和nanosec先按整数拼接，保留纳秒精度。
     return int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
 
 
 def _format_stamp(ns):
+    # divmod分别取整秒与余数，避免将绝对时间转成浮点后再格式化。
     seconds, nanoseconds = divmod(int(ns), 1_000_000_000)
     return f"{seconds}.{nanoseconds:09d}"
 
 
 def _print_vector_stats(name, values):
+    # values形状N×3；std默认ddof=0，即总体标准差，不是均值估计的不确定度。
     print(f"\n{name}（消息单位）")
     print("轴              mean            std            min            max")
     for axis, column in zip("xyz", values.T):
@@ -29,7 +34,7 @@ def _print_vector_stats(name, values):
             f"{axis:<2} {np.mean(column):>16.9f} {np.std(column):>14.9f}"
             f" {np.min(column):>14.9f} {np.max(column):>14.9f}"
         )
-    magnitudes = np.linalg.norm(values, axis=1)
+    magnitudes = np.linalg.norm(values, axis=1)  # 每帧sqrt(x²+y²+z²)，再统计模长。
     print(
         f"模长 mean={np.mean(magnitudes):.9f}, std={np.std(magnitudes):.9f}, "
         f"min={np.min(magnitudes):.9f}, max={np.max(magnitudes):.9f}"
@@ -37,6 +42,7 @@ def _print_vector_stats(name, values):
 
 
 def _print_time_anomalies(name, indices, sensor_ns, bag_ns, max_details):
+    # indices指向异常间隔的后一帧；帧号从0开始，便于与完整CSV对应。
     print(f"{name}: {len(indices)} 次")
     for index in indices[:max_details]:
         delta_ns = int(sensor_ns[index] - sensor_ns[index - 1])
@@ -51,6 +57,8 @@ def _print_time_anomalies(name, indices, sensor_ns, bag_ns, max_details):
 
 
 def _print_covariance(name, values, *, orientation=False):
+    # 每行9元素。全零表示未提供协方差信息，不能解释为传感器无误差。
+    # orientation[0]=-1表示未提供姿态估计；这里计数但不据此删原始姿态。
     finite = np.all(np.isfinite(values), axis=1)
     all_zero = np.all(values == 0.0, axis=1)
     unavailable = values[:, 0] == -1.0 if orientation else np.zeros(len(values), dtype=bool)
@@ -66,9 +74,11 @@ def _print_covariance(name, values, *, orientation=False):
 
 
 def analyze(bag_path, topic, max_details, orientation_jump_deg):
+    # 主流程：读取单包全部目标消息，打印统计；外部入口用tee保存报告。
     if not bag_path.is_dir() or not (bag_path / "metadata.yaml").is_file():
         raise ValueError(f"不是有效的ROS 2 bag目录: {bag_path}")
 
+    # 从metadata读取存储插件名；reader只读，不向数据库写入。
     metadata = rosbag2_py.Info().read_metadata(str(bag_path), "")
     reader = rosbag2_py.SequentialReader()
     reader.open(
@@ -80,6 +90,7 @@ def analyze(bag_path, topic, max_details, orientation_jump_deg):
         ),
     )
 
+    # 先确认类型，避免把同名但不同结构的消息当作IMU解码。
     topic_types = {item.name: item.type for item in reader.get_all_topics_and_types()}
     if topic not in topic_types:
         available = ", ".join(sorted(topic_types)) or "无"
@@ -90,6 +101,7 @@ def analyze(bag_path, topic, max_details, orientation_jump_deg):
         )
     message_type = get_message(topic_types[topic])
 
+    # 两套时间同时保留：bag为记录端接收时间，sensor为消息header时间。
     bag_ns = []
     sensor_ns = []
     angular_velocity = []
@@ -100,6 +112,7 @@ def analyze(bag_path, topic, max_details, orientation_jump_deg):
     linear_acceleration_covariance = []
     frame_ids = {}
 
+    # 按reader顺序保留全部帧，不按header重排、不降采样、不去异常。
     while reader.has_next():
         current_topic, serialized, received_ns = reader.read_next()
         if current_topic != topic:
@@ -117,6 +130,7 @@ def analyze(bag_path, topic, max_details, orientation_jump_deg):
                 message.linear_acceleration.z,
             )
         )
+        # ROS字段顺序为xyzw，单位四元数本身无量纲。
         orientation.append(
             (message.orientation.x, message.orientation.y, message.orientation.z, message.orientation.w)
         )
@@ -128,6 +142,7 @@ def analyze(bag_path, topic, max_details, orientation_jump_deg):
     if not bag_ns:
         raise ValueError(f"{topic} 没有消息")
 
+    # 时间用int64；测量用float64计算，但不会恢复上游float32已损失的精度。
     bag_ns = np.asarray(bag_ns, dtype=np.int64)
     sensor_ns = np.asarray(sensor_ns, dtype=np.int64)
     angular_velocity = np.asarray(angular_velocity, dtype=np.float64)
@@ -139,13 +154,16 @@ def analyze(bag_path, topic, max_details, orientation_jump_deg):
 
     count = len(bag_ns)
     bag_duration_ns = int(bag_ns[-1] - bag_ns[0]) if count > 1 else 0
+    # N帧对应N-1个时间间隔。接收频率不等同于硬件实际采样频率。
     bag_rate_hz = (count - 1) * 1e9 / bag_duration_ns if bag_duration_ns > 0 else math.nan
     valid_sensor = sensor_ns != 0
     sensor_deltas = np.diff(sensor_ns)
     positive_deltas = sensor_deltas[sensor_deltas > 0]
+    # 用正间隔中位数估计典型周期；负数和重复不参与周期估计。
     nominal_ns = int(np.median(positive_deltas)) if len(positive_deltas) else 0
-    rollback_indices = np.flatnonzero(sensor_deltas < 0) + 1
+    rollback_indices = np.flatnonzero(sensor_deltas < 0) + 1  # diff索引比后一帧小1。
     duplicate_indices = np.flatnonzero(sensor_deltas == 0) + 1
+    # 大跳门限为10倍典型周期与100ms中的较大值；小于门限不代表完全正常。
     jump_threshold_ns = max(10 * nominal_ns, 100_000_000) if nominal_ns else 100_000_000
     forward_jump_indices = np.flatnonzero(sensor_deltas > jump_threshold_ns) + 1
 
@@ -165,7 +183,7 @@ def analyze(bag_path, topic, max_details, orientation_jump_deg):
         print(f"header首末跨度: {(int(valid_values[-1]) - int(valid_values[0])) / 1e9:.9f}s")
     print(f"header标称间隔（正间隔中位数）: {nominal_ns / 1e6:.6f}ms")
     if np.all(valid_sensor):
-        delay_ms = (bag_ns - sensor_ns) / 1e6
+        delay_ms = (bag_ns - sensor_ns) / 1e6  # 含时钟偏移，未必是纯传输延迟。
         print(
             "bag接收时间-header时间: "
             f"min={np.min(delay_ms):.6f}ms, median={np.median(delay_ms):.6f}ms, "
@@ -186,17 +204,21 @@ def analyze(bag_path, topic, max_details, orientation_jump_deg):
     _print_vector_stats("角速度", angular_velocity)
     _print_vector_stats("线加速度", linear_acceleration)
 
+    # 姿态连续性：只比较原始相邻有效四元数，不跨越无效帧连接。
     norms = np.linalg.norm(orientation, axis=1)
     finite_quaternions = np.all(np.isfinite(orientation), axis=1) & (norms > 1e-12)
     pair_valid = finite_quaternions[:-1] & finite_quaternions[1:]
     steps_deg = np.full(max(count - 1, 0), np.nan)
     if np.any(pair_valid):
         normalized = orientation[finite_quaternions] / norms[finite_quaternions, None]
-        normalized_by_index = np.full_like(orientation, np.nan)
+        normalized_by_index = np.full_like(orientation, np.nan)  # 保持原帧索引。
         normalized_by_index[finite_quaternions] = normalized
+        # q与-q表示同一旋转；绝对内积排除等价变号产生的假突变。
         dots = np.abs(
             np.sum(normalized_by_index[:-1] * normalized_by_index[1:], axis=1)
         )
+        # 最短相对旋转角=2 acos(|q1·q2|)，clip抑制舍入越界；输出角度0～180°。
+        # 这是旋转角幅值，既非ZYX欧拉角差，也非除以dt后的角速度。
         steps_deg[pair_valid] = np.degrees(2.0 * np.arccos(np.clip(dots[pair_valid], 0.0, 1.0)))
 
     print("\n姿态四元数")
@@ -222,6 +244,7 @@ def analyze(bag_path, topic, max_details, orientation_jump_deg):
             )
         if len(jump_indices) > max_details:
             print(f"  ……另有 {len(jump_indices) - max_details} 条未显示")
+        # 多次突变分别在接收/header时间下求间隔，便于排查周期性重置。
         if len(jump_indices) > 1:
             bag_intervals = np.diff(bag_ns[jump_indices]).astype(np.float64) * 1.0e-9
             header_intervals = (
@@ -245,6 +268,7 @@ def analyze(bag_path, topic, max_details, orientation_jump_deg):
 
 
 def main():
+    # 命令行入口：阈值只控制报告列举，不改变原始数据或算法。
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("bag", type=Path, help="ROS 2 bag目录")
     parser.add_argument("--topic", default="/imu/raw", help="IMU Topic（默认：/imu/raw）")

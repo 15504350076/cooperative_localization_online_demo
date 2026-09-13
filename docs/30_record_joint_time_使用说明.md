@@ -1,4 +1,4 @@
-# record_joint_time.py 使用说明
+# 30 record_joint_time.py 使用说明
 
 适用于当前Python 3.9及以上版本脚本。上交Windows电脑的Python 3.9.7可运行录包控制，无需安装ROS或额外Python库。
 
@@ -201,7 +201,7 @@ python .\tools\record_joint_time.py --boxes 1=192.168.1.201 2=192.168.1.202 3=19
 
 ## 7. 在开发电脑分析
 
-完整准备和一条命令批量分析见：[联合录包离线分析操作步骤](联合录包离线分析操作步骤.md)。批量入口为 `bash tools/analyze_joint_recording.sh data/joint_time_实验编号`。
+完整准备和一条命令批量分析见：[联合录包离线分析操作步骤](31_联合录包离线分析操作步骤.md)。批量入口为 `bash tools/analyze_joint_recording.sh data/joint_time_实验编号`。
 
 录包控制与分析环境不同：Windows Python 3.9只负责控制和下载；分析在已安装ROS Humble及 `cooperative_interfaces` 的Linux开发电脑执行。不要在没有ROS的Windows里直接执行脚本最后打印的分析命令。
 
