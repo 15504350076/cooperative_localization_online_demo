@@ -1,15 +1,15 @@
 # 车辆唯一编号。
 uint32 node_id
 
-# 相对于参考车、沿 common_enu 东轴的位置，单位 m。
+# 相对于参考车的x位置，单位m；轴语义必须结合数组消息header.frame_id读取。
 float64 x_m
 
-# 相对于参考车、沿 common_enu 北轴的位置，单位 m。
+# 相对于参考车的y位置，单位m；纯UWB模式下不是东/北坐标。
 float64 y_m
 
 # 车辆自身 FLU 前向相对 common_enu 东轴的航向角，单位 rad，
 # 东向为 0、北向为 +pi/2，范围 [-pi, pi)；不是参考车到本车的方位角，
-# 也不是本车相对参考车车头的航向差。
+# 也不是本车相对参考车车头的航向差；纯UWB模式下yaw_valid恒为false。
 float64 yaw_rad
 
 # x_m、y_m 是否有效。整组统一算法时刻及参考车状态必须新鲜；

@@ -78,6 +78,38 @@ TEST_CASE(distributed_fusion_outputs_reference_relative_enu_pose_and_yaw) {
   EXPECT_TRUE(std::abs(pose(snapshot, 2U).yaw_rad - 0.5) < 1.0e-12);
 }
 
+TEST_CASE(distributed_fusion_gcs_xy_is_invariant_to_common_translation) {
+  DistributedFusion2D original(config());
+  DistributedFusion2D translated(config());
+  const std::uint64_t time = 1'000'000'000ULL;
+
+  (void)original.push_node_state(state(1U, time, 10.0, 20.0));
+  (void)original.push_node_state(state(2U, time, 13.0, 24.0));
+  (void)original.push_node_state(state(3U, time, 8.0, 21.0));
+  (void)translated.push_node_state(state(1U, time, 1010.0, -480.0));
+  (void)translated.push_node_state(state(2U, time, 1013.0, -476.0));
+  (void)translated.push_node_state(state(3U, time, 1008.0, -479.0));
+
+  for (auto* fusion : {&original, &translated}) {
+    EXPECT_EQ(fusion->push_range(range(1U, 2U, time, 5.0)).disposition,
+              zju::coop::UpdateDisposition::Accepted);
+    EXPECT_EQ(fusion->push_range(
+                  range(1U, 3U, time, std::sqrt(5.0))).disposition,
+              zju::coop::UpdateDisposition::Accepted);
+  }
+
+  const auto a = original.pose2d_snapshot(time + 2U);
+  const auto b = translated.pose2d_snapshot(time + 2U);
+  for (const auto node_id : {1U, 2U, 3U}) {
+    EXPECT_TRUE(pose(a, node_id).position_valid);
+    EXPECT_TRUE(pose(b, node_id).position_valid);
+    EXPECT_TRUE(std::abs(pose(a, node_id).x_m - pose(b, node_id).x_m) <
+                1.0e-12);
+    EXPECT_TRUE(std::abs(pose(a, node_id).y_m - pose(b, node_id).y_m) <
+                1.0e-12);
+  }
+}
+
 TEST_CASE(distributed_fusion_requires_a_fresh_accepted_range_path) {
   DistributedFusion2D fusion(config());
   const std::uint64_t first = 1'000'000'000ULL;

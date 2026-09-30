@@ -1,10 +1,22 @@
 /**/zju_cooperative_fusion_node:
   ros__parameters:
+    # Default deployment works with only three same-epoch UWB edges.
+    # Set imu_uwb only when all vehicles publish a common-horizontal-frame NodeState.
+    input_mode: uwb_only
     node_ids: [1, 2, 3]
     reference_node_id: 1
     common_enu_frame_id: common_enu
     publish_rate_hz: 10.0
     range_std_m: 0.1
+    minimum_triangle_height_m: 0.001
+    # Wait briefly for reciprocal measurements, then accept a single direction.
+    # An incomplete epoch is invalidated after the longer timeout.
+    uwb_epoch_wait_ms: 10
+    uwb_epoch_timeout_ms: 100
+    uwb_reciprocal_max_difference_m: 0.5
+    # A jump is accepted only when it fits tolerance + rate * elapsed_time.
+    uwb_maximum_range_rate_mps: 10.0
+    uwb_range_jump_tolerance_m: 0.5
     node_state_timeout_ms: 300
     # Data-age rejection guards, not UWB synchronization-accuracy targets.
     max_future_skew_ms: 100

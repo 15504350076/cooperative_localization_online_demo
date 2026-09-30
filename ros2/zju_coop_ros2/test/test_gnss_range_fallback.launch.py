@@ -70,6 +70,7 @@ class TestGnssRangeFallback(unittest.TestCase):
                 "header": "std_msgs/Header",
                 "src_id": "uint32",
                 "target_id": "uint32",
+                "rolling": "uint16",
                 "distance": "float",
             },
         )

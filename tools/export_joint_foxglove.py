@@ -11,6 +11,7 @@ import json
 import math
 from pathlib import Path
 import re
+import struct
 
 
 def schema(value):
@@ -46,6 +47,7 @@ def diagnostics(message, receive_ns, previous):
     header_ns = stamp["sec"] * 10**9 + stamp["nanosec"]
     result = {
         "receive_ns": str(receive_ns), "header_ns": str(header_ns),
+        "header_time_s": header_ns / 1e9,
         "receive_minus_header_s": (receive_ns - header_ns) / 1e9,
         "header_dt_ms": None, "receive_dt_ms": None,
         "attitude_step_deg": None,
@@ -96,15 +98,47 @@ def layout(imu_topics, range_topics):
         return [(f"{t}.{field}", f"{src}→{dst}（录包盒{rec}）")
                 for (rec, src, dst), t in sorted(range_topics.items())]
 
+    def all_series(field):
+        return imu_series(field) + uwb_series(field)
+
+    def same_box_series(box, field):
+        series = [(f"{imu_topics[box]}.{field}", f"盒{box} IMU")]
+        series.extend((f"{topic}.{field}", f"盒{box} UWB {src}→{dst}")
+                      for (_, src, dst), topic in sorted(range_topics.items())
+                      if src == int(box))
+        return series
+
     overview = [
         plot("六向 UWB 测距（m）", uwb_series("distance")),
         plot("IMU 消息时间间隔（ms）：负值为回退", imu_series("analysis.header_dt_ms")),
         plot("相邻四元数旋转角（°）：已排除 q/-q 变号", imu_series("analysis.attitude_step_deg")),
         plot("IMU 录得接收间隔（ms）：不等于硬件采样周期", imu_series("analysis.receive_dt_ms")),
         plot("UWB 相邻消息自带时刻之差 ΔH（ms，同录包盒/同方向）", uwb_series("analysis.header_dt_ms")),
-        plot("UWB 录包时刻R − 消息自带时刻H（s，非纯延迟）", uwb_series("analysis.receive_minus_header_s")),
+        plot("IMU/UWB 录包时刻R − 消息自带时刻H（s，非纯延迟）",
+             all_series("analysis.receive_minus_header_s")),
     ]
     tabs = [{"title": "异常总览", "layout": grid(overview)}]
+    time_panels = [
+        plot("① IMU/UWB 的 R−H（s）：同图只作时间基准检查，非纯延迟",
+             all_series("analysis.receive_minus_header_s")),
+        plot("② IMU/UWB完整测量时间 H（s）：sec+nanosec，异常纪元会形成尖峰",
+             all_series("analysis.header_time_s")),
+        plot("③ 三盒IMU相邻H之差 ΔH（ms；负值为回退）", imu_series("analysis.header_dt_ms")),
+        plot("④ 六向UWB相邻H之差 ΔH（ms；负值为回退）", uwb_series("analysis.header_dt_ms")),
+        plot("⑤ 三盒IMU相邻录包时刻之差 ΔR（ms）", imu_series("analysis.receive_dt_ms")),
+        plot("⑥ 六向UWB相邻录包时刻之差 ΔR（ms）", uwb_series("analysis.receive_dt_ms")),
+    ]
+    tabs.append({"title": "IMU与UWB时间戳对比", "layout": grid(time_panels)})
+    if len(imu_topics) == 3:
+        same_box_panels = []
+        for box in sorted(imu_topics):
+            same_box_panels.extend([
+                plot(f"盒{box}：IMU与本盒发出UWB的完整测量时间H（s）",
+                     same_box_series(box, "analysis.header_time_s")),
+                plot(f"盒{box}：IMU与本盒发出UWB的相邻测量时间差ΔH（ms）",
+                     same_box_series(box, "analysis.header_dt_ms")),
+            ])
+        tabs.append({"title": "同盒IMU与UWB时间戳", "layout": grid(same_box_panels)})
     # 页面按任务组织，不由消息类型决定；六向测距叠在一起便于比较三盒。
     if range_topics:
         panels = [
@@ -124,7 +158,8 @@ def layout(imu_topics, range_topics):
             plot(f"盒{box} 加速度（m/s²）", [(f"{topic}.linear_acceleration.{k}", k) for k in "xyz"]),
             plot(f"盒{box} 原始四元数（无量纲，未做坐标变换）",
                  [(f"{topic}.orientation.{k}", k) for k in "xyzw"]),
-            plot(f"盒{box} 相邻姿态变化（°）", [(f"{topic}.analysis.attitude_step_deg", "最短旋转角")]),
+            plot(f"盒{box} 原始消息时间戳 H（sec / nanosec）", [(f"{topic}.header.stamp.sec", "H.sec"),
+                 (f"{topic}.header.stamp.nanosec", "H.nanosec（须与sec合看）")]),
             plot(f"盒{box} 消息/接收间隔（ms）", [(f"{topic}.analysis.{k}_dt_ms", k) for k in ("header", "receive")]),
             plot(f"盒{box} 接收减消息时间（s）", [(f"{topic}.analysis.receive_minus_header_s", "receive - header")]),
         ]
@@ -175,6 +210,20 @@ def export(directory):
                 if topic not in ("/imu/raw", "/uwb/range", "/node/id"):
                     continue
                 message = message_to_ordereddict(deserialize_message(raw, types[topic]))
+                # 44字节定义中rolling只作为结构占位跳过，不参与任何时间分析；
+                # 必须知道它和2字节CDR对齐，才能从末尾正确读取distance。
+                if topic == "/uwb/range" and len(raw) == 44:
+                    endian = "<" if raw[1] == 1 else ">"
+                    rolling = struct.unpack_from(endian + "H", raw, 36)[0]
+                    distance = struct.unpack_from(endian + "f", raw, 40)[0]
+                    message["wire_layout"] = {
+                        "cdr_size_bytes": 44,
+                        "alignment_padding_hex": raw[38:40].hex(),
+                        "distance_redecoded_m": distance,
+                        "definition": "Header,uint32 src_id,uint32 target_id,uint16 rolling,float32 distance",
+                    }
+                    message["rolling"] = rolling
+                    message["distance"] = distance
                 if topic == "/imu/raw":
                     target = f"/box{recorder}/imu_raw"
                     imu_topics[recorder] = target
@@ -231,6 +280,7 @@ def self_check():
     c, _ = diagnostics(msg(99, 2_000_000, [1, 0, 0, 0]), 100_002_000_000, prev)
     assert c["attitude_step_deg"] == 180 and c["header_dt_ms"] == -999
     assert c["receive_dt_ms"] == 1
+    assert math.isclose(c["header_time_s"], 99.002)
     # 例：设备报100ms间隔，录包记录105ms间隔；R-H增加5ms，不代表时钟差5ms。
     _, previous = diagnostics(msg(100, 0, [0, 0, 0, 1]), 200_000_000_000, None)
     timing, _ = diagnostics(msg(100, 100_000_000, [0, 0, 0, 1]), 200_105_000_000, previous)
@@ -239,11 +289,18 @@ def self_check():
     assert finite_json({"x": [math.nan, math.inf]}) == {"x": [None, None]}
     config = layout({"1": "/box1/imu_raw"}, {("3", 1, 2): "/recorder3/uwb/1_to_2"})
     tabs = config["configById"]["Tab!joint"]["tabs"]
-    assert [t["title"] for t in tabs] == ["异常总览", "三盒 UWB 测距与时间", "盒1 IMU 原始量"]
-    assert len(config["configById"]) == 19  # 三页各六个 Plot，加一个 Tab。
-    uwb_plots = list(config["configById"].values())[6:12]
+    assert [t["title"] for t in tabs] == ["异常总览", "IMU与UWB时间戳对比",
+                                           "三盒 UWB 测距与时间", "盒1 IMU 原始量"]
+    assert len(config["configById"]) == 25  # 四页各六个 Plot，加一个 Tab。
+    uwb_plots = list(config["configById"].values())[12:18]
     assert all(p["foxglovePanelTitle"].startswith(label) for label, p in zip("①②③④⑤⑥", uwb_plots))
     assert all(path["timestampMethod"] == "receiveTime" for p in uwb_plots for path in p["paths"])
+    three_boxes = layout({str(i): f"/box{i}/imu_raw" for i in (1, 2, 3)},
+                         {("3", s, d): f"/recorder3/uwb/{s}_to_{d}"
+                          for s, d in ((1, 2), (1, 3), (2, 1), (2, 3), (3, 1), (3, 2))})
+    three_tabs = three_boxes["configById"]["Tab!joint"]["tabs"]
+    assert "同盒IMU与UWB时间戳" in [tab["title"] for tab in three_tabs]
+    assert len(three_boxes["configById"]) == 43  # 六页共42个Plot，加一个Tab。
     print("自检通过：四元数等价变号/180°差分/时间回退/非有限值")
 
 

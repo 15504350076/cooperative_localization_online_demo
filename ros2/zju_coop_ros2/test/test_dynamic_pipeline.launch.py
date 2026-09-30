@@ -121,6 +121,7 @@ def generate_test_description():
         name="zju_dynamic_cooperative_fusion_node",
         output="screen",
         parameters=[{
+            "input_mode": "imu_uwb",
             "node_ids": list(NODE_IDS),
             "reference_node_id": 1,
             "publish_rate_hz": 10.0,

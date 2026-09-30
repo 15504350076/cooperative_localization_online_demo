@@ -15,7 +15,9 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
 #include <limits>
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -64,11 +66,25 @@ class CooperativeFusionNode final : public rclcpp::Node {
         declare_parameter<std::vector<std::int64_t>>("node_ids", {1, 2, 3});
     const auto configured_reference =
         declare_parameter<std::int64_t>("reference_node_id", 1);
+    input_mode_ = declare_parameter<std::string>("input_mode", "uwb_only");
+    uwb_only_ = input_mode_ == "uwb_only";
     const double publish_rate_hz =
         declare_parameter<double>("publish_rate_hz", 10.0);
     const bool enable_follower_feedback =
         declare_parameter<bool>("enable_follower_feedback", false);
     range_std_m_ = declare_parameter<double>("range_std_m", 0.10);
+    minimum_triangle_height_m_ =
+        declare_parameter<double>("minimum_triangle_height_m", 1.0e-3);
+    const auto uwb_epoch_wait_ms =
+        declare_parameter<std::int64_t>("uwb_epoch_wait_ms", 10);
+    const auto uwb_epoch_timeout_ms =
+        declare_parameter<std::int64_t>("uwb_epoch_timeout_ms", 100);
+    uwb_reciprocal_max_difference_m_ = declare_parameter<double>(
+        "uwb_reciprocal_max_difference_m", 0.5);
+    uwb_maximum_range_rate_mps_ =
+        declare_parameter<double>("uwb_maximum_range_rate_mps", 10.0);
+    uwb_range_jump_tolerance_m_ =
+        declare_parameter<double>("uwb_range_jump_tolerance_m", 0.5);
     const auto timeout_ms =
         declare_parameter<std::int64_t>("node_state_timeout_ms", 300);
     // 数据包时效门限只用于拒绝异常时间戳，不是 UWB 授时精度指标。
@@ -81,10 +97,24 @@ class CooperativeFusionNode final : public rclcpp::Node {
     use_sim_time_ = get_parameter("use_sim_time").as_bool();
 
     // 启动时严格校验，避免编号截断、零噪声或毫秒转纳秒溢出进入 SDK。
-    if (configured_ids.size() < 2U || configured_reference <= 0 ||
+    if ((input_mode_ != "uwb_only" && input_mode_ != "imu_uwb") ||
+        configured_ids.size() < 2U ||
+        (uwb_only_ && configured_ids.size() != 3U) ||
+        configured_reference <= 0 ||
         configured_reference > std::numeric_limits<std::uint16_t>::max() ||
         !std::isfinite(publish_rate_hz) || publish_rate_hz <= 0.0 ||
         !std::isfinite(range_std_m_) || range_std_m_ <= 0.0 ||
+        !std::isfinite(minimum_triangle_height_m_) ||
+        minimum_triangle_height_m_ <= 0.0 ||
+        uwb_epoch_wait_ms < 0 || uwb_epoch_timeout_ms <= uwb_epoch_wait_ms ||
+        static_cast<std::uint64_t>(uwb_epoch_timeout_ms) >
+            kMaximumMilliseconds ||
+        !std::isfinite(uwb_reciprocal_max_difference_m_) ||
+        uwb_reciprocal_max_difference_m_ < 0.0 ||
+        !std::isfinite(uwb_maximum_range_rate_mps_) ||
+        uwb_maximum_range_rate_mps_ <= 0.0 ||
+        !std::isfinite(uwb_range_jump_tolerance_m_) ||
+        uwb_range_jump_tolerance_m_ < 0.0 ||
         timeout_ms <= 0 ||
         static_cast<std::uint64_t>(timeout_ms) > kMaximumMilliseconds ||
         max_future_skew_ms <= 0 ||
@@ -121,25 +151,45 @@ class CooperativeFusionNode final : public rclcpp::Node {
       throw std::invalid_argument("reference_node_id is absent from node_ids");
     }
 
+    if (uwb_only_) {
+      canonical_node_ids_[0] = reference_node_id_;
+      std::vector<std::uint32_t> other_ids;
+      for (const auto node_id : node_ids_) {
+        if (node_id != reference_node_id_) {
+          other_ids.push_back(node_id);
+        }
+      }
+      std::sort(other_ids.begin(), other_ids.end());
+      canonical_node_ids_[1] = other_ids[0];
+      canonical_node_ids_[2] = other_ids[1];
+    }
+
     // 创建参考车上的分布式修正器。max_prediction_step_s 限制一次外推跨度，
     // edge_timeout_ns 决定一条测距边多久后不再支撑 position_valid。
-    zju_coop_config_t config{};
-    require_ok(zju_coop_config_init(&config), "zju_coop_config_init");
-    config.reference_node_id = reference_node_id_;
-    config.nodes = nodes.data();
-    config.node_count = static_cast<std::uint32_t>(nodes.size());
-    config.max_prediction_step_s = 0.10;
-    config.edge_timeout_ns = static_cast<std::uint64_t>(timeout_ms) *
-                             kNanosecondsPerMillisecond;
     max_future_skew_ns_ = static_cast<std::uint64_t>(max_future_skew_ms) *
                           kNanosecondsPerMillisecond;
     max_receive_delay_ns_ =
         static_cast<std::uint64_t>(max_receive_delay_ms) *
         kNanosecondsPerMillisecond;
-    config.max_future_skew_ns = max_future_skew_ns_;
-    config.max_receive_delay_ns = max_receive_delay_ns_;
-    require_ok(zju_coop_distributed_create(&config, &handle_),
-               "zju_coop_distributed_create");
+    uwb_epoch_wait_ns_ = static_cast<std::uint64_t>(uwb_epoch_wait_ms) *
+                         kNanosecondsPerMillisecond;
+    uwb_epoch_timeout_ns_ =
+        static_cast<std::uint64_t>(uwb_epoch_timeout_ms) *
+        kNanosecondsPerMillisecond;
+    if (!uwb_only_) {
+      zju_coop_config_t config{};
+      require_ok(zju_coop_config_init(&config), "zju_coop_config_init");
+      config.reference_node_id = reference_node_id_;
+      config.nodes = nodes.data();
+      config.node_count = static_cast<std::uint32_t>(nodes.size());
+      config.max_prediction_step_s = 0.10;
+      config.edge_timeout_ns = static_cast<std::uint64_t>(timeout_ms) *
+                               kNanosecondsPerMillisecond;
+      config.max_future_skew_ns = max_future_skew_ns_;
+      config.max_receive_delay_ns = max_receive_delay_ns_;
+      require_ok(zju_coop_distributed_create(&config, &handle_),
+                 "zju_coop_distributed_create");
+    }
 
     // poses_2d 面向参考车本地规划/控制；feedback_poses_2d 是参数控制的同内容反馈口。
     // NodeState/UWB 使用 best-effort 以优先实时性，融合结果使用 reliable。
@@ -152,28 +202,39 @@ class CooperativeFusionNode final : public rclcpp::Node {
           "feedback_poses_2d",
           rclcpp::QoS(1).reliable().durability_volatile());
     }
-    node_state_subscription_ = create_subscription<
-        cooperative_localization_msgs::msg::NodeState>(
-        "node_state", rclcpp::QoS(5).best_effort().durability_volatile(),
-        [this](cooperative_localization_msgs::msg::NodeState::ConstSharedPtr message) {
-          on_node_state(*message);
-        });
+    if (!uwb_only_) {
+      node_state_subscription_ = create_subscription<
+          cooperative_localization_msgs::msg::NodeState>(
+          "node_state", rclcpp::QoS(5).best_effort().durability_volatile(),
+          [this](cooperative_localization_msgs::msg::NodeState::ConstSharedPtr message) {
+            on_node_state(*message);
+          });
+    }
     uwb_subscription_ = create_subscription<cooperative_interfaces::msg::UwbRange>(
         "uwb_range", rclcpp::QoS(20).best_effort().durability_volatile(),
         [this](cooperative_interfaces::msg::UwbRange::ConstSharedPtr message) {
           on_uwb_range(*message);
         });
-    const auto period = std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::duration<double>(1.0 / publish_rate_hz));
-    publish_timer_ = create_wall_timer(period, [this]() { publish_pose(); });
+    if (uwb_only_) {
+      const auto timer_ms = std::max<std::int64_t>(
+          1, std::min<std::int64_t>(10, (uwb_epoch_wait_ms + 1) / 2));
+      uwb_epoch_timer_ = create_wall_timer(
+          std::chrono::milliseconds(timer_ms),
+          [this]() { process_uwb_epochs(steady_time_ns()); });
+    } else {
+      const auto period = std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::duration<double>(1.0 / publish_rate_hz));
+      publish_timer_ = create_wall_timer(period, [this]() { publish_pose(); });
+    }
 
     RCLCPP_INFO(get_logger(),
-                "distributed fusion ready: %zu nodes, reference=%u, "
+                "cooperative output ready: mode=%s, %zu nodes, reference=%u, "
                 "time_source=%s; timestamp guards future=%lld ms, "
                 "receive-delay=%lld ms (data rejection, not sync accuracy)",
-                node_ids_.size(), reference_node_id_,
-                use_sim_time_ ? "ROS simulation clock"
-                              : "reference NodeState UWB clock",
+                input_mode_.c_str(), node_ids_.size(), reference_node_id_,
+                uwb_only_ ? "UWB message header"
+                          : (use_sim_time_ ? "ROS simulation clock"
+                                           : "reference NodeState UWB clock"),
                 static_cast<long long>(max_future_skew_ms),
                 static_cast<long long>(max_receive_delay_ms));
   }
@@ -185,6 +246,12 @@ class CooperativeFusionNode final : public rclcpp::Node {
   }
 
  private:
+  struct UwbEpoch {
+    std::array<std::array<double, 2>, 3> distance_m{};
+    std::array<std::array<bool, 2>, 3> present{};
+    std::uint64_t first_receive_steady_ns{};
+  };
+
   // 返回当前统一算法时刻。实盒由参考车 NodeState 的 UWB 时间锚点外推，
   // Gazebo 则直接使用 /clock；锚点尚未建立时返回 0，暂停 UWB处理和输出。
   std::uint64_t current_time_ns(std::uint64_t steady_now_ns) const {
@@ -285,7 +352,212 @@ class CooperativeFusionNode final : public rclcpp::Node {
     }
   }
 
-  // 接收上交盒端正式 UwbRange。正式消息只携带距离，因此测距标准差取配置值。
+  // 返回规范节点顺序中的无向边编号：01、02、12；3表示不是本次三车边。
+  std::size_t canonical_edge_index(std::uint32_t first,
+                                   std::uint32_t second) const {
+    if (first > second) {
+      std::swap(first, second);
+    }
+    for (std::size_t index = 0U; index < 3U; ++index) {
+      auto left = canonical_node_ids_[index == 2U ? 1U : 0U];
+      auto right = canonical_node_ids_[index == 0U ? 1U : 2U];
+      if (left > right) {
+        std::swap(left, right);
+      }
+      if (first == left && second == right) {
+        return index;
+      }
+    }
+    return 3U;
+  }
+
+  void publish_uwb_formation(std::uint64_t measurement_time,
+                             bool solved) {
+    cooperative_localization_msgs::msg::CooperativePose2DArray output;
+    output.header.stamp = rclcpp::Time(
+        static_cast<std::int64_t>(measurement_time), RCL_ROS_TIME);
+    output.header.frame_id =
+        "coop_ref_" + std::to_string(reference_node_id_) + "_relative";
+    output.reference_node_id = reference_node_id_;
+    output.vehicles.reserve(3U);
+    for (std::size_t index = 0U; index < 3U; ++index) {
+      cooperative_localization_msgs::msg::VehiclePose2D pose;
+      pose.node_id = canonical_node_ids_[index];
+      pose.x_m = latest_uwb_x_m_[index];
+      pose.y_m = latest_uwb_y_m_[index];
+      pose.yaw_rad = 0.0;
+      pose.position_valid = solved;
+      pose.yaw_valid = false;
+      output.vehicles.push_back(pose);
+    }
+    pose_publisher_->publish(output);
+    if (feedback_publisher_ != nullptr) {
+      feedback_publisher_->publish(output);
+    }
+    last_uwb_output_timestamp_ns_ = measurement_time;
+  }
+
+  bool uwb_epoch_has_all_edges(const UwbEpoch& epoch) const {
+    return std::all_of(
+        epoch.present.begin(), epoch.present.end(),
+        [](const auto& directions) { return directions[0] || directions[1]; });
+  }
+
+  bool uwb_epoch_has_all_reciprocals(const UwbEpoch& epoch) const {
+    return std::all_of(
+        epoch.present.begin(), epoch.present.end(),
+        [](const auto& directions) { return directions[0] && directions[1]; });
+  }
+
+  // 收齐同一header.stamp的三条无向边后，优先等待双向值并取均值；若只有
+  // 单向值则在短等待窗结束后继续。缺边超时、双向差过大或距离突变都发布
+  // position_valid=false，而不是把上一帧伪装成新的有效定位。
+  void solve_uwb_epoch(std::uint64_t measurement_time,
+                       const UwbEpoch& epoch) {
+    if (!uwb_epoch_has_all_edges(epoch)) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                           "dropping UWB-only epoch with a missing edge");
+      return;
+    }
+
+    std::array<double, 3> distance_m{};
+    bool measurements_valid = true;
+    for (std::size_t edge = 0U; edge < distance_m.size(); ++edge) {
+      const bool forward = epoch.present[edge][0];
+      const bool reverse = epoch.present[edge][1];
+      if (forward && reverse) {
+        const double difference = std::abs(
+            epoch.distance_m[edge][0] - epoch.distance_m[edge][1]);
+        if (difference > uwb_reciprocal_max_difference_m_) {
+          measurements_valid = false;
+        }
+        distance_m[edge] =
+            0.5 * (epoch.distance_m[edge][0] + epoch.distance_m[edge][1]);
+      } else {
+        distance_m[edge] = epoch.distance_m[edge][forward ? 0U : 1U];
+      }
+
+      if (last_accepted_uwb_timestamp_ns_[edge] != 0U &&
+          measurement_time > last_accepted_uwb_timestamp_ns_[edge]) {
+        const double elapsed_s = static_cast<double>(
+            measurement_time - last_accepted_uwb_timestamp_ns_[edge]) /
+            static_cast<double>(kNanosecondsPerSecond);
+        const double maximum_jump = uwb_range_jump_tolerance_m_ +
+                                    uwb_maximum_range_rate_mps_ * elapsed_s;
+        if (std::abs(distance_m[edge] - last_accepted_uwb_distance_m_[edge]) >
+            maximum_jump) {
+          measurements_valid = false;
+        }
+      }
+    }
+
+    zju_coop_three_node_ranges_t ranges{};
+    zju_coop_three_node_formation_t formation{};
+    if (zju_coop_three_node_ranges_init(&ranges) != ZJU_COOP_OK ||
+        zju_coop_three_node_formation_init(&formation) != ZJU_COOP_OK) {
+      return;
+    }
+    std::copy(canonical_node_ids_.begin(), canonical_node_ids_.end(),
+              ranges.node_ids);
+    ranges.range_01_m = distance_m[0];
+    ranges.range_02_m = distance_m[1];
+    ranges.range_12_m = distance_m[2];
+    ranges.minimum_height_m = minimum_triangle_height_m_;
+    const auto code = measurements_valid
+                          ? zju_coop_solve_three_node_formation(&ranges,
+                                                                &formation)
+                          : ZJU_COOP_OK;
+    if (code != ZJU_COOP_OK) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                           "UWB-only formation call failed: %s",
+                           zju_coop_error_string(code));
+      return;
+    }
+
+    const bool solved = measurements_valid &&
+                        formation.disposition == ZJU_COOP_FORMATION_SOLVED;
+    if (solved) {
+      for (std::size_t index = 0U; index < 3U; ++index) {
+        latest_uwb_x_m_[index] = formation.x_m[index];
+        latest_uwb_y_m_[index] = formation.y_m[index];
+      }
+      last_accepted_uwb_distance_m_ = distance_m;
+      last_accepted_uwb_timestamp_ns_.fill(measurement_time);
+    } else {
+      RCLCPP_WARN_THROTTLE(
+          get_logger(), *get_clock(), 2000,
+          "UWB-only epoch rejected (measurement_consistency=%s, "
+          "formation=%d)",
+          measurements_valid ? "ok" : "failed",
+          static_cast<int>(formation.disposition));
+    }
+    publish_uwb_formation(measurement_time, solved);
+  }
+
+  void process_uwb_epochs(std::uint64_t steady_now_ns) {
+    while (!uwb_epochs_.empty()) {
+      auto epoch = uwb_epochs_.begin();
+      if (epoch->first <= last_uwb_output_timestamp_ns_) {
+        uwb_epochs_.erase(epoch);
+        continue;
+      }
+      const auto age_ns = steady_now_ns >= epoch->second.first_receive_steady_ns
+                              ? steady_now_ns -
+                                    epoch->second.first_receive_steady_ns
+                              : 0U;
+      const bool complete = uwb_epoch_has_all_edges(epoch->second);
+      const bool has_newer_epoch = std::next(epoch) != uwb_epochs_.end();
+      const bool ready = complete &&
+                         (uwb_epoch_has_all_reciprocals(epoch->second) ||
+                          age_ns >= uwb_epoch_wait_ns_);
+      const bool expired = age_ns >= uwb_epoch_timeout_ns_;
+      const bool superseded_incomplete =
+          !complete && has_newer_epoch && age_ns >= uwb_epoch_wait_ns_;
+      if (!ready && !expired && !superseded_incomplete) {
+        break;
+      }
+      const auto measurement_time = epoch->first;
+      const auto value = epoch->second;
+      uwb_epochs_.erase(epoch);
+      last_uwb_retired_timestamp_ns_ = measurement_time;
+      solve_uwb_epoch(measurement_time, value);
+    }
+  }
+
+  // UWB-only模式按完全相同的header.stamp归并三条无向边和两个测量方向。
+  void on_uwb_only_range(
+      const cooperative_interfaces::msg::UwbRange& message,
+      std::uint64_t measurement_time) {
+    if (measurement_time <= last_uwb_retired_timestamp_ns_) {
+      return;
+    }
+    const auto edge_index =
+        canonical_edge_index(message.src_id, message.target_id);
+    if (edge_index >= 3U) {
+      return;
+    }
+    const std::size_t direction =
+        message.src_id < message.target_id ? 0U : 1U;
+    const auto steady_receive_time = steady_time_ns();
+    auto [epoch, inserted] = uwb_epochs_.try_emplace(measurement_time);
+    if (inserted) {
+      epoch->second.first_receive_steady_ns = steady_receive_time;
+    }
+    epoch->second.distance_m[edge_index][direction] =
+        static_cast<double>(message.distance);
+    epoch->second.present[edge_index][direction] = true;
+    process_uwb_epochs(steady_receive_time);
+    while (uwb_epochs_.size() > 64U) {
+      const auto oldest_time = uwb_epochs_.begin()->first;
+      uwb_epochs_.erase(uwb_epochs_.begin());
+      last_uwb_retired_timestamp_ns_ = oldest_time;
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                           "dropping an old incomplete UWB-only epoch");
+    }
+  }
+
+  // 接收上交盒端正式 UwbRange。rolling只供上交调试时间戳，定位算法不使用；
+  // 消息没有测距标准差，因此标准差取配置值。
   void on_uwb_range(const cooperative_interfaces::msg::UwbRange& message) {
     const auto measurement_time = stamp_ns(message.header.stamp);
     if (message.src_id == message.target_id ||
@@ -297,6 +569,10 @@ class CooperativeFusionNode final : public rclcpp::Node {
         message.distance <= 0.0F) {
       RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
                            "rejecting invalid/unconfigured UWB range");
+      return;
+    }
+    if (uwb_only_) {
+      on_uwb_only_range(message, measurement_time);
       return;
     }
     const auto receive_time = current_time_ns(steady_time_ns());
@@ -401,6 +677,22 @@ class CooperativeFusionNode final : public rclcpp::Node {
   std::uint64_t max_future_skew_ns_{};
   std::uint64_t max_receive_delay_ns_{};
   std::string common_enu_frame_id_;
+  std::string input_mode_;
+  bool uwb_only_{};
+  double minimum_triangle_height_m_{};
+  std::uint64_t uwb_epoch_wait_ns_{};
+  std::uint64_t uwb_epoch_timeout_ns_{};
+  double uwb_reciprocal_max_difference_m_{};
+  double uwb_maximum_range_rate_mps_{};
+  double uwb_range_jump_tolerance_m_{};
+  std::array<std::uint32_t, 3> canonical_node_ids_{};
+  std::array<double, 3> latest_uwb_x_m_{};
+  std::array<double, 3> latest_uwb_y_m_{};
+  std::array<double, 3> last_accepted_uwb_distance_m_{};
+  std::array<std::uint64_t, 3> last_accepted_uwb_timestamp_ns_{};
+  std::uint64_t last_uwb_output_timestamp_ns_{};
+  std::uint64_t last_uwb_retired_timestamp_ns_{};
+  std::map<std::uint64_t, UwbEpoch> uwb_epochs_;
   // 仅由参考车本地 NodeState 驱动的 UWB 时间桥。
   zju_coop_ros2::SensorTimeBridge reference_time_bridge_;
   rclcpp::Subscription<cooperative_localization_msgs::msg::NodeState>::SharedPtr
@@ -414,6 +706,7 @@ class CooperativeFusionNode final : public rclcpp::Node {
       cooperative_localization_msgs::msg::CooperativePose2DArray>::SharedPtr
       feedback_publisher_;
   rclcpp::TimerBase::SharedPtr publish_timer_;
+  rclcpp::TimerBase::SharedPtr uwb_epoch_timer_;
 };
 
 }  // namespace

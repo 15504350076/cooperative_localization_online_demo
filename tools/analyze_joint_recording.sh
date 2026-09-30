@@ -35,6 +35,8 @@ done
 for bag in "${UWB_BAGS[@]}"; do
   [[ -f "$bag/metadata.yaml" ]] || continue
   python3 "$TOOLS_DIR/export_uwb_bag_readable.py" "$bag"
+  # 同一录包盒内按src_id合并同轮重复消息，再比较三个UWB源盒时间。
+  python3 "$TOOLS_DIR/compare_uwb_timestamps.py" "$bag"
 done
 printf '\n分析完成，共处理%s个包：%s\n' "$count" "$RUN_DIR"
-printf '先看联合时间初查.md，再看各IMU的imu_analysis.txt及UWB测距分析.md。\n'
+printf '先看联合时间初查.md，再看各IMU的imu_analysis.txt、UWB测距分析.md及UWB时间对比/三盒UWB时间对比.md。\n'

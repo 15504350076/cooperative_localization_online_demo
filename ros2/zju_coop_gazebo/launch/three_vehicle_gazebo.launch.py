@@ -66,6 +66,7 @@ def _local_node(node_id, position, yaw, enable_lidar, enable_camera):
         name=f"zju_gazebo_local_inertial_node_{node_id}",
         output="screen",
         parameters=[{
+            "input_mode": "imu_uwb",
             "use_sim_time": True,
             "node_id": node_id,
             "publish_rate_hz": 20.0,

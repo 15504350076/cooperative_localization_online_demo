@@ -64,6 +64,7 @@ def generate_launch_description():
         name="zju_sim_cooperative_fusion_node",
         output="screen",
         parameters=[{
+            "input_mode": "imu_uwb",
             "node_ids": [1, 2, 3],
             "reference_node_id": 1,
             "publish_rate_hz": 10.0,

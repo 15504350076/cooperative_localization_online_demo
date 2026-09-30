@@ -80,6 +80,16 @@ typedef int32_t zju_coop_localization_state_t;
 #define ZJU_COOP_LOCALIZATION_UNOBSERVABLE ((zju_coop_localization_state_t)3)
 #define ZJU_COOP_LOCALIZATION_STALE ((zju_coop_localization_state_t)4)
 
+/* 三节点三边纯测距几何解状态；它不包含北向、地图方向或任一车辆航向。 */
+typedef int32_t zju_coop_formation_disposition_t;
+#define ZJU_COOP_FORMATION_SOLVED ((zju_coop_formation_disposition_t)0)
+#define ZJU_COOP_FORMATION_INVALID_INPUT ((zju_coop_formation_disposition_t)1)
+#define ZJU_COOP_FORMATION_TRIANGLE_INEQUALITY \
+  ((zju_coop_formation_disposition_t)2)
+#define ZJU_COOP_FORMATION_DEGENERATE ((zju_coop_formation_disposition_t)3)
+#define ZJU_COOP_FORMATION_NUMERICAL_FAILURE \
+  ((zju_coop_formation_disposition_t)4)
+
 /*
  * processing disposition覆盖引擎入口到质量决策的整条处理链；
  * update disposition只描述真正调用滤波量测模型后的数值结果。
@@ -719,6 +729,34 @@ typedef struct zju_coop_pose2d_snapshot_v2 {
   char frame_id[32]; /* NUL结尾的当前坐标系名称；具体语义见上方说明。 */
 } zju_coop_pose2d_snapshot_v2_t;
 
+/*
+ * 三节点同一历元的三条无向边长。node_ids[0]定义原点，node_ids[1]定义+X，
+ * node_ids[2]按约定放在+Y半平面；minimum_height_m用于拒绝近共线队形。
+ */
+typedef struct zju_coop_three_node_ranges {
+  uint32_t struct_size;
+  uint32_t abi_version;
+  uint32_t node_ids[3];
+  uint32_t reserved0;
+  double range_01_m;
+  double range_02_m;
+  double range_12_m;
+  double minimum_height_m;
+} zju_coop_three_node_ranges_t;
+
+/* 纯测距规范坐标系中的三点结果；只有disposition为SOLVED时坐标有效。 */
+typedef struct zju_coop_three_node_formation {
+  uint32_t struct_size;
+  uint32_t abi_version;
+  zju_coop_formation_disposition_t disposition;
+  uint32_t reserved0;
+  uint32_t node_ids[3];
+  uint32_t reserved1;
+  double x_m[3];
+  double y_m[3];
+  double twice_area_m2;
+} zju_coop_three_node_formation_t;
+
 /* 版本查询不需要创建handle，可用于浙大ROS 2适配节点启动时的兼容性检查。 */
 ZJU_COOP_API uint32_t ZJU_COOP_CALL zju_coop_abi_version(void);
 ZJU_COOP_API uint32_t ZJU_COOP_CALL zju_coop_pose2d_abi_version(void);
@@ -754,6 +792,10 @@ ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 zju_coop_vehicle_pose2d_v2_init(zju_coop_vehicle_pose2d_v2_t* value);
 ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 zju_coop_pose2d_snapshot_v2_init(zju_coop_pose2d_snapshot_v2_t* value);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_three_node_ranges_init(zju_coop_three_node_ranges_t* value);
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_three_node_formation_init(zju_coop_three_node_formation_t* value);
 ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
 zju_coop_static_imu_sample_init(zju_coop_static_imu_sample_t* value);
 ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
@@ -946,6 +988,15 @@ zju_coop_distributed_get_pose2d_v2(
     zju_coop_pose2d_snapshot_v2_t* snapshot,
     zju_coop_vehicle_pose2d_v2_t* vehicles, uint32_t vehicle_capacity,
     uint32_t vehicle_stride, uint32_t* vehicle_count);
+
+/*
+ * 直接由同一历元三条距离恢复规范三角形。几何不可解不是ABI错误：函数返回
+ * ZJU_COOP_OK，并通过formation->disposition说明三角形不等式或退化等原因。
+ */
+ZJU_COOP_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_solve_three_node_formation(
+    const zju_coop_three_node_ranges_t* ranges,
+    zju_coop_three_node_formation_t* formation);
 
 #ifdef __cplusplus
 }

@@ -8,5 +8,8 @@ uint32 src_id
 # 目标节点编号。
 uint32 target_id
 
+# 上交用于调试时间戳的滚动值；浙大定位算法不使用该字段。
+uint16 rolling
+
 # 节点间距离，单位 m。
 float32 distance

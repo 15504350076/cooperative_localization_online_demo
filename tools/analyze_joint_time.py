@@ -13,6 +13,42 @@ matplotlib.use('Agg')  # 离线保存PNG，不打开窗口；必须在导入pypl
 import matplotlib.pyplot as plt
 
 
+def plot_timestamp_comparison(directory, streams):
+    """直接比较完整header时间：横纵轴使用同一个整数秒起点，不校正偏差。"""
+    # R是各录包机写入bag的记录时间，H是消息自带时间；R不是独立同步真值。
+    origin = min(v[0][0] for v in streams.values()) // 10**9 * 10**9
+    with plt.rc_context({'font.family': ['Noto Sans CJK JP', 'Noto Sans CJK SC', 'sans-serif'], 'axes.unicode_minus': False}):
+        fig, axes = plt.subplots(2, 1, figsize=(13, 10))
+        colors = plt.get_cmap('tab10').colors
+        for i, (label, values) in enumerate(sorted(streams.items())):
+            a = np.asarray(values, dtype=np.int64)
+            # 先做整数纳秒减法，再转浮点秒，避免大Unix秒相减损失精度。
+            x, y = (a[:, 1] - origin) / 1e9, (a[:, 0] - origin) / 1e9
+            stride = max(1, len(a) // 3000)
+            name = label.replace('IMU v', 'IMU 盒')
+            style = '-' if label.startswith('IMU') else '--'
+            axes[0].plot(x[::stride], y[::stride], style, color=colors[i % 10], label=name, alpha=.8)
+            # 局部图不抽样；保留UWB约100ms采样间隔，不插造同时采样的数据。
+            mask = (x >= 10) & (x <= 12)
+            axes[1].plot(x[mask], y[mask], style, color=colors[i % 10],
+                         marker='.' if label.startswith('UWB') else None, alpha=.8)
+        axes[0].set_title('全程：三路 IMU 与六路 UWB 的消息时间戳（曲线重叠不代表精确同步）')
+        axes[0].legend(ncol=3, fontsize=10)
+        axes[1].set_title('局部放大：相同记录时刻附近，IMU 与 UWB 的消息时间仍有差距')
+        axes[1].set_xlim(10, 12)
+        for ax in axes:
+            ax.set_xlabel('包内记录时间 R − T0（秒）；跨盒的记录时钟尚未独立验证同步')
+            ax.set_ylabel('消息时间 H − T0（秒）')
+            ax.grid(True, alpha=.3)
+        fig.suptitle(f'IMU / UWB 原始时间戳对比 · {directory.name}\n'
+                     f'H = header.stamp.sec + nanosec / 1e9；共同起点 T0 = {origin // 10**9} Unix秒', fontsize=12)
+        fig.text(.5, .015, '未平移对齐、未校正时间。曲线差距包含时钟偏差与处理/传输延迟，不等于采样同步误差。',
+                 ha='center', fontsize=10)
+        fig.tight_layout(rect=(0, .045, 1, .93))
+        fig.savefig(directory / 'IMU与UWB原始时间戳对比.png', dpi=160)
+        plt.close(fig)
+
+
 def main(directory):
     # 输入：实验根目录，直接子目录为各录包。要求至少有一条IMU或UWB消息。
     # 同盒同类型若有多个包会合并到同一label，因此每轮应只放每路一个包。
@@ -77,6 +113,7 @@ def main(directory):
     fig.tight_layout()
     fig.savefig(directory / '联合时间轴对比.png', dpi=160)
     plt.close(fig)
+    plot_timestamp_comparison(directory, streams)
 
 
 if __name__ == '__main__':

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""比较同一录包盒收到的六向 UWB 时间；输入既有 UWB测距数据.csv。
+"""比较同一录包盒收到的三盒 UWB 消息时间；输入既有 UWB测距数据.csv。
 
 python3 tools/compare_uwb_timestamps.py data/某联合实验/某_uwb_rec_v3
-仅写派生 CSV、MD、PNG；不校时，不把接收相近视为同一测量事件。
+仅写派生 CSV、MD、PNG；不校时，不使用 rolling，不把接收相近冒充硬件同步。
 """
 import argparse
 from bisect import bisect_left
@@ -31,9 +31,9 @@ def nearest(times, value):
 
 
 def pairs(left, right, window_ns=20_000_000):
-    """相反方向按接收时刻互为最近邻，最多20ms，一对一且不跨录包盒。
+    """两个源盒事件按接收时刻互为最近邻，最多20ms，一对一且不跨录包盒。
 
-    配对不依赖待检查的 header，保留坏时间戳；两方向不保证是同一测距事件。
+    配对不依赖待检查的 header，保留坏时间戳；两个源盒接收相近仍不保证是同一硬件测距事件。
     """
     if not left or not right:
         return
@@ -42,6 +42,46 @@ def pairs(left, right, window_ns=20_000_000):
         j = nearest(rt, a[1])
         if abs(rt[j] - a[1]) <= window_ns and nearest(lt, rt[j]) == i:
             yield a, right[j]
+
+
+def integer_median(values):
+    """整数纳秒中位数，避免先转float导致Unix纳秒丢失低位。"""
+    values = sorted(values)
+    middle = len(values) // 2
+    return values[middle] if len(values) % 2 else (values[middle - 1] + values[middle]) // 2
+
+
+def source_events(streams):
+    """把同一源盒、同一header发给不同目标的消息合并成一个源盒事件。"""
+    grouped = defaultdict(lambda: defaultdict(list))
+    for (src, _dst), rows in streams.items():
+        for sequence, received, header in rows:
+            grouped[src][header].append((sequence, received, header))
+    result = {}
+    for src, by_header in grouped.items():
+        # 元组仍为（可追溯首序号、代表接收时刻、header）；按接收顺序配对。
+        events = [(min(r[0] for r in rows), integer_median(r[1] for r in rows), header)
+                  for header, rows in by_header.items()]
+        result[src] = sorted(events, key=lambda row: row[1])
+    return result
+
+
+def exact_three_edge_epochs(streams):
+    """统计同一header中是否同时具备三条无向边。
+
+    这只回答“算法能否按消息时间组成三边历元”，不把相同header
+    解释成三台无线电在物理上同一瞬间完成了测距。
+    """
+    node_ids = sorted({node for edge in streams for node in edge})
+    if len(node_ids) != 3:
+        return 0, 0, ()
+    required = {tuple(edge) for edge in combinations(node_ids, 2)}
+    by_header = defaultdict(set)
+    for (src, dst), rows in streams.items():
+        edge = tuple(sorted((src, dst)))
+        for _sequence, _received, header in rows:
+            by_header[header].add(edge)
+    return sum(required <= edges for edges in by_header.values()), len(by_header), tuple(node_ids)
 
 
 def analyze(directory):
@@ -64,9 +104,11 @@ def analyze(directory):
              "", "## 方法和限制", "",
              "- 本文件按消息的 src_id/target_id 区分来源，不把录包盒当作测距源。",
              "- 六方向分别按原接收顺序差分，不对交织的整条 Topic 直接差分。",
-             "- 比较1→2与2→1、1→3与3→1、2→3与3→2：同一录包盒接收时刻互为最近邻，间隔≤20ms，一对一配对。",
-             "- 定义 ΔH=H_B−H_A，ΔR=R_B−R_A，E=ΔH−ΔR（单位ms）。E仍含测距时隙、处理及传输延迟差，不等于纯时钟偏移。",
+             "- 同一src_id在一轮内会分别产生发给两个目标的消息；先按相同header合并成一个源盒事件，避免把它重复计算两次。",
+             "- 再比较源盒1/2/3：按同一录包盒的接收时刻互为最近邻，间隔≤20ms，一对一配对。",
+             "- 定义 ΔH=H_B−H_A，ΔR=R_B−R_A，E=ΔH−ΔR（单位ms）。E仍含UWB时隙、处理及传输延迟差，不等于纯时钟偏移或同步精度。",
              "- 20ms只是配对窗口；100ms只是统计大差值的描述阈值，右侧图放大到±10ms，均不是同步合格阈值。全量配对和异常均保存。",
+             "- rolling不参与分组、配对、统计或结论；它是上交调试字段。",
              "- 静止数据没有独立共同事件，不能由这些比较证明PPS/硬件采样同步，也不能据此校准时钟。",
              "", "## 六方向全部消息", "",
              "|方向|条数|接收−消息中位数(s)|消息间隔P50(ms)|回退数|最小消息间隔(ms)|最大消息间隔(ms)|",
@@ -84,30 +126,39 @@ def analyze(directory):
                                  f"消息差{(b[2]-a[2])/1e6:.3f}ms，接收差{(b[1]-a[1])/1e6:.3f}ms。")
     first = min((r for rows in streams.values() for r in rows), key=lambda r: r[1])
     utc = lambda ns: datetime.fromtimestamp(ns / 1e9, timezone.utc).isoformat()
+    exact_count, unique_headers, node_ids = exact_three_edge_epochs(streams)
+    node_text = "-".join(str(value) for value in node_ids) if node_ids else "非三节点"
     lines += ["", f"第一条接收时间UTC：{utc(first[1])}；消息时间UTC：{utc(first[2])}。",
-              "", "## 近邻配对（B为反方向）", "",
-              "|A / B|配对数|A/B未配对条数|ΔR中位数(ms)|ΔH中位数(ms)|E中位数(ms)|全量|E| P95(ms)|全量最大|E|(ms)||E|>100ms条数|",
+              "", "## 三边消息同历元", "",
+              f"- 节点 `{node_text}` 共有 **{exact_count}** 个完全相同 `header.stamp` 且三条无向边齐全的历元；全包共有 {unique_headers} 个不同header值。",
+              "- 这些历元可供三角形解算从正反向报告中挑选三条无向边；缺边的header不得强行补成三角形。",
+              "- header完全相同只说明应用层分组条件满足，不证明物理测距同时，也不消除后文列出的header回退。",
+              "", "## 三个源盒事件的近邻配对", "",
+              "|源盒A / B|配对数|A/B未配对事件|ΔR中位数(ms)|ΔH P05 / 中位数 / P95(ms)|E中位数(ms)|全量|E| P95(ms)|全量最大|E|(ms)||E|>100ms条数|",
               "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
     # Markdown 表头避免绝对值竖线被当成列分隔符。
     lines[-2] = lines[-2].replace("|E|", "abs(E)")
     comparisons = {}
     csv_rows = []
-    for src, dst in combinations(sorted({s for key in streams for s in key}), 2):
-        left, right = streams.get((src, dst), []), streams.get((dst, src), [])
+    events = source_events(streams)
+    for src, dst in combinations(sorted(events), 2):
+        left, right = events[src], events[dst]
         results = []
         for a, b in pairs(left, right):
             dr, dh = (b[1] - a[1]) / 1e6, (b[2] - a[2]) / 1e6
             e = ((b[2] - a[2]) - (b[1] - a[1])) / 1e6
             t = (a[1] - origin) / 1e9
             results.append((t, dr, dh, e))
-            csv_rows.append([f"{src}→{dst}", f"{dst}→{src}", a[0], b[0],
+            csv_rows.append([f"盒{src}", f"盒{dst}", a[0], b[0],
                              a[1], b[1], a[2], b[2], t, dr, dh, e, abs(e) > 100])
-        comparisons[f"{src}↔{dst}"] = results
+        comparisons[f"盒{src}↔盒{dst}"] = results
+        headers = [r[2] for r in results]
         errors = [r[3] for r in results]
         absolute = [abs(e) for e in errors]
-        lines.append(f"|{src}→{dst} / {dst}→{src}|{len(results)}|{len(left)-len(results)}/{len(right)-len(results)}|"
+        lines.append(f"|盒{src} / 盒{dst}|{len(results)}|{len(left)-len(results)}/{len(right)-len(results)}|"
                      f"{percentile([r[1] for r in results], .5):.3f}|"
-                     f"{percentile([r[2] for r in results], .5):.3f}|{percentile(errors, .5):.3f}|"
+                     f"{percentile(headers, .05):.3f} / {percentile(headers, .5):.3f} / {percentile(headers, .95):.3f}|"
+                     f"{percentile(errors, .5):.3f}|"
                      f"{percentile(absolute, .95):.3f}|{max(absolute) if absolute else float('nan'):.3f}|"
                      f"{sum(e > 100 for e in absolute)}|")
     lines += ["", "## 异常定位", ""] + (anomalies or ["未检出同方向 header 回退；不代表同步已验证。"])
@@ -116,7 +167,7 @@ def analyze(directory):
               "- 无法配对的消息不计入配对统计，但仍全部计入上方六方向统计和原始CSV。", ""]
     with (output / "三盒UWB时间近邻配对.csv").open("w", encoding="utf-8-sig", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["A方向", "B方向", "A原序号", "B原序号", "A接收_ns", "B接收_ns",
+        writer.writerow(["A源盒", "B源盒", "A首原序号", "B首原序号", "A代表接收_ns", "B代表接收_ns",
                          "A消息_ns", "B消息_ns", "接收相对时间_s", "接收差B减A_ms",
                          "消息差B减A_ms", "消息差减接收差_ms", "绝对差大于100ms"])
         writer.writerows(csv_rows)
@@ -142,7 +193,7 @@ def plot(comparisons, output):
             ax.set_xlabel("相对本包首条UWB接收时间（s）")
             ax.set_ylabel("E（ms，非纯时钟偏移）")
             ax.grid(alpha=.3)
-    fig.suptitle("三盒UWB时间比较：静止、近邻接收配对 ≠ 同一物理事件或硬件同步", fontsize=13)
+    fig.suptitle("三盒UWB源时钟比较：同源重复消息已合并；静止近邻配对 ≠ 硬件同步", fontsize=13)
     fig.tight_layout(rect=(0, 0, 1, .96))
     fig.savefig(output / "三盒UWB时间对比.png", dpi=160)
     plt.close(fig)
@@ -158,7 +209,15 @@ def self_check():
     assert list(pairs(a, [(4, 2_000_000_000, 0)])) == []
     assert len(list(pairs(a, b[:1]))) == 1  # 不复用对方样本。
     assert list(pairs([], b)) == [] and percentile([0, 10], .95) == 9.5
-    print("自检通过：近邻一对一/窗口/坏时间保留/整数时间差/分位数")
+    streams = {(1, 2): [(0, 10, 100)], (1, 3): [(1, 12, 100)],
+               (2, 1): [(2, 20, 101)], (2, 3): [(3, 22, 101)]}
+    events = source_events(streams)
+    assert events[1] == [(0, 11, 100)] and events[2] == [(2, 21, 101)]
+    count, total, nodes = exact_three_edge_epochs(streams)
+    assert (count, total, nodes) == (0, 2, (1, 2, 3))
+    streams[(2, 3)].append((4, 23, 100))
+    assert exact_three_edge_epochs(streams)[0] == 1
+    print("自检通过：同源合并/近邻一对一/窗口/坏时间保留/整数时间差/分位数")
 
 
 if __name__ == "__main__":

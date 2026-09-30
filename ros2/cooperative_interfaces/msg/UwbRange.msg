@@ -2,4 +2,5 @@
 std_msgs/Header header
 uint32 src_id
 uint32 target_id
+uint16 rolling
 float32 distance

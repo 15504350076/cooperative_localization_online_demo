@@ -42,6 +42,8 @@ static_assert(offsetof(zju_coop_observation_t, state) == 80U);
 static_assert(offsetof(zju_coop_observation_t, covariance_scale) == 96U);
 static_assert(sizeof(zju_coop_vehicle_pose2d_v2_t) == 48U);
 static_assert(sizeof(zju_coop_pose2d_snapshot_v2_t) == 56U);
+static_assert(sizeof(zju_coop_three_node_ranges_t) == 56U);
+static_assert(sizeof(zju_coop_three_node_formation_t) == 88U);
 static_assert(sizeof(zju_coop_node_state_t) == 120U);
 static_assert(alignof(zju_coop_node_state_t) == 8U);
 static_assert(offsetof(zju_coop_node_state_t, timestamp_ns) == 16U);
@@ -109,6 +111,36 @@ struct TestEngine {
   TestEngine(const TestEngine&) = delete;
   TestEngine& operator=(const TestEngine&) = delete;
 };
+
+TEST_CASE(c_api_solves_three_node_range_only_formation) {
+  zju_coop_three_node_ranges_t ranges{};
+  zju_coop_three_node_formation_t formation{};
+  EXPECT_EQ(zju_coop_three_node_ranges_init(&ranges), ZJU_COOP_OK);
+  EXPECT_EQ(zju_coop_three_node_formation_init(&formation), ZJU_COOP_OK);
+  ranges.node_ids[0] = 1U;
+  ranges.node_ids[1] = 2U;
+  ranges.node_ids[2] = 3U;
+  ranges.range_01_m = 3.0;
+  ranges.range_02_m = 4.0;
+  ranges.range_12_m = 5.0;
+
+  EXPECT_EQ(zju_coop_solve_three_node_formation(&ranges, &formation),
+            ZJU_COOP_OK);
+  EXPECT_EQ(formation.disposition, ZJU_COOP_FORMATION_SOLVED);
+  EXPECT_TRUE(std::abs(formation.x_m[0]) < 1.0e-12);
+  EXPECT_TRUE(std::abs(formation.y_m[0]) < 1.0e-12);
+  EXPECT_TRUE(std::abs(formation.x_m[1] - 3.0) < 1.0e-12);
+  EXPECT_TRUE(std::abs(formation.y_m[1]) < 1.0e-12);
+  EXPECT_TRUE(std::abs(formation.x_m[2]) < 1.0e-12);
+  EXPECT_TRUE(std::abs(formation.y_m[2] - 4.0) < 1.0e-12);
+  EXPECT_TRUE(std::abs(formation.twice_area_m2 - 12.0) < 1.0e-12);
+
+  ranges.range_12_m = 8.0;
+  EXPECT_EQ(zju_coop_solve_three_node_formation(&ranges, &formation),
+            ZJU_COOP_OK);
+  EXPECT_EQ(formation.disposition,
+            ZJU_COOP_FORMATION_TRIANGLE_INEQUALITY);
+}
 
 // from/to/range_m/timestamp_ns分别指定边端点、距离和采样/接收时刻。
 zju_coop_range_packet_t range_packet(std::uint16_t from, std::uint16_t to,

@@ -28,6 +28,7 @@ cooperative_interfaces/msg/Identity
 std_msgs/Header header
 uint32 src_id
 uint32 target_id
+uint16 rolling
 float32 distance
 ```
 
@@ -74,6 +75,31 @@ IMU 使用标准类型 `sensor_msgs/msg/Imu`，`Header` 和 `Time` 也是标准 
 **导入布局不能解决消息解码问题。** 先打开带 Schema 的 MCAP，才有可供布局绘制的数据。
 
 本次生成的是 **JSON 编码的可视化分析副本**，不是保持 ROS 2 CDR 类型的原生 MCAP。不要拿它直接替代原始包执行 `ros2 bag play` 并接入算法；算法回放继续使用原始 `.db3` 包。文件扩展名同为 `.mcap`，内部编码也可能不同。
+
+## 0.4 2026-09-14 新包的 Foxglove 文件
+
+每个盒子的 IMU 页面现在增加“原始消息时间戳 H”面板（`header.stamp.sec` 与
+`header.stamp.nanosec` 两条曲线，必须合看）；UWB 页面原有的 H 字段面板保留。
+
+本轮数据目录为 `data/joint_time_20260914_111349`。已生成可直接在 Foxglove 打开的文件：
+
+- `Foxglove/三盒IMU与UWB全量分析.mcap`
+- `Foxglove/联合静止分析布局.json`
+
+操作步骤：
+
+1. 打开 Foxglove，按 `Ctrl+O` 选择 `Foxglove/三盒IMU与UWB全量分析.mcap`。
+2. 右上角布局菜单选择“从文件导入”，导入同目录的 `联合静止分析布局.json`。
+3. 点击“**三盒 UWB 测距与时间**”页查看六条测距曲线；点击“盒1/2/3 IMU 原始量”页查看各盒 IMU。
+4. UWB 距离曲线使用本轮 44 字节 CDR 的候选重解析距离，并在消息的 `wire_layout` 中保留旧值、未知新增字段和警告；正式协议仍需上交提供 `.msg/.idl` 后确认。
+
+本轮 MCAP 是显示副本，不修改原始 `.db3`，也不能替代原包直接用于算法回放。若只想重新生成本轮显示文件，在工程根目录执行：
+
+```bash
+source /opt/ros/humble/setup.bash
+source install/git-chinese-version/setup.bash
+python3 tools/export_joint_foxglove.py data/joint_time_20260914_111349
+```
 
 ## 1. 这轮直接打开
 
@@ -131,7 +157,7 @@ python3 tools/compare_uwb_timestamps.py --self-test
 python3 tools/compare_uwb_timestamps.py data/joint_time_20260909_171345/joint_time_20260909_171345_uwb_rec_v3
 ```
 
-程序：[compare_uwb_timestamps.py](../tools/compare_uwb_timestamps.py)。复用既有 `UWB测距数据.csv`，不需要ROS，只需要Python 3和绘图用的Matplotlib；还没有CSV时，先按[31 离线分析步骤](31_联合录包离线分析操作步骤.md)解析原包。输出在该包的 `UWB时间对比/`，重复运行只覆盖这三个派生文件。
+程序：[compare_uwb_timestamps.py](../tools/compare_uwb_timestamps.py)。复用既有 `UWB测距数据.csv`，不需要ROS，只需要Python 3和绘图用的Matplotlib；还没有CSV时，先按[30 录包与统一分析说明](30_record_joint_time_使用说明.md)解析原包。输出在该包的 `UWB时间对比/`，重复运行只覆盖这三个派生文件。
 
 本轮实际打开的界面：[异常总览截图](../data/joint_time_20260909_171345/Foxglove/异常总览界面.png)。已回读核对 MCAP 校验和、389986条消息数量及精确接收时间/header，异常次数与原包分析一致。
 
@@ -448,7 +474,7 @@ ros2 interface show cooperative_interfaces/msg/UwbRange
 ros2 interface show cooperative_interfaces/msg/Identity
 ```
 
-新电脑缺少 ROS 分析依赖时，按 [31 离线分析操作步骤](31_联合录包离线分析操作步骤.md) 的环境准备部分安装。每次新开终端需要重新 source；已有环境与新构建环境选用一种即可。
+新电脑缺少 ROS 分析依赖时，按 [30 录包与统一分析说明](30_record_joint_time_使用说明.md) 的环境准备部分安装。每次新开终端需要重新 source；已有环境与新构建环境选用一种即可。
 
 离线转换不需要设置 `ROS_DOMAIN_ID`、SSH 连接、启动传感器、Gazebo或定位节点。
 

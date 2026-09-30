@@ -33,6 +33,7 @@ def generate_launch_description():
         enable_lidar_slam, "'.lower() == 'true'",
     ])
     run_fusion = LaunchConfiguration("run_fusion")
+    input_mode = LaunchConfiguration("input_mode")
     use_localhost_imu_bridge = LaunchConfiguration("use_localhost_imu_bridge")
     inherited_localhost_only = EnvironmentVariable(
         "ROS_LOCALHOST_ONLY", default_value="0"
@@ -173,6 +174,14 @@ def generate_launch_description():
                 description=(
                     "Start the cooperative fusion node; enable explicitly "
                     "on the reference vehicle only"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "input_mode",
+                default_value="uwb_only",
+                description=(
+                    "uwb_only publishes a canonical three-node formation "
+                    "without IMU; imu_uwb requires common-frame NodeState"
                 ),
             ),
             DeclareLaunchArgument(
@@ -385,6 +394,7 @@ def generate_launch_description():
                 parameters=[
                     fusion_config,
                     {
+                        "input_mode": input_mode,
                         "range_std_m": ParameterValue(
                             range_std_m, value_type=float
                         ),

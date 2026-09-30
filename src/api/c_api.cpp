@@ -22,6 +22,7 @@
 #include "core/engine.hpp"
 #include "core/gnss_reference.hpp"
 #include "core/inertial_eskf15.hpp"
+#include "core/range_ekf.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -907,6 +908,30 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_pose2d_snapshot_v2_init(
   *value = {};
   value->struct_size = sizeof(*value);
   value->abi_version = ZJU_COOP_POSE2D_ABI_VERSION_V2;
+  return ZJU_COOP_OK;
+}
+
+zju_coop_error_code_t ZJU_COOP_CALL zju_coop_three_node_ranges_init(
+    zju_coop_three_node_ranges_t* value) {
+  if (value == nullptr) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+  *value = {};
+  value->struct_size = sizeof(*value);
+  value->abi_version = ZJU_COOP_ABI_VERSION_V1;
+  value->minimum_height_m = 1.0e-3;
+  return ZJU_COOP_OK;
+}
+
+zju_coop_error_code_t ZJU_COOP_CALL zju_coop_three_node_formation_init(
+    zju_coop_three_node_formation_t* value) {
+  if (value == nullptr) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+  *value = {};
+  value->struct_size = sizeof(*value);
+  value->abi_version = ZJU_COOP_ABI_VERSION_V1;
+  value->disposition = ZJU_COOP_FORMATION_INVALID_INPUT;
   return ZJU_COOP_OK;
 }
 
@@ -2276,6 +2301,69 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_distributed_get_pose2d_v2(
       output->struct_size = caller_size;
     }
     *vehicle_count = required;
+    return ZJU_COOP_OK;
+  } catch (...) {
+    return exception_code();
+  }
+}
+
+zju_coop_error_code_t ZJU_COOP_CALL zju_coop_solve_three_node_formation(
+    const zju_coop_three_node_ranges_t* ranges,
+    zju_coop_three_node_formation_t* formation) {
+  if (ranges == nullptr || formation == nullptr) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+  const auto ranges_status = validate_header(ranges);
+  const auto formation_status = validate_header(formation);
+  if (ranges_status != ZJU_COOP_OK) {
+    return ranges_status;
+  }
+  if (formation_status != ZJU_COOP_OK) {
+    return formation_status;
+  }
+  if (ranges->reserved0 != 0U || formation->reserved0 != 0U ||
+      formation->reserved1 != 0U) {
+    return ZJU_COOP_INVALID_ARGUMENT;
+  }
+
+  try {
+    const zju::coop::ThreeNodeRanges core_ranges{
+        {ranges->node_ids[0], ranges->node_ids[1], ranges->node_ids[2]},
+        ranges->range_01_m, ranges->range_02_m, ranges->range_12_m};
+    const auto solved = zju::coop::solve_three_node_formation(
+        core_ranges, ranges->minimum_height_m);
+
+    zju_coop_three_node_formation_t value{};
+    value.struct_size = sizeof(value);
+    value.abi_version = ZJU_COOP_ABI_VERSION_V1;
+    for (std::size_t index = 0U; index < 3U; ++index) {
+      value.node_ids[index] = ranges->node_ids[index];
+    }
+    switch (solved.disposition) {
+      case zju::coop::FormationDisposition::kSolved:
+        value.disposition = ZJU_COOP_FORMATION_SOLVED;
+        for (std::size_t index = 0U; index < 3U; ++index) {
+          value.x_m[index] = solved.points[index].x_m;
+          value.y_m[index] = solved.points[index].y_m;
+        }
+        value.twice_area_m2 = solved.twice_area_m2;
+        break;
+      case zju::coop::FormationDisposition::kInvalidInput:
+        value.disposition = ZJU_COOP_FORMATION_INVALID_INPUT;
+        break;
+      case zju::coop::FormationDisposition::kTriangleInequality:
+        value.disposition = ZJU_COOP_FORMATION_TRIANGLE_INEQUALITY;
+        break;
+      case zju::coop::FormationDisposition::kDegenerate:
+        value.disposition = ZJU_COOP_FORMATION_DEGENERATE;
+        break;
+      case zju::coop::FormationDisposition::kNumericalFailure:
+        value.disposition = ZJU_COOP_FORMATION_NUMERICAL_FAILURE;
+        break;
+    }
+    const std::uint32_t caller_size = formation->struct_size;
+    *formation = value;
+    formation->struct_size = caller_size;
     return ZJU_COOP_OK;
   } catch (...) {
     return exception_code();

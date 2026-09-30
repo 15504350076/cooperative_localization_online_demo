@@ -92,7 +92,7 @@ ctest --test-dir build/ros2-sim-check-current/zju_coop_ros2 \
 | IMU Topic | `/vehicle_1/imu/data`、`/vehicle_2/imu/data`、`/vehicle_3/imu/data` | 每盒本地 `/imu/raw` |
 | IMU 坐标 | 车体前左上 FLU、导航 ENU | 已确认车体前右下 FRD、AHRS 导航 NED，需转换 |
 | UWB 类型与 Topic | `cooperative_interfaces/msg/UwbRange`，`/uwb/range` | 相同 |
-| UWB 字段 | `header、uint32 src_id、uint32 target_id、float32 distance` | 相同；不含标准差或 NLOS 标志 |
+| UWB 字段 | `header、uint32 src_id、uint32 target_id、uint16 rolling、float32 distance` | 相同；`rolling`置0且算法忽略，不含标准差或 NLOS 标志 |
 | 时间来源 | 统一仿真时间 `/clock` | 设备授时，目标是三盒统一的 `UWB_SYSTEM_TIME` |
 
 角速度按 `rad/s`、加速度按 `m/s²`、距离按米使用。Gazebo 的 UWB 距离由三车真值位置计算。历史实包 UWB 的 `frame_id` 是 `uwb_link`，仿真是 `common_enu`；仿真 UWB 使用 Best Effort，已采上交实包使用 Reliable。

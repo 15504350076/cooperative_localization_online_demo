@@ -115,9 +115,29 @@ zju_coop_get_pose2d_v2(handle, &pose_snapshot,
 
 `zju_coop_push_range()` 的函数返回值表示 ABI 调用是否成功；`zju_coop_range_processing_result_t` 进一步给出包处理、融合动作、滤波更新、创新、NIS 和协方差缩放结果。
 
-### 4.3 点云预留
+### 4.3 三车纯测距直接解算
+
+`zju_coop_solve_three_node_formation()`不创建滤波句柄。调用方先初始化
+`zju_coop_three_node_ranges_t`和`zju_coop_three_node_formation_t`，再填入同一历元的
+`range_01_m/range_02_m/range_12_m`。`node_ids[0]`定义原点，`node_ids[1]`定义
+`+X`，第三点固定取`+Y`镜像分支。成功调用返回`ZJU_COOP_OK`；几何是否可解还要检查
+`formation.disposition`。该接口只恢复相对三角形，不返回北向或车辆yaw。
+
+### 4.4 点云预留
 
 `zju_coop_point_cloud_packet_t`/`zju_coop_push_point_cloud()` 只校验与 ROS 2 `PointCloud2` 相容的字段布局、长度、时间、帧名和有效性，并返回“已验证、未使用”的回执。当前算法没有解析点、提取相对观测或融合激光雷达；点云接口只用于后续扩展，不能列入当前定位闭环能力。
+
+### 4.5 RGB图像预留
+
+`zju_coop_camera_image_packet_t`/`zju_coop_push_camera_image()`可接收并校验ROS 2
+`Image`映射后的时间、尺寸、步长、编码、帧名和缓冲区长度。当前返回
+`ZJU_COOP_RAW_INPUT_VALIDATED_NOT_USED`，表示接口可用但尚未产生视觉里程计或车间相对位姿约束。
+
+### 4.6 GNSS
+
+GNSS使用独立`zju_coop_gnss_context_t`保存和对齐`NavSatFix`类输入，可生成初值或相对真值；
+ROS 2层还可选择把三车GNSS位置换成低置信度两两距离。默认纯UWB路径不要求GNSS，且面向
+GCS的结果仍必须先减去参考车位置，不能因接入GNSS而改成绝对坐标输出。
 
 ## 5. v1 输出
 

@@ -15,7 +15,13 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]  # tools上一级；不依赖启动命令所在目录。
 SSH = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8']
-ENV = 'source /opt/ros/humble/setup.bash\nsource /home/firefly/imu_ws/install/setup.bash\nexport ROS_DOMAIN_ID=107 RMW_IMPLEMENTATION=rmw_fastrtps_cpp\n'
+
+
+def ros_env(domain_id, rmw):
+    """生成录包终端环境；域号可与上交当前运行进程保持一致。"""
+    return ('source /opt/ros/humble/setup.bash\n'
+            'source /home/firefly/imu_ws/install/setup.bash\n'
+            f'export ROS_DOMAIN_ID={domain_id} RMW_IMPLEMENTATION={rmw}\n')
 
 
 def seconds_text(ns):
@@ -24,12 +30,12 @@ def seconds_text(ns):
     return f'{seconds}.{nanos:09d}'
 
 
-def remote_command(bag, topics, duration):
+def remote_command(bag, topics, duration, environment):
     """独立进程组内有限时录制；SIGINT落盘后才压缩，断线仍有时间上限。"""
     # IMU仅收本机，UWB允许共享DDS；这些设置不改变已启动驱动的环境。
     local = 1 if topics == ['/imu/raw'] else 0
     # 引号保护远程路径；timeout的124表示到时结束，其他非零状态不压缩。
-    return ENV + f'''export ROS_LOCALHOST_ONLY={local}
+    return environment + f'''export ROS_LOCALHOST_ONLY={local}
 test ! -e {shlex.quote(bag)} || exit 2
 mkdir -p /home/firefly/time_test
 timeout --foreground --signal=INT --kill-after=10s {duration}s ros2 bag record -o {shlex.quote(bag)} {' '.join(topics)}
@@ -110,8 +116,12 @@ def main():
     # 参数调度：--analyze提前返回，下面的SSH、录包、下载完全不会执行。
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--boxes', nargs='+', default=['1=192.168.1.201', '2=192.168.1.202', '3=192.168.1.203'])
-    parser.add_argument('--uwb-recorder', default='3', help='共享UWB录包盒号')
+    parser.add_argument('--uwb-recorder', default='1', help='共享UWB录包盒号，默认1（201参考车）')
     parser.add_argument('--user', default='firefly')
+    parser.add_argument('--domain-id', type=int, default=107,
+                        help='ROS通信域，必须与已有驱动一致，默认107')
+    parser.add_argument('--rmw', default='rmw_fastrtps_cpp',
+                        help='ROS中间件实现，必须与已有驱动一致')
     parser.add_argument('--run-id', default=datetime.now().strftime('joint_time_%Y%m%d_%H%M%S'))
     parser.add_argument('--duration', type=int, default=180, help='每路录包时长，秒，至少150')
     parser.add_argument('--analyze', type=Path, help='仅分析已下载的实验目录，需要电脑ROS环境')
@@ -121,6 +131,9 @@ def main():
         return
     if not re.fullmatch(r'[A-Za-z0-9_-]+', args.run_id) or args.duration < 150:
         parser.error('实验编号只能用字母数字下划线横线；录制至少150秒')
+    if not 0 <= args.domain_id <= 232 or not re.fullmatch(r'[A-Za-z0-9_]+', args.rmw):
+        parser.error('ROS domain须为0～232；RMW名称只能含字母、数字和下划线')
+    environment = ros_env(args.domain_id, args.rmw)
     # 采集路径：解析盒号与地址，校验重复及字符，避免远程命令歧义。
     boxes = {}
     for spec in args.boxes:
@@ -146,7 +159,7 @@ def main():
     def preflight(item):
         # 只查SSH、timeout与驱动进程存在，不保证消息质量及驱动域号正确。
         vehicle, host = item
-        command = ENV + "command -v timeout >/dev/null\npgrep -f '^/home/firefly/imu_ws/install/navcore/lib/navcore/navcore( |$)' >/dev/null && pgrep -f '^/home/firefly/imu_ws/install/gnss_uwb/lib/gnss_uwb/gnss_uwb( |$)' >/dev/null"
+        command = environment + "command -v timeout >/dev/null\npgrep -f '^/home/firefly/imu_ws/install/navcore/lib/navcore/navcore( |$)' >/dev/null && pgrep -f '^/home/firefly/imu_ws/install/gnss_uwb/lib/gnss_uwb/gnss_uwb( |$)' >/dev/null"
         subprocess.run(SSH + ['-T', f'{args.user}@{host}', 'bash -c ' + shlex.quote(command)],
                        check=True, timeout=20, stdin=subprocess.DEVNULL)
         print(f'盒{vehicle}：SSH和驱动进程检查完成', flush=True)
@@ -160,7 +173,8 @@ def main():
         remote = f'/home/firefly/time_test/{name}'
         with logfile.open('wb') as output:
             proc = subprocess.Popen(SSH + ['-tt', f'{args.user}@{boxes[vehicle]}',
-                                          'bash -c ' + shlex.quote(remote_command(remote, topics, args.duration))],
+                                          'bash -c ' + shlex.quote(remote_command(
+                                              remote, topics, args.duration, environment))],
                                     stdin=subprocess.PIPE, stdout=output, stderr=subprocess.STDOUT)
         processes.append((proc, logfile, vehicle, remote, topics))
     print('等待所有录包订阅就绪，暂时保持静止……', flush=True)
@@ -177,16 +191,8 @@ def main():
             break
         time.sleep(0.5)
     if ready:
-        print('全部就绪，现在开始动作计时。', flush=True)
-        start = time.monotonic()
-        events = [(0, '全部静止')]
-        for index, vehicle in enumerate(boxes):
-            events += [(15 + 20 * index, f'只平移盒{vehicle}约0.5～1米'),
-                       (25 + 20 * index, '全部静止')]
-        events.append((30 + 20 * len(boxes), '动作结束，继续静止等待自动收包'))
-        for at, instruction in events:
-            time.sleep(max(0, start + at - time.monotonic()))
-            print(f'{at:3d}s：{instruction}', flush=True)
+        print(f'全部就绪，正在录制{args.duration}秒。请在录制期间只移动一个指定盒子，'
+              '完成后保持静止，并把盒号和大致动作时间写入实验备注。', flush=True)
     else:
         print('40秒内未全部就绪，本轮只作诊断，不执行动作；等待有限时录包结束。', flush=True)
     # 逐路等结束、下载并解压；失败记录到采集状态，远端数据仍保留。

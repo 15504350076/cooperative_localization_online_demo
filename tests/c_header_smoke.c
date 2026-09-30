@@ -50,6 +50,8 @@ int main(void) {
   /* pose2d_*：覆盖独立v2二维位姿快照和单车元素，避免破坏既有v1结构布局。 */
   zju_coop_pose2d_snapshot_v2_t pose2d_snapshot;
   zju_coop_vehicle_pose2d_v2_t vehicle_pose2d;
+  zju_coop_three_node_ranges_t three_ranges;
+  zju_coop_three_node_formation_t three_formation;
 
   /* `&config`取得变量地址供函数写入；`||`表示任一初始化失败就进入返回1分支。 */
   if (zju_coop_config_init(&config) != ZJU_COOP_OK ||
@@ -86,6 +88,8 @@ int main(void) {
   }
   if (zju_coop_pose2d_snapshot_v2_init(&pose2d_snapshot) != ZJU_COOP_OK ||
       zju_coop_vehicle_pose2d_v2_init(&vehicle_pose2d) != ZJU_COOP_OK ||
+      zju_coop_three_node_ranges_init(&three_ranges) != ZJU_COOP_OK ||
+      zju_coop_three_node_formation_init(&three_formation) != ZJU_COOP_OK ||
       zju_coop_pose2d_abi_version() != ZJU_COOP_POSE2D_ABI_VERSION_V2) {
     return 7;
   }
