@@ -179,8 +179,10 @@ class TestUwbOnlyPipeline(unittest.TestCase):
         self._publish_range(mismatch_stamp_ns, 2, 3, 5.0)
         self._publish_range(mismatch_stamp_ns, 3, 2, 5.0)
         mismatch_output = self._wait_for_output(previous_count)
+        # 两个方向都到达时取均值；方向差异不再由ROS适配层单独拦截，
+        # 最终只由三角形几何条件决定是否有效。
         self.assertTrue(
-            all(not pose.position_valid for pose in mismatch_output.vehicles)
+            all(pose.position_valid for pose in mismatch_output.vehicles)
         )
 
         incomplete_stamp_ns = stamp_ns + 400_000_000
