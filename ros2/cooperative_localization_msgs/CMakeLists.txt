@@ -1,3 +1,4 @@
+# 功能：生成本工程的单车状态和三车相对位姿 ROS 2 消息类型。
 cmake_minimum_required(VERSION 3.8)
 project(cooperative_localization_msgs)
 

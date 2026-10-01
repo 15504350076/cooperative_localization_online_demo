@@ -1,3 +1,5 @@
+// 功能：验证 IMU 轴系、单位、协方差变换及姿态四元数组合的基本契约。
+
 #include "../src/imu_input_transform.hpp"
 
 #include <array>

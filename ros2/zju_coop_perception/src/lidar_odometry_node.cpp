@@ -1,3 +1,6 @@
+// 功能：将连续 PointCloud2 转为平面 ICP 里程计；只发布局部激光里程计，
+// 不直接修改协同定位核心，也不把未验收的点云自动加入主融合。
+
 #include <algorithm>
 #include <array>
 #include <cmath>

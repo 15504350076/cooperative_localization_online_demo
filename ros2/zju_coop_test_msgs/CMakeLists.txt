@@ -1,3 +1,4 @@
+# 功能：生成仿真与测试使用的 UWB 消息替身，不作为上交正式接口。
 cmake_minimum_required(VERSION 3.8)
 project(zju_coop_test_msgs)
 

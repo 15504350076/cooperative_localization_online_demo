@@ -1,3 +1,4 @@
+# 功能：安装车辆/仿真启动文件与配置，并注册 bringup 测试。
 cmake_minimum_required(VERSION 3.8)
 project(zju_coop_bringup)
 

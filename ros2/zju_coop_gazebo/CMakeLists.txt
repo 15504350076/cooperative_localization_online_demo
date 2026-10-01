@@ -1,3 +1,4 @@
+# 功能：安装 Gazebo 场景、模型和启动文件，并注册可选仿真测试。
 cmake_minimum_required(VERSION 3.8)
 project(zju_coop_gazebo)
 

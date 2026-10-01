@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""验证本机 NodeState UDP 桥接包的编码、解码和损坏拒绝。"""
 
 import pathlib
 import sys

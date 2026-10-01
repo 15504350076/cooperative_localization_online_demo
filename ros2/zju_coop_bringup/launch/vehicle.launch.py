@@ -1,3 +1,5 @@
+"""按车辆配置启动本地惯导、可选传感器前端及参考车协同融合。"""
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition

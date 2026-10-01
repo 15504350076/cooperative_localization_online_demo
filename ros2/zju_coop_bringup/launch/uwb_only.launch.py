@@ -1,3 +1,5 @@
+"""只启动参考车的三边 UWB 相对队形解算，供最小在线排障使用。"""
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution

@@ -1,3 +1,6 @@
+// 功能：实现低带宽二维分布式融合器的状态缓存、测距更新和相对位姿快照。
+// 输入是各车 NodeState 与 UWB RangePacket，输出以参考车为原点的 Pose2D。
+
 #include "core/distributed_fusion2d.hpp"
 
 #include <algorithm>

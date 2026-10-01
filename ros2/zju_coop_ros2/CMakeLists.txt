@@ -1,3 +1,4 @@
+# 功能：将原生算法 SDK 封装为 ROS 2 惯导/协同融合节点并注册测试。
 cmake_minimum_required(VERSION 3.16)
 project(zju_coop_ros2 VERSION 0.3.0 LANGUAGES CXX)
 

@@ -1,3 +1,5 @@
+// 功能：验证二维分布式融合器的状态接入、测距修正和相对 Pose2D 输出。
+
 #include "core/distributed_fusion2d.hpp"
 #include "test_support.hpp"
 

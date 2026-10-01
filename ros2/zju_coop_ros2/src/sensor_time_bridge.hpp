@@ -1,3 +1,6 @@
+// 功能：把本机 steady clock 映射到传感器 UWB 时间域，
+// 为测量时间与接收时间提供同一时间基准，不负责设备授时。
+
 #pragma once
 
 #include <algorithm>

@@ -1,3 +1,5 @@
+// 功能：验证 UWB 时间桥的首次建锚、单调性、延迟容忍和溢出处理。
+
 #include "../src/sensor_time_bridge.hpp"
 
 #include <cstdint>

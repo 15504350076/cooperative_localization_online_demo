@@ -1,3 +1,4 @@
+# 功能：构建激光里程计、安装视觉前端，并注册感知模块测试。
 cmake_minimum_required(VERSION 3.16)
 project(zju_coop_perception VERSION 0.3.0 LANGUAGES C CXX)
 

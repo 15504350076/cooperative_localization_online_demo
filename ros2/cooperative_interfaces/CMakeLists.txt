@@ -1,3 +1,4 @@
+# 功能：生成与上交盒端约定一致的 GNSS、身份和 UWB ROS 2 消息类型。
 cmake_minimum_required(VERSION 3.8)
 project(cooperative_interfaces)
 

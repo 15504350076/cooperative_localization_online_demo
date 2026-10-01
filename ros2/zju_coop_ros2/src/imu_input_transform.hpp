@@ -1,3 +1,6 @@
+// 功能：集中完成 IMU 轴系、导航系、单位和协方差变换，
+// 把上游 FRD/NED 数据统一为算法使用的 FLU/ENU 表示。
+
 #pragma once
 
 #include <array>
