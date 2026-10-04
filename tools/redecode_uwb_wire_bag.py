@@ -187,7 +187,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("bag", type=Path, help="含metadata.yaml的UWB录包目录")
     parser.add_argument("--core-check", type=Path,
-                        help="check_three_node_formation.cpp编译出的复核程序")
+                        help="tests/helpers/check_three_node_formation.cpp编译出的复核程序")
     args = parser.parse_args()
     rows, lengths = read_bag(args.bag)
     csv_path, report_path = write_outputs(args.bag, rows, lengths, args.core_check)

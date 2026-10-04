@@ -423,7 +423,7 @@ def main():
     parser.add_argument("--preview-stride", type=int, default=100)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--end-seconds", type=float, help="只使用消息相对首帧不超过此秒数的数据")
-    parser.add_argument("--core-check", type=Path, help="check_static_imu_core.cpp编译出的复核程序")
+    parser.add_argument("--core-check", type=Path, help="tests/helpers/check_static_imu_core.cpp编译出的复核程序")
     args = parser.parse_args()
     if not math.isfinite(args.calibration_seconds) or args.calibration_seconds <= 0.0:
         parser.error("--calibration-seconds must be positive")

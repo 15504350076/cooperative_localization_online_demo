@@ -69,14 +69,12 @@
 | `src/net`                                                        | 当前演示使用的跨平台 UDP 封装                         |
 | `config/demo.ini`                                                | 默认 15 维 IMU＋测距融合参数和三车初值                |
 | `config/range_only_demo.ini`                                     | 仅测距回退模式参数和三车初值                          |
-| `docs`                                                           | 算法、C API、协议、盒端适配、验收、扩展和交付验证说明 |
-| `tools/uwb_simulator.py`                                         | 确定性 3-4-5 三角形 UWB 模拟器                        |
-| `tools/imu_uwb_simulator.py`                                     | 三车100 Hz IMU＋20 Hz UWB模拟器                       |
-| `tools/gcs_dashboard.py`                                         | 零第三方依赖的二维在线面板                            |
-| `tools/online_smoke_test.py`、`tools/imu_online_smoke_test.py` | 两种模式的真实进程测试                                |
-| `examples/sdk_consumer.cpp`                                      | 直接调用 C ABI 的可编译示例                           |
-| `tests`、`tools/test_*.py`                                     | C/C++ 与 Python 自动测试                              |
-| `33_临时UDP演示协议_v1.md`                                       | 当前联调帧、状态、告警和日志格式                      |
+| `ros2`                                                          | ROS 2 消息、bringup、传感器适配、感知和 Gazebo 包      |
+| `docs`                                                          | 当前操作/方案/接口文档；历史材料统一在 `docs/archive`  |
+| `tools`                                                         | 现场录包、离线分析、模拟器、GCS 和进程冒烟工具        |
+| `tests`                                                         | C/C++ 单元测试、ROS 适配测试和测试复核小工具           |
+| `examples/sdk_consumer.cpp`                                     | 直接调用 C ABI 的可编译示例                            |
+| `docs/参考/33_临时UDP演示协议_v1.md`                             | 临时联调帧、状态、告警和日志格式                       |
 
 文档总索引和推荐阅读顺序见 [`docs/00_文档索引与使用顺序.md`](docs/00_文档索引与使用顺序.md)。要快速理解当前算法主线，先阅读 [`docs/27_当前核心算法说明与落地方案.md`](docs/27_当前核心算法说明与落地方案.md)。当前状态和交接入口统一看 [`docs/40_上交盒端与浙大算法当前进度及已有能力.md`](docs/40_上交盒端与浙大算法当前进度及已有能力.md)；学习源码时阅读 [`docs/35_工程理论与技能学习大纲.md`](docs/35_工程理论与技能学习大纲.md)。
 

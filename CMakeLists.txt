@@ -285,9 +285,9 @@ install(FILES config/demo.ini config/range_only_demo.ini
 )
 install(FILES
     README.md
-    33_临时UDP演示协议_v1.md
     DESTINATION ${CMAKE_INSTALL_DATADIR}/zju_coop
 )
+# 协议说明统一随 docs/ 安装，避免在源码根目录维护一份重复文档。
 install(DIRECTORY docs/
     DESTINATION ${CMAKE_INSTALL_DATADIR}/zju_coop/docs
     FILES_MATCHING PATTERN "*.md"
