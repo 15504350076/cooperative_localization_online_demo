@@ -4,12 +4,15 @@ from pathlib import Path
 import subprocess
 import tarfile
 import tempfile
-from record_joint_time import remote_command, unpack, seconds_text
+from record_joint_time import remote_command, ros_env, unpack, seconds_text
 
 assert seconds_text(1785547399180000000) == '1785547399.180000000'
 
 for topics in (['/imu/raw'], ['/uwb/range', '/node/id']):
-    command = remote_command('/home/firefly/time_test/test_imu_rec_v1', topics, 180)
+    command = remote_command(
+        '/home/firefly/time_test/test_imu_rec_v1', topics, 180,
+        ros_env(107, 'rmw_fastrtps_cpp'),
+    )
     subprocess.run(['bash', '-n'], input=command, text=True, check=True)
     assert 'timeout --foreground --signal=INT --kill-after=10s 180s' in command
     assert 'metadata.yaml' in command
