@@ -6,6 +6,12 @@
 
 两套仿真的关系：Gazebo 是主流程，负责物理场景和传感器链路；`simulation.launch.py` 只是排查算法时可用的替代输入，和 Gazebo 二选一，日常不需要运行。
 
+当前三车场景是仓库式测试环境：包含仓库外壳和门洞、货架货箱、托盘、输送线、安全护栏、地面导向线、顶梁灯具，以及三辆带 IMU/UWB/LiDAR/相机外观的车辆。场景仍使用本地 SDF，不依赖下载模型；UWB 仍是算法必需输入。
+
+三车不是在空地画圆：场景节点会按闭环航点控制车辆。1 号车进入中部货架巷道，2 号车经过东侧输送线和装卸区，3 号车穿过两排货架之间的通道。启动后约 30～50 秒即可看到车辆进入障碍物群；长时间运行会重复巡航。
+
+场景节点还根据已知的静态障碍物位置和三车 Gazebo 位姿做安全层：接近货架、托盘、输送线时减速绕行，车辆互相接近时按车号让行并转向避让。它用于仿真测试安全性，不等同于真实车上的 LiDAR 自主避障规划器。
+
 ## 1. 终端 1：编译
 
 ```bash
@@ -34,14 +40,21 @@ colcon --log-base log/ros2-sim-check-current-build build \
 cd /home/pdq/Code/cooperative_localization_online_demo/cooperative_localization_online_demo
 source /opt/ros/humble/setup.bash
 source install/ros2-sim-check-current/setup.bash
-export ROS_DOMAIN_ID=169
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export ROS_LOCALHOST_ONLY=1
 
 ros2 launch zju_coop_gazebo three_vehicle_gazebo.launch.py
 ```
 
-这条命令已包含 Gazebo、三车 IMU/UWB 和定位算法，不要再同时启动 `simulation.launch.py`。窗口打开后等待约 5 秒，三车自动开始运动。**保持终端 1 运行，不要按 `Ctrl+C`。**
+这条命令已包含 Gazebo、三车 IMU/UWB 和定位算法，不要再同时启动 `simulation.launch.py`。窗口打开后首次渲染可能需要 20～30 秒（软件渲染时更明显），看到仓库和三车后再开始操作。**保持终端 1 运行，不要按 `Ctrl+C`。**如果仍只看到实体树而看不到场景，确认没有复用旧的 Gazebo 进程，再重新执行本节启动命令；当前默认使用软件渲染以避免空白视口。
+
+需要同时显示三车的激光雷达和相机数据时，把启动命令改为：
+
+```bash
+ros2 launch zju_coop_gazebo three_vehicle_gazebo.launch.py \
+  enable_lidar:=true enable_camera:=true
+```
+
+默认启动即可得到三车 IMU、仿真 UWB 和 `/cooperative_localization/poses_2d`；加上上面的参数后再得到三车 LiDAR 点云和相机 `Image/CameraInfo`。定位真值同时发布在 `/simulation/ground_truth/poses_2d`，用于验收算法误差。
 
 ## 3. 终端 2：直接输出定位精度
 
@@ -51,8 +64,6 @@ Gazebo 运行约 5 秒后，在终端 2 完整执行下面命令。程序采集 
 cd /home/pdq/Code/cooperative_localization_online_demo/cooperative_localization_online_demo
 source /opt/ros/humble/setup.bash
 source install/ros2-sim-check-current/setup.bash
-export ROS_DOMAIN_ID=169
-export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export ROS_LOCALHOST_ONLY=1
 
 python3 tools/measure_simulation_accuracy.py --duration 10
@@ -77,7 +88,7 @@ export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export ROS_LOCALHOST_ONLY=1
 
 ctest --test-dir build/ros2-sim-check-current/zju_coop_ros2 \
-  -R '^test_test_static_imu_initialization.launch.py$' --output-on-failure
+  --tests-regex '^test_test_static_imu_initialization.launch.py$' --output-on-failure
 ```
 
 看到 `100% tests passed` 表示该专项测试完成。这项测试检查启动静止估计和恒定陀螺零偏扣除，不代表实测精度。

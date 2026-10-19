@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<sdf version="1.8">
+  <model name="zju_warehouse_rack">
+    <static>true</static>
+    <link name="rack">
+      <collision name="post_fl_collision"><pose>-1.55 -0.45 1.65 0 0 0</pose><geometry><box><size>0.12 0.12 3.30</size></box></geometry></collision>
+      <collision name="post_fr_collision"><pose>1.55 -0.45 1.65 0 0 0</pose><geometry><box><size>0.12 0.12 3.30</size></box></geometry></collision>
+      <collision name="post_bl_collision"><pose>-1.55 0.45 1.65 0 0 0</pose><geometry><box><size>0.12 0.12 3.30</size></box></geometry></collision>
+      <collision name="post_br_collision"><pose>1.55 0.45 1.65 0 0 0</pose><geometry><box><size>0.12 0.12 3.30</size></box></geometry></collision>
+      <collision name="shelf_low_collision"><pose>0 0 0.70 0 0 0</pose><geometry><box><size>3.20 0.82 0.10</size></box></geometry></collision>
+      <collision name="shelf_mid_collision"><pose>0 0 1.70 0 0 0</pose><geometry><box><size>3.20 0.82 0.10</size></box></geometry></collision>
+      <collision name="shelf_high_collision"><pose>0 0 2.70 0 0 0</pose><geometry><box><size>3.20 0.82 0.10</size></box></geometry></collision>
+
+      <visual name="post_fl"><pose>-1.55 -0.45 1.65 0 0 0</pose><geometry><box><size>0.12 0.12 3.30</size></box></geometry><material><ambient>0.10 0.12 0.15 1</ambient><diffuse>0.14 0.17 0.21 1</diffuse></material></visual>
+      <visual name="post_fr"><pose>1.55 -0.45 1.65 0 0 0</pose><geometry><box><size>0.12 0.12 3.30</size></box></geometry><material><ambient>0.10 0.12 0.15 1</ambient><diffuse>0.14 0.17 0.21 1</diffuse></material></visual>
+      <visual name="post_bl"><pose>-1.55 0.45 1.65 0 0 0</pose><geometry><box><size>0.12 0.12 3.30</size></box></geometry><material><ambient>0.10 0.12 0.15 1</ambient><diffuse>0.14 0.17 0.21 1</diffuse></material></visual>
+      <visual name="post_br"><pose>1.55 0.45 1.65 0 0 0</pose><geometry><box><size>0.12 0.12 3.30</size></box></geometry><material><ambient>0.10 0.12 0.15 1</ambient><diffuse>0.14 0.17 0.21 1</diffuse></material></visual>
+      <visual name="shelf_low"><pose>0 0 0.70 0 0 0</pose><geometry><box><size>3.20 0.82 0.10</size></box></geometry><material><ambient>0.22 0.25 0.29 1</ambient><diffuse>0.28 0.32 0.37 1</diffuse></material></visual>
+      <visual name="shelf_mid"><pose>0 0 1.70 0 0 0</pose><geometry><box><size>3.20 0.82 0.10</size></box></geometry><material><ambient>0.22 0.25 0.29 1</ambient><diffuse>0.28 0.32 0.37 1</diffuse></material></visual>
+      <visual name="shelf_high"><pose>0 0 2.70 0 0 0</pose><geometry><box><size>3.20 0.82 0.10</size></box></geometry><material><ambient>0.22 0.25 0.29 1</ambient><diffuse>0.28 0.32 0.37 1</diffuse></material></visual>
+
+      <visual name="crate_red"><pose>-1.05 -0.25 1.05 0 0 0</pose><geometry><box><size>0.72 0.42 0.62</size></box></geometry><material><ambient>0.55 0.08 0.04 1</ambient><diffuse>0.78 0.12 0.05 1</diffuse></material></visual>
+      <visual name="crate_blue"><pose>0.05 -0.25 1.05 0 0 0</pose><geometry><box><size>0.70 0.42 0.62</size></box></geometry><material><ambient>0.03 0.18 0.48 1</ambient><diffuse>0.05 0.32 0.78 1</diffuse></material></visual>
+      <visual name="crate_yellow"><pose>1.05 -0.25 2.05 0 0 0</pose><geometry><box><size>0.70 0.42 0.62</size></box></geometry><material><ambient>0.68 0.40 0.02 1</ambient><diffuse>0.95 0.65 0.05 1</diffuse></material></visual>
+      <visual name="crate_green"><pose>-0.35 0.25 2.05 0 0 0</pose><geometry><box><size>0.72 0.42 0.62</size></box></geometry><material><ambient>0.04 0.35 0.14 1</ambient><diffuse>0.08 0.58 0.22 1</diffuse></material></visual>
+
+      <visual name="safety_stripe_left"><pose>-1.62 0 0.32 0 0 0</pose><geometry><box><size>0.04 0.86 0.10</size></box></geometry><material><ambient>0.95 0.65 0.04 1</ambient><diffuse>1.0 0.80 0.08 1</diffuse></material></visual>
+      <visual name="safety_stripe_right"><pose>1.62 0 0.32 0 0 0</pose><geometry><box><size>0.04 0.86 0.10</size></box></geometry><material><ambient>0.95 0.65 0.04 1</ambient><diffuse>1.0 0.80 0.08 1</diffuse></material></visual>
+    </link>
+  </model>
+</sdf>

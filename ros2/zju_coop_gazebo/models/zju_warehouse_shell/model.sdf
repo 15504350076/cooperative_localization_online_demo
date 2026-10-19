@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<sdf version="1.8">
+  <model name="zju_warehouse_shell">
+    <static>true</static>
+    <link name="shell">
+      <!-- Back wall with a central loading-door opening represented by two
+           side panels and a lintel, so the vehicles can drive through it. -->
+      <collision name="back_left_collision"><pose>-10 13.6 2.1 0 0 0</pose><geometry><box><size>4 0.22 4.2</size></box></geometry></collision>
+      <collision name="back_right_collision"><pose>10 13.6 2.1 0 0 0</pose><geometry><box><size>4 0.22 4.2</size></box></geometry></collision>
+      <collision name="back_lintel_collision"><pose>0 13.6 3.7 0 0 0</pose><geometry><box><size>16 0.22 1.0</size></box></geometry></collision>
+      <collision name="left_wall_collision"><pose>-13.9 3.6 2.1 0 0 0</pose><geometry><box><size>0.22 20 4.2</size></box></geometry></collision>
+
+      <visual name="back_left"><pose>-10 13.6 2.1 0 0 0</pose><geometry><box><size>4 0.22 4.2</size></box></geometry><material><ambient>0.18 0.22 0.26 1</ambient><diffuse>0.24 0.30 0.35 1</diffuse></material></visual>
+      <visual name="back_right"><pose>10 13.6 2.1 0 0 0</pose><geometry><box><size>4 0.22 4.2</size></box></geometry><material><ambient>0.18 0.22 0.26 1</ambient><diffuse>0.24 0.30 0.35 1</diffuse></material></visual>
+      <visual name="back_lintel"><pose>0 13.6 3.7 0 0 0</pose><geometry><box><size>16 0.22 1.0</size></box></geometry><material><ambient>0.18 0.22 0.26 1</ambient><diffuse>0.24 0.30 0.35 1</diffuse></material></visual>
+      <visual name="left_wall"><pose>-13.9 3.6 2.1 0 0 0</pose><geometry><box><size>0.22 20 4.2</size></box></geometry><material><ambient>0.18 0.22 0.26 1</ambient><diffuse>0.24 0.30 0.35 1</diffuse></material></visual>
+
+      <!-- Orange structural posts and black/yellow hazard stripes. -->
+      <visual name="door_post_left"><pose>-8.2 13.42 2.15 0 0 0</pose><geometry><box><size>0.28 0.34 4.3</size></box></geometry><material><ambient>0.82 0.33 0.03 1</ambient><diffuse>1.0 0.48 0.04 1</diffuse></material></visual>
+      <visual name="door_post_right"><pose>8.2 13.42 2.15 0 0 0</pose><geometry><box><size>0.28 0.34 4.3</size></box></geometry><material><ambient>0.82 0.33 0.03 1</ambient><diffuse>1.0 0.48 0.04 1</diffuse></material></visual>
+      <visual name="door_header"><pose>0 13.42 4.15 0 0 0</pose><geometry><box><size>16.7 0.34 0.24</size></box></geometry><material><ambient>0.82 0.33 0.03 1</ambient><diffuse>1.0 0.48 0.04 1</diffuse></material></visual>
+      <visual name="window_band"><pose>-10 13.40 3.05 0 0 0</pose><geometry><box><size>3.1 0.04 0.55</size></box></geometry><material><ambient>0.04 0.18 0.28 1</ambient><diffuse>0.08 0.40 0.58 1</diffuse><specular>0.5 0.5 0.5 1</specular></material></visual>
+      <visual name="window_band_right"><pose>10 13.40 3.05 0 0 0</pose><geometry><box><size>3.1 0.04 0.55</size></box></geometry><material><ambient>0.04 0.18 0.28 1</ambient><diffuse>0.08 0.40 0.58 1</diffuse><specular>0.5 0.5 0.5 1</specular></material></visual>
+      <visual name="door_shadow"><pose>0 13.38 1.75 0 0 0</pose><geometry><box><size>15.8 0.025 3.3</size></box></geometry><material><ambient>0.025 0.03 0.04 1</ambient><diffuse>0.035 0.045 0.06 1</diffuse></material></visual>
+
+      <!-- Ceiling beams and bright industrial fixtures. -->
+      <visual name="ceiling_beam_a"><pose>-4 6 4.35 0 0 0</pose><geometry><box><size>0.18 20 0.18</size></box></geometry><material><ambient>0.12 0.14 0.16 1</ambient><diffuse>0.20 0.23 0.27 1</diffuse></material></visual>
+      <visual name="ceiling_beam_b"><pose>4 6 4.35 0 0 0</pose><geometry><box><size>0.18 20 0.18</size></box></geometry><material><ambient>0.12 0.14 0.16 1</ambient><diffuse>0.20 0.23 0.27 1</diffuse></material></visual>
+      <visual name="ceiling_light_a"><pose>-4 6 4.15 0 0 0</pose><geometry><box><size>0.55 2.5 0.06</size></box></geometry><material><ambient>0.9 0.9 0.82 1</ambient><diffuse>1.0 1.0 0.92 1</diffuse><emissive>0.8 0.8 0.65 1</emissive></material></visual>
+      <visual name="ceiling_light_b"><pose>4 6 4.15 0 0 0</pose><geometry><box><size>0.55 2.5 0.06</size></box></geometry><material><ambient>0.9 0.9 0.82 1</ambient><diffuse>1.0 1.0 0.92 1</diffuse><emissive>0.8 0.8 0.65 1</emissive></material></visual>
+    </link>
+  </model>
+</sdf>

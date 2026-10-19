@@ -10,8 +10,12 @@
     <gravity>0 0 -9.80665</gravity>
     <magnetic_field>0 0 0</magnetic_field>
     <scene>
-      <!-- The project GUI config replaces Fortress's 20 x 20 m helper grid
-           with a 40 x 40 m grid centred on the enlarged arena. -->
+      <!-- Keep the world scene explicit. Without these values the Fortress
+           GUI can receive the entity tree but render an empty viewport. -->
+      <ambient>1.0 1.0 1.0</ambient>
+      <background>0.72 0.78 0.86</background>
+      <!-- The project GUI config hides the helper grid; the floor markings
+           and warehouse geometry provide the visual reference instead. -->
       <grid>false</grid>
     </scene>
 
@@ -23,9 +27,8 @@
             name="ignition::gazebo::systems::Imu"/>
     <plugin filename="libignition-gazebo-sensors-system.so"
             name="ignition::gazebo::systems::Sensors">
-      <!-- VMware needs OGRE1 for the GUI client, but GPU lidar returns valid
-           geometry only with the OGRE2 server renderer. The launch file keeps
-           these two renderers deliberately separate. -->
+      <!-- Keep GUI and sensor rendering on OGRE2. This is the renderer used by
+           Gazebo Fortress for both the visible scene and GPU sensors. -->
       <render_engine>ogre2</render_engine>
     </plugin>
     <plugin filename="libignition-gazebo-scene-broadcaster-system.so"
@@ -40,6 +43,26 @@
       <direction>-0.5 0.1 -0.9</direction>
     </light>
 
+    <!-- Soft area lighting keeps the warehouse details readable in the GUI. -->
+    <light type="point" name="warehouse_light_a">
+      <pose>4 8 6 0 0 0</pose>
+      <diffuse>1.0 0.88 0.68 1</diffuse>
+      <specular>0.25 0.22 0.18 1</specular>
+      <attenuation><range>18</range><constant>0.55</constant><linear>0.04</linear><quadratic>0.01</quadratic></attenuation>
+    </light>
+    <light type="point" name="warehouse_light_b">
+      <pose>13 12 6 0 0 0</pose>
+      <diffuse>0.72 0.86 1.0 1</diffuse>
+      <specular>0.20 0.24 0.28 1</specular>
+      <attenuation><range>20</range><constant>0.55</constant><linear>0.04</linear><quadratic>0.01</quadratic></attenuation>
+    </light>
+    <light type="point" name="warehouse_light_c">
+      <pose>22 18 6 0 0 0</pose>
+      <diffuse>1.0 0.86 0.62 1</diffuse>
+      <specular>0.25 0.21 0.16 1</specular>
+      <attenuation><range>20</range><constant>0.55</constant><linear>0.04</linear><quadratic>0.01</quadratic></attenuation>
+    </light>
+
     <model name="ground_plane">
       <static>true</static>
       <link name="link">
@@ -49,8 +72,22 @@
         <visual name="visual">
           <pose>0 0 -0.005 0 0 0</pose>
           <geometry><plane><normal>0 0 1</normal><size>100 100</size></plane></geometry>
-          <material><ambient>0.75 0.75 0.75 1</ambient><diffuse>0.75 0.75 0.75 1</diffuse></material>
+          <material><ambient>0.28 0.31 0.34 1</ambient><diffuse>0.34 0.37 0.40 1</diffuse></material>
         </visual>
+      </link>
+    </model>
+
+    <!-- Painted traffic lanes and staging zones make the vehicle motion easy
+         to read from the default camera while remaining collision-free. -->
+    <model name="warehouse_floor_markings">
+      <static>true</static>
+      <link name="markings">
+        <visual name="lane_center"><pose>12 0 0.012 0 0 0</pose><geometry><box><size>26 0.08 0.025</size></box></geometry><material><ambient>0.92 0.72 0.10 1</ambient><diffuse>1.0 0.86 0.16 1</diffuse></material></visual>
+        <visual name="lane_north"><pose>12 5.0 0.012 0 0 0</pose><geometry><box><size>26 0.06 0.025</size></box></geometry><material><ambient>0.85 0.85 0.82 1</ambient><diffuse>0.96 0.96 0.92 1</diffuse></material></visual>
+        <visual name="lane_south"><pose>12 -1.4 0.012 0 0 0</pose><geometry><box><size>26 0.06 0.025</size></box></geometry><material><ambient>0.85 0.85 0.82 1</ambient><diffuse>0.96 0.96 0.92 1</diffuse></material></visual>
+        <visual name="crossing_a"><pose>6 1.8 0.013 0 0 0</pose><geometry><box><size>0.18 4.0 0.025</size></box></geometry><material><ambient>0.95 0.95 0.90 1</ambient><diffuse>1.0 1.0 0.96 1</diffuse></material></visual>
+        <visual name="crossing_b"><pose>6.55 1.8 0.013 0 0 0</pose><geometry><box><size>0.18 4.0 0.025</size></box></geometry><material><ambient>0.95 0.95 0.90 1</ambient><diffuse>1.0 1.0 0.96 1</diffuse></material></visual>
+        <visual name="staging_zone"><pose>23 5.2 0.014 0 0 0</pose><geometry><box><size>5.0 0.08 0.025</size></box></geometry><material><ambient>0.95 0.55 0.04 1</ambient><diffuse>1.0 0.72 0.08 1</diffuse></material></visual>
       </link>
     </model>
 
@@ -74,6 +111,84 @@
         <visual name="pillar_b_visual"><pose>1.8 8.2 0.55 0 0 -0.35</pose><geometry><box><size>1.4 0.5 1.1</size></box></geometry><material><ambient>0.20 0.35 0.55 1</ambient><diffuse>0.20 0.40 0.65 1</diffuse></material></visual>
       </link>
     </model>
+
+    <!-- Procedural warehouse aisle: no external meshes or downloads are
+         required, so the scene remains usable without internet access. -->
+    <include>
+      <uri>model://zju_warehouse_rack</uri>
+      <name>rack_row_a</name>
+      <pose>7.0 14.0 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://zju_warehouse_rack</uri>
+      <name>rack_row_b</name>
+      <pose>12.0 14.0 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://zju_warehouse_rack</uri>
+      <name>rack_row_c</name>
+      <pose>17.0 14.0 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://zju_warehouse_rack</uri>
+      <name>rack_row_d</name>
+      <pose>7.0 20.2 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://zju_warehouse_rack</uri>
+      <name>rack_row_e</name>
+      <pose>12.0 20.2 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://zju_warehouse_rack</uri>
+      <name>rack_row_f</name>
+      <pose>17.0 20.2 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://zju_loading_pallet</uri>
+      <name>loading_pallet_west</name>
+      <pose>4.8 10.8 0 0 0 0.15</pose>
+    </include>
+    <include>
+      <uri>model://zju_loading_pallet</uri>
+      <name>loading_pallet_east</name>
+      <pose>22.5 10.8 0 0 0 -0.15</pose>
+    </include>
+    <include>
+      <uri>model://zju_loading_pallet</uri>
+      <name>loading_pallet_back</name>
+      <pose>22.5 18.0 0 0 0 0.20</pose>
+    </include>
+    <include>
+      <uri>model://zju_warehouse_frame</uri>
+      <name>warehouse_frame_back</name>
+      <pose>12.0 22.8 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://zju_warehouse_frame</uri>
+      <name>warehouse_frame_mid</name>
+      <pose>12.0 11.8 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://zju_conveyor</uri>
+      <name>conveyor_station</name>
+      <pose>20.0 8.0 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://zju_safety_barrier</uri>
+      <name>safety_barrier_east</name>
+      <pose>22.0 6.2 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://zju_safety_barrier</uri>
+      <name>safety_barrier_loading</name>
+      <pose>7.5 10.6 0 0 0 1.5708</pose>
+    </include>
+    <include>
+      <uri>model://zju_warehouse_shell</uri>
+      <name>warehouse_shell</name>
+      <pose>12 11 0 0 0 0</pose>
+    </include>
 
     <!-- Four uniquely coloured coplanar targets form metric visual
          landmarks. The planar frontend uses their known ENU centres; no

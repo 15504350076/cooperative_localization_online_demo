@@ -1,7 +1,6 @@
 """Static contract for the optional Gazebo Fortress demo assets."""
 
 import ast
-import math
 from pathlib import Path
 import unittest
 import xml.etree.ElementTree as ET
@@ -18,6 +17,22 @@ class GazeboAssetTest(unittest.TestCase):
         model_path = PACKAGE_ROOT / "models/zju_diff_vehicle/model.sdf"
         reference_model_path = (
             PACKAGE_ROOT / "models/zju_reference_vehicle/model.sdf"
+        )
+        warehouse_rack_path = (
+            PACKAGE_ROOT / "models/zju_warehouse_rack/model.sdf"
+        )
+        loading_pallet_path = (
+            PACKAGE_ROOT / "models/zju_loading_pallet/model.sdf"
+        )
+        warehouse_frame_path = (
+            PACKAGE_ROOT / "models/zju_warehouse_frame/model.sdf"
+        )
+        warehouse_shell_path = (
+            PACKAGE_ROOT / "models/zju_warehouse_shell/model.sdf"
+        )
+        conveyor_path = PACKAGE_ROOT / "models/zju_conveyor/model.sdf"
+        safety_barrier_path = (
+            PACKAGE_ROOT / "models/zju_safety_barrier/model.sdf"
         )
         world_path = PACKAGE_ROOT / "worlds/three_vehicle.sdf"
         bridge_path = PACKAGE_ROOT / "config/bridge.yaml"
@@ -41,6 +56,12 @@ class GazeboAssetTest(unittest.TestCase):
         paths = (
             model_path,
             reference_model_path,
+            warehouse_rack_path,
+            loading_pallet_path,
+            warehouse_frame_path,
+            warehouse_shell_path,
+            conveyor_path,
+            safety_barrier_path,
             world_path,
             bridge_path,
             lidar_bridge_path,
@@ -128,11 +149,32 @@ class GazeboAssetTest(unittest.TestCase):
             include.findtext("name"): include.findtext("uri")
             for include in world.findall("include")
         }
-        self.assertEqual(included, {
+        self.assertEqual({
+            name: uri for name, uri in included.items()
+            if name.startswith("vehicle_")
+        }, {
             "vehicle_1": "model://zju_reference_vehicle",
             "vehicle_2": "model://zju_diff_vehicle",
             "vehicle_3": "model://zju_diff_vehicle",
         })
+        self.assertEqual(
+            included["rack_row_a"], "model://zju_warehouse_rack"
+        )
+        self.assertEqual(
+            included["loading_pallet_west"], "model://zju_loading_pallet"
+        )
+        self.assertEqual(
+            included["warehouse_frame_back"], "model://zju_warehouse_frame"
+        )
+        self.assertEqual(
+            included["warehouse_shell"], "model://zju_warehouse_shell"
+        )
+        self.assertEqual(
+            included["conveyor_station"], "model://zju_conveyor"
+        )
+        self.assertEqual(
+            included["safety_barrier_east"], "model://zju_safety_barrier"
+        )
         sensors_plugins = [
             plugin for plugin in world.findall("plugin")
             if plugin.attrib.get("name")
@@ -215,19 +257,7 @@ class GazeboAssetTest(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn('filename="MinimalScene"', gazebo_gui_source)
-        self.assertIn('filename="GridConfig"', gazebo_gui_source)
-        self.assertIn(
-            "<horizontal_cell_count>40</horizontal_cell_count>",
-            gazebo_gui_source,
-        )
-        self.assertIn(
-            "<vertical_cell_count>0</vertical_cell_count>",
-            gazebo_gui_source,
-        )
-        self.assertIn("<cell_length>1</cell_length>", gazebo_gui_source)
-        self.assertIn(
-            "<pose>12 11 0.015 0 0 0</pose>", gazebo_gui_source
-        )
+        self.assertNotIn('filename="GridConfig"', gazebo_gui_source)
 
         rviz_config = yaml.safe_load(
             rviz_config_path.read_text(encoding="utf-8")
@@ -287,22 +317,37 @@ class GazeboAssetTest(unittest.TestCase):
                 except (TypeError, ValueError):
                     pass
         self.assertNotIn("MOTION_DURATION_NS", constants)
-        self.assertEqual(constants["LOOP_START_NS"], 15_000_000_000)
-        self.assertEqual(constants["LOOP_YAW_RATE_RAD_S"], 0.25)
         self.assertEqual(
             constants["LINEAR_SPEEDS_MPS"],
-            {1: 0.30, 2: 0.30, 3: 0.25},
+            {1: 0.75, 2: 0.80, 3: 0.72},
         )
-        self.assertIn(
-            "motion_elapsed_ns >= LOOP_START_NS", scenario_source
-        )
-        self.assertIn(
-            "command.angular.z = LOOP_YAW_RATE_RAD_S", scenario_source
-        )
-        self._assert_cyclic_trajectory_is_safe(constants)
+        self.assertEqual(constants["VEHICLE_AVOIDANCE_RADIUS_M"], 2.2)
+        self.assertEqual(constants["VEHICLE_MIN_CLEARANCE_M"], 1.15)
+        self.assertGreaterEqual(len(constants["STATIC_OBSTACLES"]), 10)
+        self.assertIn("_avoid_static_obstacles", scenario_source)
+        self.assertIn("_avoid_other_vehicles", scenario_source)
+        waypoints = constants["WAYPOINTS"]
+        self.assertEqual(set(waypoints), {1, 2, 3})
+        for node_id, route in waypoints.items():
+            self.assertGreaterEqual(len(route), 8)
+            self.assertEqual(route[0][:2], {
+                1: (0.0, 0.0),
+                2: (4.0, 0.0),
+                3: (0.0, 3.0),
+            }[node_id])
+            for x, y in route:
+                self.assertGreater(x, -2.0)
+                self.assertLess(x, 26.0)
+                self.assertGreater(y, -2.0)
+                self.assertLess(y, 24.0)
+        # The routes must visibly enter the rack aisles/loading area rather
+        # than remain in the open starting area.
+        self.assertIn((9.5, 16.5), waypoints[1])
+        self.assertIn((19.3, 17.0), waypoints[2])
+        self.assertIn((14.5, 13.0), waypoints[3])
         launch_source = launch_path.read_text(encoding="utf-8")
         ast.parse(launch_source)
-        self.assertIn('"--render-engine-gui ogre "', launch_source)
+        self.assertIn('"--render-engine-gui ogre2 "', launch_source)
         self.assertGreaterEqual(
             launch_source.count('"--render-engine-server ogre2 "'),
             1,
@@ -311,7 +356,7 @@ class GazeboAssetTest(unittest.TestCase):
             'if_value="-s --render-engine-server ogre2 "', launch_source
         )
         self.assertIn(
-            '"--render-engine-gui ogre "\n'
+            '"--render-engine-gui ogre2 "\n'
             '                        "--render-engine-server ogre2 "',
             launch_source,
         )
@@ -341,7 +386,7 @@ class GazeboAssetTest(unittest.TestCase):
             launch_source,
         )
         self.assertIn(
-            '"software_rendering",\n            default_value="false"',
+            '"software_rendering",\n            default_value="true"',
             launch_source,
         )
         self.assertIn('package="rtabmap_slam"', launch_source)
@@ -388,78 +433,6 @@ class GazeboAssetTest(unittest.TestCase):
         self.assertIsNone(camera.find("ignition_frame_id"))
         self.assertEqual(camera.findtext("camera/image/width"), "320")
         self.assertEqual(camera.findtext("camera/image/height"), "240")
-
-    def _assert_cyclic_trajectory_is_safe(self, constants):
-        positions = {
-            1: [0.0, 0.0, 0.0],
-            2: [4.0, 0.0, 0.0],
-            3: [0.0, 3.0, 0.5 * math.pi],
-        }
-        linear_velocities = {node_id: 0.0 for node_id in positions}
-        angular_velocities = {node_id: 0.0 for node_id in positions}
-        speeds = constants["LINEAR_SPEEDS_MPS"]
-        loop_start_s = constants["LOOP_START_NS"] * 1.0e-9
-        loop_rate = constants["LOOP_YAW_RATE_RAD_S"]
-        s_curve_duration_s = constants["S_CURVE_DURATION_NS"] * 1.0e-9
-        s_curve_peak_rate = constants["S_CURVE_PEAK_YAW_RATE_RAD_S"]
-        self.assertAlmostEqual(speeds[1] / loop_rate, 1.20)
-        self.assertAlmostEqual(speeds[2] / loop_rate, 1.20)
-        self.assertAlmostEqual(speeds[3] / loop_rate, 1.00)
-        vehicle_radius_m = 0.525
-        obstacles = (
-            (8.5, 4.8, (0.35 ** 2 + 0.60 ** 2) ** 0.5),
-            (1.8, 8.2, (0.70 ** 2 + 0.25 ** 2) ** 0.5),
-        )
-        dt_s = 0.01
-        for step in range(int(300.0 / dt_s) + 1):
-            elapsed_s = step * dt_s
-            for node_id, position in positions.items():
-                target_yaw_rate = 0.0
-                if node_id == 2 and elapsed_s < s_curve_duration_s:
-                    target_yaw_rate = s_curve_peak_rate * math.sin(
-                        2.0 * math.pi * elapsed_s / s_curve_duration_s
-                    )
-                elif elapsed_s >= loop_start_s:
-                    target_yaw_rate = loop_rate
-                linear_velocities[node_id] += max(
-                    -0.30 * dt_s,
-                    min(
-                        0.30 * dt_s,
-                        speeds[node_id] - linear_velocities[node_id],
-                    ),
-                )
-                angular_velocities[node_id] += max(
-                    -0.50 * dt_s,
-                    min(
-                        0.50 * dt_s,
-                        target_yaw_rate - angular_velocities[node_id],
-                    ),
-                )
-                position[2] += angular_velocities[node_id] * dt_s
-                position[0] += (
-                    linear_velocities[node_id]
-                    * math.cos(position[2]) * dt_s
-                )
-                position[1] += (
-                    linear_velocities[node_id]
-                    * math.sin(position[2]) * dt_s
-                )
-                self.assertGreater(position[0] - vehicle_radius_m, -2.625)
-                self.assertLess(position[0] + vehicle_radius_m, 26.625)
-                self.assertGreater(position[1] - vehicle_radius_m, -2.625)
-                self.assertLess(position[1] + vehicle_radius_m, 24.625)
-                for obstacle_x, obstacle_y, obstacle_radius in obstacles:
-                    clearance = (
-                        (position[0] - obstacle_x) ** 2
-                        + (position[1] - obstacle_y) ** 2
-                    ) ** 0.5 - vehicle_radius_m - obstacle_radius
-                    self.assertGreater(clearance, 0.50)
-            for left, right in ((1, 2), (1, 3), (2, 3)):
-                separation = (
-                    (positions[left][0] - positions[right][0]) ** 2
-                    + (positions[left][1] - positions[right][1]) ** 2
-                ) ** 0.5
-                self.assertGreater(separation, 1.20)
 
     def _assert_bridge_contract(self, entries, expected):
         self.assertIsInstance(entries, list)

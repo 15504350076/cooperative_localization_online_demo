@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<sdf version="1.8">
+  <model name="zju_loading_pallet">
+    <static>true</static>
+    <link name="pallet">
+      <collision name="base_collision"><pose>0 0 0.12 0 0 0</pose><geometry><box><size>1.35 0.95 0.24</size></box></geometry></collision>
+      <collision name="cargo_collision"><pose>0 0 0.78 0 0 0</pose><geometry><box><size>1.05 0.72 1.10</size></box></geometry></collision>
+      <visual name="base"><pose>0 0 0.12 0 0 0</pose><geometry><box><size>1.35 0.95 0.24</size></box></geometry><material><ambient>0.34 0.17 0.05 1</ambient><diffuse>0.52 0.28 0.09 1</diffuse></material></visual>
+      <visual name="cargo"><pose>0 0 0.78 0 0 0</pose><geometry><box><size>1.05 0.72 1.10</size></box></geometry><material><ambient>0.20 0.24 0.28 1</ambient><diffuse>0.33 0.40 0.48 1</diffuse></material></visual>
+      <visual name="band_front"><pose>0 -0.37 0.78 0 0 0</pose><geometry><box><size>1.08 0.03 0.15</size></box></geometry><material><ambient>0.95 0.63 0.04 1</ambient><diffuse>1.0 0.78 0.08 1</diffuse></material></visual>
+      <visual name="band_back"><pose>0 0.37 0.78 0 0 0</pose><geometry><box><size>1.08 0.03 0.15</size></box></geometry><material><ambient>0.95 0.63 0.04 1</ambient><diffuse>1.0 0.78 0.08 1</diffuse></material></visual>
+    </link>
+  </model>
+</sdf>

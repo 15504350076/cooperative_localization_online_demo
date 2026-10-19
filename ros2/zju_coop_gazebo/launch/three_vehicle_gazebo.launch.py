@@ -152,7 +152,7 @@ def generate_launch_description():
                     headless,
                     if_value="-s --render-engine-server ogre2 ",
                     else_value=[
-                        "--render-engine-gui ogre "
+                        "--render-engine-gui ogre2 "
                         "--render-engine-server ogre2 ",
                         "--gui-config ",
                         gazebo_gui_config,
@@ -352,6 +352,10 @@ def generate_launch_description():
         name="zju_gazebo_cooperative_fusion_node",
         output="screen",
         parameters=[{
+            # The Gazebo scene supplies both IMU and UWB.  Keep UWB in the
+            # fusion path; imu_uwb also makes the simulated yaw output
+            # observable instead of silently falling back to uwb_only.
+            "input_mode": "imu_uwb",
             "use_sim_time": True,
             "node_ids": [1, 2, 3],
             "reference_node_id": 1,
@@ -486,10 +490,10 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "software_rendering",
-            default_value="false",
+            default_value="true",
             description=(
-                "Use Mesa software rendering; leave disabled for a smoother "
-                "GUI and enable explicitly for headless sensor tests"
+                "Use Mesa software rendering for reliable GUI startup; set "
+                "false when the host hardware renderer is known to work"
             ),
         ),
         DeclareLaunchArgument(

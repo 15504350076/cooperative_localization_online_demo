@@ -20,14 +20,79 @@ from cooperative_interfaces.msg import UwbRange
 NODE_IDS = (1, 2, 3)
 UWB_EDGES = ((1, 2), (1, 3), (2, 3))
 STATIONARY_DURATION_NS = 1_000_000_000
-S_CURVE_DURATION_NS = 8_000_000_000
-LOOP_START_NS = 15_000_000_000
-S_CURVE_PEAK_YAW_RATE_RAD_S = 0.15
-LOOP_YAW_RATE_RAD_S = 0.25
+# The routes deliberately pass through the warehouse aisles and loading
+# area.  They are closed loops, so a long run repeatedly exercises the same
+# obstacle geometry instead of leaving all cars in the open starting area.
+WAYPOINTS = {
+    1: (
+        (0.0, 0.0),
+        (5.0, 0.0),
+        (5.0, 9.0),
+        (9.5, 9.0),
+        (9.5, 16.5),
+        (9.5, 18.0),
+        (4.5, 18.0),
+        (4.5, 11.0),
+        (0.0, 11.0),
+    ),
+    2: (
+        (4.0, 0.0),
+        (18.0, 0.0),
+        (18.0, 7.0),
+        (24.0, 7.0),
+        (24.0, 11.0),
+        (19.3, 11.0),
+        (19.3, 17.0),
+        (22.8, 16.0),
+        (24.0, 8.0),
+        (18.0, 5.0),
+        (4.0, 5.0),
+    ),
+    3: (
+        (0.0, 3.0),
+        (4.0, 3.0),
+        (4.0, 9.0),
+        (9.5, 9.0),
+        (9.5, 13.0),
+        (9.5, 18.0),
+        (14.5, 18.0),
+        (14.5, 13.0),
+        (19.3, 13.0),
+        (19.3, 18.0),
+        (24.0, 18.0),
+        (24.0, 5.0),
+        (0.0, 5.0),
+    ),
+}
+WAYPOINT_REACHED_M = 0.65
+MAX_ANGULAR_SPEED_RAD_S = 0.85
+HEADING_GAIN = 1.6
+VEHICLE_AVOIDANCE_RADIUS_M = 2.2
+VEHICLE_MIN_CLEARANCE_M = 1.15
+STATIC_CLEARANCE_M = 0.85
+# Approximate 2-D footprints of the static SDF objects.  This is a small
+# local safety layer for the scripted test route; it is not a replacement for
+# a production LiDAR planner.
+STATIC_OBSTACLES = (
+    (8.5, 4.8, 1.05),
+    (1.8, 8.2, 0.90),
+    (7.0, 14.0, 1.85),
+    (12.0, 14.0, 1.85),
+    (17.0, 14.0, 1.85),
+    (7.0, 20.2, 1.85),
+    (12.0, 20.2, 1.85),
+    (17.0, 20.2, 1.85),
+    (4.8, 10.8, 1.05),
+    (22.5, 10.8, 1.05),
+    (22.5, 18.0, 1.05),
+    (20.0, 8.0, 2.85),
+    (22.0, 6.2, 1.30),
+    (7.5, 10.6, 1.20),
+)
 LINEAR_SPEEDS_MPS = {
-    1: 0.30,
-    2: 0.30,
-    3: 0.25,
+    1: 0.75,
+    2: 0.80,
+    3: 0.72,
 }
 
 
@@ -106,6 +171,7 @@ class GazeboScenario(Node):
         self._latest_snapshot = None
         self._first_snapshot_stamp_ns = None
         self._last_published_stamp_ns = 0
+        self._waypoint_index = {node_id: 0 for node_id in NODE_IDS}
         self._timer = self.create_timer(0.05, self._tick)
 
     def _on_pose(self, node_id, message):
@@ -140,21 +206,140 @@ class GazeboScenario(Node):
                     del self._poses_by_stamp[old_stamp]
             return
 
-    def _publish_commands(self, motion_elapsed_ns):
-        for node_id, linear_speed in LINEAR_SPEEDS_MPS.items():
+    @staticmethod
+    def _wrap_angle(angle):
+        return (angle + math.pi) % (2.0 * math.pi) - math.pi
+
+    @staticmethod
+    def _blend_angles(first, second, weight):
+        return math.atan2(
+            (1.0 - weight) * math.sin(first) + weight * math.sin(second),
+            (1.0 - weight) * math.cos(first) + weight * math.cos(second),
+        )
+
+    def _avoid_static_obstacles(self, position, desired_yaw, speed):
+        repulse_x = 0.0
+        repulse_y = 0.0
+        strongest = 0.0
+        for obstacle_x, obstacle_y, obstacle_radius in STATIC_OBSTACLES:
+            dx = position[0] - obstacle_x
+            dy = position[1] - obstacle_y
+            distance = math.hypot(dx, dy)
+            influence = obstacle_radius + STATIC_CLEARANCE_M
+            if distance >= influence:
+                continue
+            if distance < 1.0e-6:
+                dx, dy, distance = 1.0, 0.0, 1.0
+            weight = (influence - distance) / influence
+            repulse_x += dx / distance * weight
+            repulse_y += dy / distance * weight
+            strongest = max(strongest, weight)
+        if strongest <= 0.0:
+            return desired_yaw, speed
+        repulse_yaw = math.atan2(repulse_y, repulse_x)
+        desired_yaw = self._blend_angles(
+            desired_yaw, repulse_yaw, min(0.85, strongest)
+        )
+        speed *= max(0.08, 1.0 - 0.85 * strongest)
+        return desired_yaw, speed
+
+    def _avoid_other_vehicles(self, node_id, position, desired_yaw, speed,
+                               poses):
+        nearest_id = None
+        nearest_distance = float("inf")
+        for other_id, (other_position, _other_yaw) in poses.items():
+            if other_id == node_id:
+                continue
+            distance = math.hypot(
+                position[0] - other_position[0],
+                position[1] - other_position[1],
+            )
+            if distance < nearest_distance:
+                nearest_id = other_id
+                nearest_distance = distance
+        if nearest_id is None or nearest_distance >= VEHICLE_AVOIDANCE_RADIUS_M:
+            return desired_yaw, speed
+
+        if node_id < nearest_id:
+            # Priority vehicle keeps its route; the higher-id vehicle yields.
+            # Slowing both vehicles slightly prevents the priority vehicle
+            # from crossing the clearance boundary before the yield turn.
+            speed *= 0.65
+            if nearest_distance <= VEHICLE_MIN_CLEARANCE_M:
+                speed = 0.0
+            return desired_yaw, speed
+
+        other_position = poses[nearest_id][0]
+        away_yaw = math.atan2(
+            position[1] - other_position[1],
+            position[0] - other_position[0],
+        )
+        # Give the lower node id priority.  The other vehicle yields and
+        # passes on a deterministic side, preventing symmetric deadlock.
+        side = 1.0 if node_id > nearest_id else -1.0
+        bypass_yaw = away_yaw + side * 0.5 * math.pi
+        weight = min(
+            1.0,
+            max(
+                0.0,
+                (VEHICLE_AVOIDANCE_RADIUS_M - nearest_distance)
+                / (VEHICLE_AVOIDANCE_RADIUS_M - VEHICLE_MIN_CLEARANCE_M),
+            ),
+        )
+        desired_yaw = self._blend_angles(desired_yaw, bypass_yaw, weight)
+        speed *= max(
+            0.0,
+            min(
+                1.0,
+                (nearest_distance - VEHICLE_MIN_CLEARANCE_M)
+                / (VEHICLE_AVOIDANCE_RADIUS_M - VEHICLE_MIN_CLEARANCE_M),
+            ),
+        )
+        return desired_yaw, speed
+
+    def _publish_commands(self, motion_elapsed_ns, poses):
+        for node_id, cruise_speed in LINEAR_SPEEDS_MPS.items():
             command = Twist()
-            if motion_elapsed_ns is not None:
-                command.linear.x = linear_speed
-                if node_id == 2 and motion_elapsed_ns < S_CURVE_DURATION_NS:
-                    phase = (
-                        2.0 * math.pi * motion_elapsed_ns
-                        / S_CURVE_DURATION_NS
-                    )
-                    command.angular.z = (
-                        S_CURVE_PEAK_YAW_RATE_RAD_S * math.sin(phase)
-                    )
-                elif motion_elapsed_ns >= LOOP_START_NS:
-                    command.angular.z = LOOP_YAW_RATE_RAD_S
+            if motion_elapsed_ns is not None and poses is not None:
+                position, yaw = poses[node_id]
+                waypoints = WAYPOINTS[node_id]
+                index = self._waypoint_index[node_id]
+                target_x, target_y = waypoints[index]
+                dx = target_x - position[0]
+                dy = target_y - position[1]
+                distance = math.hypot(dx, dy)
+                if distance < WAYPOINT_REACHED_M:
+                    index = (index + 1) % len(waypoints)
+                    self._waypoint_index[node_id] = index
+                    target_x, target_y = waypoints[index]
+                    dx = target_x - position[0]
+                    dy = target_y - position[1]
+                    distance = math.hypot(dx, dy)
+
+                desired_yaw = math.atan2(dy, dx)
+                command_speed = min(
+                    cruise_speed,
+                    max(0.0, 0.18 + 0.35 * distance),
+                )
+                desired_yaw, command_speed = self._avoid_static_obstacles(
+                    position, desired_yaw, command_speed
+                )
+                desired_yaw, command_speed = self._avoid_other_vehicles(
+                    node_id, position, desired_yaw, command_speed, poses
+                )
+                heading_error = self._wrap_angle(desired_yaw - yaw)
+                command.angular.z = max(
+                    -MAX_ANGULAR_SPEED_RAD_S,
+                    min(
+                        MAX_ANGULAR_SPEED_RAD_S,
+                        HEADING_GAIN * heading_error,
+                    ),
+                )
+                command.linear.x = command_speed
+                if abs(heading_error) > 0.75:
+                    command.linear.x *= 0.35
+                if abs(heading_error) > 1.45:
+                    command.linear.x = 0.0
             self._command_publishers[node_id].publish(command)
 
     def _tick(self):
@@ -164,7 +349,7 @@ class GazeboScenario(Node):
 
         snapshot = self._latest_snapshot
         if snapshot is None:
-            self._publish_commands(None)
+            self._publish_commands(None, None)
             return
         stamp_ns, stamp, poses = snapshot
         if self._first_snapshot_stamp_ns is None:
@@ -175,7 +360,7 @@ class GazeboScenario(Node):
             if elapsed_ns < STATIONARY_DURATION_NS
             else elapsed_ns - STATIONARY_DURATION_NS
         )
-        self._publish_commands(motion_elapsed_ns)
+        self._publish_commands(motion_elapsed_ns, poses)
         if stamp_ns <= self._last_published_stamp_ns:
             return
 
