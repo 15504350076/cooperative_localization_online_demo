@@ -108,7 +108,7 @@
 ```powershell
 cmake -S . -B build -DBUILD_TESTING=ON
 cmake --build build --config Release --parallel
-ctest --test-dir build -C Release --output-on-failure
+ctest --test-dir build --build-config Release --output-on-failure
 ```
 
 本机已实际使用 Visual Studio 17 2022、CMake 和 Python 3.11.9 完成 Release 编译；仅测距与IMU＋测距两条真实 UDP 在线/日志/回放进程链均通过。最终数量以本次交付记录和实际测试输出为准。
@@ -133,9 +133,9 @@ Linux/RK3588 单配置构建对应为：
 
 ```bash
 sudo apt update
-sudo apt install -y build-essential cmake python3
+sudo apt install --assume-yes build-essential cmake python3
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
-cmake --build build -j"$(nproc)"
+cmake --build build --parallel "$(nproc)"
 ctest --test-dir build --output-on-failure
 cmake --install build --prefix install
 ```

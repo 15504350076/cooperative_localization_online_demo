@@ -8,9 +8,24 @@
 
 **脚本在上交电脑的PowerShell中执行，不是在盒子的SSH终端里执行。** 默认录制三盒各自的 `/imu/raw`，并在201录制共享 `/uwb/range` 和 `/node/id`，共四个包。201是相对定位解算参考车，因此该默认值便于检查数据到达201及后续端到端延迟；三盒IMU仍分别在本机录制。
 
+需要同时验收在线输出时，在PowerShell命令中增加 `--include-poses`，把 `/cooperative_localization/poses_2d` 加入201的共享UWB包；默认不加，避免没有融合节点时影响普通传感器录包。
+
 脚本只检查已有驱动、启动本轮录包、限时结束录包、压缩和下载。它不启动或停止已有 `navcore`、`gnss_uwb`，不修改盒端程序、传感器配置或系统时钟。远端包保存于 `/home/firefly/time_test/`，下载后不会删除。
 
 一键录包不等于时钟同步；四路启动存在先后，分析使用各消息原始时间戳。
+
+### 1.1 当前联合录包的两种模式
+
+现在三盒联合录包不只保存原始 IMU/UWB，还可以把201在线协同结果一起保存。按验收目的选择：
+
+| 模式 | PowerShell命令 | 录入内容 | 前置条件 |
+|---|---|---|---|
+| 传感器时间验收 | `python .\tools\record_joint_time.py --duration 180` | 三盒`/imu/raw`；201共享`/uwb/range`、`/node/id` | 三盒驱动出数 |
+| 在线协同验收 | `python .\tools\record_joint_time.py --include-poses --duration 180` | 上述全部内容，加201的`/cooperative_localization/poses_2d` | 201融合节点已启动且Topic已有消息 |
+
+在线协同模式中，202、203仍只录本盒IMU；算法输出由201统一录入共享UWB包。当前结果包可同时检查：UWB三边、协同节点输出频率、三车位置有效标志和时间关系。该模式不能自动启动融合节点，必须先在201确认输出Topic。
+
+雷达和相机暂不由这个三盒脚本自动加入：雷达使用各盒专项短包，相机使用V4L2/图像专项采集。它们的数据量、DDS环境和验收内容不同，按21号文档第6节另录。
 
 ## 2. 首次准备
 
@@ -57,7 +72,7 @@ ssh firefly@192.168.1.203
 若出现 `REMOTE HOST IDENTIFICATION HAS CHANGED`，先通过已确认的MobaXterm会话或让上交在对应盒子运行：
 
 ```bash
-hostname -I
+hostname --all-ip-addresses
 ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
 ```
 
@@ -88,7 +103,7 @@ if (!(Test-Path "$env:USERPROFILE\.ssh\id_ed25519")) {
 
 ```powershell
 foreach ($ip in @("192.168.1.201", "192.168.1.202", "192.168.1.203")) {
-    Get-Content "$env:USERPROFILE\.ssh\id_ed25519.pub" | ssh "firefly@$ip" "umask 077; mkdir -p ~/.ssh; tr -d '\r' >> ~/.ssh/authorized_keys; chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys"
+    Get-Content "$env:USERPROFILE\.ssh\id_ed25519.pub" | ssh "firefly@$ip" "umask 077; mkdir --parents ~/.ssh; tr --delete '\r' >> ~/.ssh/authorized_keys; chmod 700 ~/.ssh; chmod 600 ~/.ssh/authorized_keys"
 }
 ```
 
@@ -110,21 +125,15 @@ foreach ($ip in @("192.168.1.201", "192.168.1.202", "192.168.1.203")) {
 ```powershell
 foreach ($ip in @("192.168.1.201", "192.168.1.202", "192.168.1.203")) {
     Write-Host "Box: $ip"
-    ssh -o BatchMode=yes "firefly@$ip" "pgrep -af '^/home/firefly/imu_ws/install/(gnss_uwb/lib/gnss_uwb/gnss_uwb|navcore/lib/navcore/navcore)( |$)'"
+    ssh -o BatchMode=yes "firefly@$ip" "pgrep --list-full --full '^/home/firefly/imu_ws/install/(gnss_uwb/lib/gnss_uwb/gnss_uwb|navcore/lib/navcore/navcore)( |$)'"
 }
 ```
 
 每盒应分别有一份 `gnss_uwb` 和 `navcore`。已存在时不重复启动。缺失时按 [21精简执行版](21_上交盒端传感器节点启动与可用性检查_精简执行版.md) 在对应盒子启动：先 `gnss_uwb`，确认有效递增的UWB GNRMC，再 `navcore`。
 
-录包默认使用`ROS_DOMAIN_ID=107`和`RMW_IMPLEMENTATION=rmw_fastrtps_cpp`；本机IMU使用`ROS_LOCALHOST_ONLY=1`，共享UWB使用`0`。107只是当前联合测试约定，不是盒号，也不是ROS固定值。脚本不会修改已有驱动进程的环境。
+最新版录包脚本默认使用`ROS_DOMAIN_ID=0`和`RMW_IMPLEMENTATION=rmw_fastrtps_cpp`；本机IMU使用`ROS_LOCALHOST_ONLY=1`，共享UWB使用`0`。本工程现用步骤统一使用域0，不再回到旧域。脚本不会修改已有驱动进程的环境；非0域的驱动先按21号说明重启到0。
 
-若上交当前驱动使用其他Domain，可在不改脚本的情况下指定。例如实际进程使用默认域0：
-
-```powershell
-python .\tools\record_joint_time.py --domain-id 0
-```
-
-先按21号文档读取实际进程环境。驱动、查看终端和录包程序的Domain与RMW必须一致；若不一致，脚本即使发现进程存在，也可能完全收不到Topic。
+需要确认已有进程环境时，按22号文档的DDS排查执行。驱动、查看终端和录包程序的Domain与RMW必须一致；若不一致，脚本即使发现进程存在，也可能完全收不到Topic。
 
 如果专门排查“IMU先启动导致授时失败”，保持有效UWB运行，在确认现有IMU归属并允许停止后，由原终端停止并重启IMU，再进行对照录包。把启动顺序写入备注，不停止来源不明的进程。
 
@@ -145,11 +154,31 @@ python .\tools\record_joint_time.py
 python .\tools\record_joint_time.py --duration 900
 ```
 
-如果双方另行约定Domain，例如0，同时指定时长：
+201上的融合节点已运行时，录三盒传感器和在线协同输出：
 
 ```powershell
-python .\tools\record_joint_time.py --domain-id 0 --duration 900
+python .\tools\record_joint_time.py --include-poses --duration 180
 ```
+
+这一轮得到的201共享包应包含：
+
+```text
+/uwb/range
+/node/id
+/cooperative_localization/poses_2d
+```
+
+录包收回开发电脑后，先看`metadata.yaml`确认三个Topic都存在，再执行：
+
+```bash
+python3 tools/analyze_online_bag.py data/joint_time_实验编号/joint_time_实验编号_uwb_rec_v1
+```
+
+这个开关只需把最新的 `tools/record_joint_time.py` 复制到上交Windows PowerShell电脑，不需要上传到盒子。融合节点必须在201上保持运行。
+
+新版脚本在启用 `--include-poses` 时，会在201的共享UWB录包进程中自动加载
+`/home/firefly/zju_coop_ws/install/ros2-box/setup.bash`，用于识别
+`cooperative_localization_msgs/msg/CooperativePose2DArray`。若仍提示“本轮就绪检查失败”，按[31_离线数据验收与算法回放步骤](31_离线数据验收与算法回放步骤.md)第9节查看UWB日志和metadata。
 
 脚本确认全部订阅后会提示录制已经开始。在这段时间内由现场人员只移动一个约定盒子，完成后保持静止；不要求赶固定秒点。采集结束后，在生成的 `实验备注.txt` 中填写：
 
@@ -162,9 +191,20 @@ python .\tools\record_joint_time.py --domain-id 0 --duration 900
 
 时长从各路远端录包命令启动时计算；压缩、下载和解压需要额外时间。正常结束时有四条“已收回”和最终数据目录，PowerShell提示符返回。录制期间不要关闭PowerShell窗口。
 
-本地工程更新不会自动更新上交电脑上的副本。请重新复制最新的 `tools/record_joint_time.py`；如果仍看到15、35、55秒依次移动三盒的提示，运行的就是旧版。
+本地工程更新不会自动更新上交电脑上的副本。请重新复制最新的 `tools/record_joint_time.py`；用`python .\tools\record_joint_time.py --help`确认通信域显示“默认0”。新版录制前会打印`录包通信域：ROS_DOMAIN_ID=0`，完成后还可查看`manifest.json`中的`domain_id`。
 
 “全部就绪”仅表示日志中已看到所有指定话题的订阅信息，不保证持续出数、不保证UWB三边齐全，也不保证同步。若40秒内未就绪，脚本会等待有限时录制结束并保存日志供排查。
+
+如果出现“全部就绪，正在录制180秒”，但随后四个`scp ... timed out after 180.0 seconds`，含义是远端采集阶段已经通过、压缩包下载阶段超时；这不是“没有录包”。脚本会保留远端目录，例如`/home/firefly/time_test/joint_time_实验编号_imu_rec_v1`。先不要重录，检查远端压缩包大小并手动补收：
+
+```powershell
+$run = ".\data\joint_time_20261017_142956"
+Get-Content "$run\采集状态.json"
+ssh firefly@192.168.1.201 "ls -lh /home/firefly/time_test/joint_time_20261017_142956_imu_rec_v1.tar.gz"
+scp firefly@192.168.1.201:/home/firefly/time_test/joint_time_20261017_142956_imu_rec_v1.tar.gz "$run\"
+```
+
+202、203和201的共享UWB包按日志中的远端路径逐个补收。补收成功后再解压，并检查`metadata.yaml`；不要只看PowerShell是否出现“已收回”。当前脚本的单个`scp`等待上限是180秒，文件较大或网络吞吐低时可能超过该上限。
 
 ## 5. 输出在哪里、传哪些文件
 
@@ -195,10 +235,13 @@ joint_test\data\joint_time_20260907_213212\
 | 参数               | 默认值                                              | 用途                                                         |
 | ------------------ | --------------------------------------------------- | ------------------------------------------------------------ |
 | `--boxes`        | `1=192.168.1.201 2=192.168.1.202 3=192.168.1.203` | 盒号与SSH地址，盒号不能重复                                  |
-| `--uwb-recorder` | `1`                                               | 共享UWB录包盒，默认201，必须在boxes内                         |
+| `--uwb-recorder` | `1`                                               | 共享UWB录包盒，默认201，必须在boxes内                        |
 | `--user`         | `firefly`                                         | SSH用户名；远端工作空间路径仍固定为`/home/firefly/imu_ws`  |
+| `--domain-id`    | `0`                                               | 录包通信域；本工程驱动、算法和录包统一使用0                  |
+| `--rmw`          | `rmw_fastrtps_cpp`                                | 录包使用的ROS中间件实现                                    |
 | `--run-id`       | `joint_time_电脑日期时间`                         | 新实验编号，只允许字母、数字、下划线、横线，不可复用已有目录 |
 | `--duration`     | `180`                                             | 每路录包秒数，至少`max(150, 90+20×盒子数)`                |
+| `--include-poses` | 未设置                                             | 将201在线输出加入共享UWB包；需201融合节点已运行             |
 | `--analyze`      | 未设置                                              | 仅分析已下载实验目录，不连接盒子                             |
 
 改为202录共享UWB：
@@ -222,6 +265,8 @@ python .\tools\record_joint_time.py --boxes 1=192.168.1.201 2=192.168.1.202 3=19
 仅在第四盒确实存在且已配置好驱动和SSH时使用。N盒产生N个IMU包和1个共享UWB包；电脑仍只需一个控制终端。
 
 ## 7. 在开发电脑分析
+
+没有互联网或AI时，完整验收按[31_离线数据验收与算法回放步骤](31_离线数据验收与算法回放步骤.md)，包含各盒各传感器清单、时间判断和算法结果。
 
 本文件第9节就是录包后的统一分析入口：`bash tools/analyze_joint_recording.sh data/joint_time_实验编号`。
 
@@ -268,6 +313,12 @@ python3 tools/record_joint_time.py --analyze data/joint_time_20260907_213212
 source /opt/ros/humble/setup.bash
 source install/ros2-sjtu-adapter-current/setup.bash
 bash tools/analyze_joint_recording.sh data/joint_time_实验编号
+```
+
+若另有同一轮Livox短包，作为第二个参数传入，程序会自动分析并汇总四路时间：
+
+```bash
+bash tools/analyze_joint_recording.sh data/joint_time_实验编号 /path/to/uwb_imu_livox_v<盒号>_<时间>/livox
 ```
 
 脚本会检查各包的 `metadata.yaml`、消息数、首末时间、零值、回退、重复和时间区间，并在实验目录生成 Markdown、JSON、CSV 和可选 Foxglove 文件。没有 ROS 环境时不要在 Windows 上运行分析命令；只做原始包收集即可。

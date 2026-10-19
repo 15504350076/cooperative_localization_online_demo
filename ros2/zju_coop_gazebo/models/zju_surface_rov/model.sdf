@@ -1,0 +1,132 @@
+<?xml version="1.0"?>
+<sdf version="1.8">
+  <model name="surface_rov" canonical_link="base_link">
+    <self_collide>false</self_collide>
+
+    <link name="base_link">
+      <inertial>
+        <!-- 320 kg with a 1.4 x 0.8 x 0.4 m displaced box gives a
+             realistic, slightly submerged near-surface operating point. -->
+        <mass>320.0</mass>
+        <inertia>
+          <ixx>26.133333</ixx>
+          <iyy>54.133333</iyy>
+          <izz>61.866667</izz>
+          <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+        </inertia>
+      </inertial>
+
+      <collision name="hull_collision">
+        <!-- Shift the center of buoyancy above the center of mass for
+             passive roll/pitch restoring moments. -->
+        <pose>0 0 0.05 0 0 0</pose>
+        <geometry><box><size>1.40 0.80 0.40</size></box></geometry>
+      </collision>
+      <visual name="hull_visual">
+        <geometry><box><size>1.40 0.80 0.40</size></box></geometry>
+        <material>
+          <ambient>0.08 0.16 0.22 1</ambient>
+          <diffuse>0.10 0.24 0.34 1</diffuse>
+        </material>
+      </visual>
+      <visual name="deck_visual">
+        <pose>0 0 0.25 0 0 0</pose>
+        <geometry><box><size>1.10 0.64 0.10</size></box></geometry>
+        <material>
+          <ambient>0.20 0.22 0.24 1</ambient>
+          <diffuse>0.28 0.30 0.32 1</diffuse>
+        </material>
+      </visual>
+      <!-- Four coloured points make the ROV identifiable to an external
+           camera. They are visual targets, not pose truth. -->
+      <visual name="marker_red">
+        <pose>0.35 0.22 0.34 0 0 0</pose>
+        <geometry><box><size>0.12 0.12 0.04</size></box></geometry>
+        <material><ambient>1 0 0 1</ambient><diffuse>1 0 0 1</diffuse><emissive>0.25 0 0 1</emissive></material>
+      </visual>
+      <visual name="marker_green">
+        <pose>0.35 -0.22 0.34 0 0 0</pose>
+        <geometry><box><size>0.12 0.12 0.04</size></box></geometry>
+        <material><ambient>0 1 0 1</ambient><diffuse>0 1 0 1</diffuse><emissive>0 0.25 0 1</emissive></material>
+      </visual>
+      <visual name="marker_blue">
+        <pose>-0.35 -0.22 0.34 0 0 0</pose>
+        <geometry><box><size>0.12 0.12 0.04</size></box></geometry>
+        <material><ambient>0 0 1 1</ambient><diffuse>0 0 1 1</diffuse><emissive>0 0 0.25 1</emissive></material>
+      </visual>
+      <visual name="marker_yellow">
+        <pose>-0.35 0.22 0.34 0 0 0</pose>
+        <geometry><box><size>0.12 0.12 0.04</size></box></geometry>
+        <material><ambient>1 1 0 1</ambient><diffuse>1 1 0 1</diffuse><emissive>0.25 0.25 0 1</emissive></material>
+      </visual>
+
+      <sensor name="imu_sensor" type="imu">
+        <always_on>true</always_on>
+        <update_rate>100</update_rate>
+        <topic>/surface_rov/imu</topic>
+        <ignition_frame_id>imu_link</ignition_frame_id>
+      </sensor>
+      <sensor name="front_camera" type="camera">
+        <pose>0.62 0 0.12 0 0 0</pose>
+        <always_on>false</always_on>
+        <update_rate>30</update_rate>
+        <topic>/surface_rov/camera/front/image</topic>
+        <visualize>false</visualize>
+        <camera>
+          <horizontal_fov>1.04719755</horizontal_fov>
+          <image><width>640</width><height>480</height><format>R8G8B8</format></image>
+          <clip><near>0.10</near><far>80.0</far></clip>
+        </camera>
+      </sensor>
+    </link>
+
+    <link name="left_thruster">
+      <pose>-0.68 0.28 -0.05 0 1.57079632679 0</pose>
+      <inertial><mass>4.0</mass><inertia><ixx>0.02</ixx><iyy>0.02</iyy><izz>0.02</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+      <visual name="visual"><geometry><cylinder><radius>0.08</radius><length>0.22</length></cylinder></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.06 0.06 0.06 1</diffuse></material></visual>
+      <collision name="collision"><geometry><cylinder><radius>0.08</radius><length>0.22</length></cylinder></geometry></collision>
+    </link>
+    <link name="right_thruster">
+      <pose>-0.68 -0.28 -0.05 0 1.57079632679 0</pose>
+      <inertial><mass>4.0</mass><inertia><ixx>0.02</ixx><iyy>0.02</iyy><izz>0.02</izz><ixy>0</ixy><ixz>0</ixz><iyz>0</iyz></inertia></inertial>
+      <visual name="visual"><geometry><cylinder><radius>0.08</radius><length>0.22</length></cylinder></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.06 0.06 0.06 1</diffuse></material></visual>
+      <collision name="collision"><geometry><cylinder><radius>0.08</radius><length>0.22</length></cylinder></geometry></collision>
+    </link>
+    <joint name="left_thruster_joint" type="revolute">
+      <parent>base_link</parent><child>left_thruster</child>
+      <axis><xyz>1 0 0</xyz><limit><lower>-1e12</lower><upper>1e12</upper></limit></axis>
+    </joint>
+    <joint name="right_thruster_joint" type="revolute">
+      <parent>base_link</parent><child>right_thruster</child>
+      <axis><xyz>1 0 0</xyz><limit><lower>-1e12</lower><upper>1e12</upper></limit></axis>
+    </joint>
+
+    <plugin filename="libignition-gazebo-hydrodynamics-system.so" name="ignition::gazebo::systems::Hydrodynamics">
+      <link_name>base_link</link_name>
+      <xDotU>-32.0</xDotU><yDotV>-96.0</yDotV><zDotW>-128.0</zDotW>
+      <kDotP>-12.0</kDotP><mDotQ>-18.0</mDotQ><nDotR>-24.0</nDotR>
+      <xUU>-18.0</xUU><xU>-8.0</xU>
+      <yVV>-80.0</yVV><yV>-20.0</yV>
+      <zWW>-120.0</zWW><zW>-30.0</zW>
+      <kPP>-12.0</kPP><kP>-4.0</kP>
+      <mQQ>-18.0</mQQ><mQ>-5.0</mQ>
+      <nRR>-24.0</nRR><nR>-6.0</nR>
+      <default_current>0.10 0.00 0.00</default_current>
+    </plugin>
+    <plugin filename="libignition-gazebo-thruster-system.so" name="ignition::gazebo::systems::Thruster">
+      <namespace>surface_rov</namespace><joint_name>left_thruster_joint</joint_name>
+      <thrust_coefficient>0.004422</thrust_coefficient><fluid_density>1000</fluid_density><propeller_diameter>0.20</propeller_diameter>
+    </plugin>
+    <plugin filename="libignition-gazebo-thruster-system.so" name="ignition::gazebo::systems::Thruster">
+      <namespace>surface_rov</namespace><joint_name>right_thruster_joint</joint_name>
+      <thrust_coefficient>0.004422</thrust_coefficient><fluid_density>1000</fluid_density><propeller_diameter>0.20</propeller_diameter>
+    </plugin>
+    <plugin filename="libignition-gazebo-pose-publisher-system.so" name="ignition::gazebo::systems::PosePublisher">
+      <publish_link_pose>false</publish_link_pose><publish_visual_pose>false</publish_visual_pose>
+      <publish_collision_pose>false</publish_collision_pose><publish_sensor_pose>false</publish_sensor_pose>
+      <publish_model_pose>true</publish_model_pose><publish_nested_model_pose>true</publish_nested_model_pose>
+      <use_pose_vector_msg>true</use_pose_vector_msg><update_frequency>100</update_frequency>
+      <topic>/simulation/ground_truth/poses</topic>
+    </plugin>
+  </model>
+</sdf>

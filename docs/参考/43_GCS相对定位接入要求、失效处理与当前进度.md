@@ -1,5 +1,7 @@
 # GCS相对定位接入要求、失效处理与当前进度
 
+给上交做首轮显示联调，先用 [GCS最基本对接说明](../GCS最基本对接说明.md)；本文件保留详细设计、历史测试和后续要求。
+
 更新时间：2026-09-20
 当前模式：三车 UWB-only，201 盒负责在线解算
 当前结果 Topic：`/cooperative_localization/poses_2d`
@@ -184,6 +186,7 @@ IMU、UWB、GNSS、激光雷达、相机分别显示：
 | 有效位 | 已有 `position_valid/yaw_valid` | 可开始 GCS 适配 |
 | 约 60 秒在线录包 | 563 帧输出，527 帧有效，有效率约 93.61% | 最小链路已验证 |
 | 无效/超时显示规则 | 本文给出首版规则 | 待上交 GCS 实现并联调 |
+| 浙大协同定位监视界面 | 已实现直接订阅、有效位和超时显示；本机 ROS 2 端到端消息测试通过 | 待在201实盒及Windows浏览器联调 |
 | 独立状态/诊断 Topic | 尚未冻结和实现 | 正式验收前补齐 |
 | 上交正式 GCS 端到端订阅 | 尚未完成 | 现在应开始 |
 | 单盒移动动态试验 | 尚未完成 | 正式验收前完成 |
@@ -222,3 +225,45 @@ IMU、UWB、GNSS、激光雷达、相机分别显示：
 - [ ] GNSS 失锁或受干扰时只关闭真值层，不关闭 UWB 相对位置层；
 - [ ] 能区分传感器“在线”“数据有效”“当前参与融合”；
 - [ ] GCS 不解析终端 WARN 作为运行状态来源。
+
+## 11. 浙大协同定位监视界面
+
+上交正式 GCS 尚未联调时，可使用 [relative_gcs.py](../../tools/relative_gcs.py) 在浏览器查看真实 `/cooperative_localization/poses_2d`。这是**独立的最小监视页面**，不改浙大算法输出消息，不给车辆发送控制指令，也不声称已经接入 GNSS 真值、雷达、视觉或结构化传感器健康状态。界面测试见 [test_relative_gcs.py](../../tools/test_relative_gcs.py)。
+
+### 11.1 先在开发电脑检查界面
+
+在工程根目录执行 `python3 tools/relative_gcs.py --demo`，浏览器打开 `http://127.0.0.1:8765`。页面会明确标注“演示数据，非实车”。运行 `python3 tools/test_relative_gcs.py` 可检查无效位、短时保持、丢失、断流和坐标系切换逻辑。
+
+### 11.2 在201盒订阅真实结果
+
+先按文档21第7节启动201融合节点，并确认 `/cooperative_localization/poses_2d` 有发布者。在开发电脑工程根目录上传这一个脚本：
+
+```bash
+scp tools/relative_gcs.py firefly@192.168.1.201:/home/firefly/relative_gcs.py
+```
+
+在201另开SSH终端执行；它只订阅输出，**不会再启动第二份融合节点**：
+
+```bash
+source /opt/ros/humble/setup.bash
+source /home/firefly/imu_ws/install/setup.bash
+source /home/firefly/zju_coop_ws/install/ros2-box/setup.bash
+export ROS_DOMAIN_ID=0 RMW_IMPLEMENTATION=rmw_fastrtps_cpp ROS_LOCALHOST_ONLY=0
+python3 /home/firefly/relative_gcs.py --bind 0.0.0.0 --port 8765
+```
+
+同一可信局域网内，Windows Edge 打开 `http://192.168.1.201:8765`。页面 HTTP 无认证，不要把8765端口暴露到公网；不需要远程浏览器时可省略 `--bind 0.0.0.0`，默认只允许本机访问。结束时只在此 GCS 终端按 `Ctrl+C`。首次实盒端到端浏览器验收尚未完成，不能把上述部署步骤写成已在201复验。
+
+### 11.3 界面语义和参考项目
+
+- 只画相对 XY：`coop_ref_1_relative` 中1号车是原点、1→2为正X、3号车取正Y侧；它不是地理地图。将来若收到 `_enu` 帧，页面只更新坐标系说明并清掉旧坐标，避免跨坐标系拼接。
+- `position_valid=false` 或断流后，最近有效点最多以黄色 `HOLD` 显示1秒；之后不再绘制旧点。300毫秒、1秒、2秒分别是首版 `VALID/HOLD/LOST/OFFLINE` 门限，按本 GCS **单调接收时钟**算，不拿UWB模拟Header与真实UTC相减。
+- `yaw_valid=false` 不画车头；消息 Header 显示原始纳秒值，不声称是真实UTC。GNSS真值和传感器健康尚无冻结的在线接口，页面明确标注“未接入”，不使用终端WARN冒充状态。
+- [QGroundControl Fly View](https://docs.qgroundcontrol.com/master/en/qgc-user-guide/fly_view/fly_view.html) 的多车主视图与状态区、[Mission Planner Flight Data](https://ardupilot.org/planner/docs/mission-planner-flight-data.html) 的主视图/消息分区和 [Foxglove State Transitions](https://docs.foxglove.dev/docs/visualization/panels/state-transitions) 的失效时间线值得借鉴；地图导航、飞控按钮及尚无数据来源的状态不照搬。
+- 并列工程 `205_nav_ui` 的网格态势图、多平台状态、回放组织有参考价值，但它当前按 `/swarm/{platform_id}/nav/pose` 的 `PoseStamped/Odometry`、ENU语义接入，且依赖 PySide6；不能直接读取本工程一条三车数组消息，直接复用还可能把相对坐标误认成ENU。此阶段只参考界面组织，不把整套原型并入本工程。
+
+现有 `CooperativePose2DArray` 由浙大融合节点发布；消息定义位于 `ros2/cooperative_localization_msgs/msg/`，201盒按文档41已构建安装该包。上交 GCS 若直接以 ROS 2 订阅，就需要在其运行环境安装**同一版本**的消息包，并对齐 Domain、RMW、网络及 QoS；若采用其他通信协议，则另做适配，不修改现有算法输出。Windows 浏览器访问本界面的 HTTP 页面，不需要安装 ROS 2 消息包。
+
+开源系统并不只输出位置：[ROS 2 的 Odometry](https://docs.ros.org/en/ros2_packages/humble/api/nav_msgs/index.html) 同时承载位姿和速度估计；[MAVLink](https://mavlink.io/en/messages/common.html) 的 `LOCAL_POSITION_NED` 有位置和速度，`ATTITUDE` 有滚转、俯仰、航向及角速度；[QGroundControl Fly View](https://docs.qgroundcontrol.com/master/en/qgc-user-guide/fly_view/fly_view.html) 还能按收到的遥测显示速度、姿态和航向。本工程现有对外消息只有相对 `x_m/y_m`、`yaw_rad` 和有效位，没有速度或完整三维姿态；UWB-only 时 `yaw_valid=false`，界面不得把零值当成实测车头。后续若算法产生可靠速度/姿态，再增加相应状态输出，不伪造当前没有的数据。
+
+上交正式 GCS 仍需与我们对齐自定义消息、QoS、失效处理和未来状态接口；本界面可独立检查在线二维相对输出，但不能替代正式端到端验收。

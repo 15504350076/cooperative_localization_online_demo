@@ -4,6 +4,7 @@
 GNSS 与 IMU 当前使用不同的 ROS_LOCALHOST_ONLY 设置：
 GNSS=0（共享 DDS），IMU=1（本机 DDS）。因此使用两个 rosbag2 进程，
 由本脚本在同一个屏障后同时启动，并在同一时长后同时停止。
+录包统一使用 ROS_DOMAIN_ID=0，不继承终端残留的旧域号；两路驱动也须使用域0。
 """
 
 from __future__ import annotations
@@ -25,9 +26,9 @@ IMU_TOPIC = "/imu/raw"
 
 
 def ros_env(localhost_only: str) -> dict[str, str]:
-    """为单个 ROS 子进程复制当前环境并覆盖 DDS 相关变量。"""
+    """复制终端环境，统一使用域0，再设置RMW和本机通信范围。"""
     env = os.environ.copy()
-    env["ROS_DOMAIN_ID"] = "107"
+    env["ROS_DOMAIN_ID"] = "0"
     env["RMW_IMPLEMENTATION"] = "rmw_fastrtps_cpp"
     env["ROS_LOCALHOST_ONLY"] = localhost_only
     return env
@@ -104,8 +105,8 @@ def main() -> int:
     gnss_log = (root / "gnss_record.log").open("wb")
     imu_log = (root / "imu_record.log").open("wb")
     commands = [
-        ["ros2", "bag", "record", "-o", str(gnss_bag), GNSS_TOPIC, GNSS_ID_TOPIC],
-        ["ros2", "bag", "record", "-o", str(imu_bag), IMU_TOPIC],
+        ["ros2", "bag", "record", "--output", str(gnss_bag), GNSS_TOPIC, GNSS_ID_TOPIC],
+        ["ros2", "bag", "record", "--output", str(imu_bag), IMU_TOPIC],
     ]
     processes: list[subprocess.Popen[bytes] | None] = [None, None]
     barrier = threading.Barrier(2)
@@ -151,6 +152,7 @@ def main() -> int:
             f"record_start_wall_utc={record_start}\n",
             f"record_end_wall_utc={record_end}\n",
             f"duration_requested_s={args.duration}\n",
+            f"ros_domain_id={gnss_env['ROS_DOMAIN_ID']}\n",
             f"gnss_topic={GNSS_TOPIC}\n",
             f"gnss_type={gnss_type}\n",
             f"gnss_ros_localhost_only=0\n",

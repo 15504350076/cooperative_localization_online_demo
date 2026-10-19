@@ -37,6 +37,7 @@ def generate_test_description():
             "enable_follower_feedback": False,
             "uwb_epoch_wait_ms": 5,
             "uwb_epoch_timeout_ms": 30,
+            "uwb_epoch_max_span_ms": 10,
             "uwb_reciprocal_max_difference_m": 0.5,
             "uwb_maximum_range_rate_mps": 10.0,
             "uwb_range_jump_tolerance_m": 0.5,
@@ -189,6 +190,23 @@ class TestUwbOnlyPipeline(unittest.TestCase):
         previous_count = len(self.outputs)
         self._publish_range(incomplete_stamp_ns, 1, 2, 3.1)
         self._publish_range(incomplete_stamp_ns, 1, 3, 4.0)
+        self._assert_no_output(previous_count)
+
+        approximate_stamp_ns = stamp_ns + 500_000_000
+        previous_count = len(self.outputs)
+        self._publish_range(approximate_stamp_ns, 1, 2, 3.0)
+        self._publish_range(approximate_stamp_ns + 2_000_000, 1, 3, 4.0)
+        self._publish_range(approximate_stamp_ns + 4_000_000, 2, 3, 5.0)
+        approximate_output = self._wait_for_output(previous_count)
+        self.assertTrue(
+            all(pose.position_valid for pose in approximate_output.vehicles)
+        )
+
+        over_span_stamp_ns = approximate_stamp_ns + 100_000_000
+        previous_count = len(self.outputs)
+        self._publish_range(over_span_stamp_ns, 1, 2, 3.0)
+        self._publish_range(over_span_stamp_ns + 6_000_000, 1, 3, 4.0)
+        self._publish_range(over_span_stamp_ns + 11_000_000, 2, 3, 5.0)
         self._assert_no_output(previous_count)
 
 

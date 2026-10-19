@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""电脑端一键录包（Python 3.9+）；只连接已启动传感器的盒子，不启动或停止驱动。"""
+"""电脑端一键录包（Python 3.9+，默认ROS域0）；不启动或停止传感器驱动。"""
 # 本文件有采集和离线分析两条路径；ROS依赖放在analyze内部，Windows录包不需ROS。
 import argparse
 from concurrent.futures import ThreadPoolExecutor
@@ -34,16 +34,20 @@ def remote_command(bag, topics, duration, environment):
     """独立进程组内有限时录制；SIGINT落盘后才压缩，断线仍有时间上限。"""
     # IMU仅收本机，UWB允许共享DDS；这些设置不改变已启动驱动的环境。
     local = 1 if topics == ['/imu/raw'] else 0
+    # 在线输出使用自定义消息；只给201的共享UWB录包加载算法工作空间，避免
+    # 202/203没有该工作空间时影响它们的IMU预检。
+    if '/cooperative_localization/poses_2d' in topics:
+        environment += 'source /home/firefly/zju_coop_ws/install/ros2-box/setup.bash\n'
     # 引号保护远程路径；timeout的124表示到时结束，其他非零状态不压缩。
     return environment + f'''export ROS_LOCALHOST_ONLY={local}
 test ! -e {shlex.quote(bag)} || exit 2
-mkdir -p /home/firefly/time_test
-timeout --foreground --signal=INT --kill-after=10s {duration}s ros2 bag record -o {shlex.quote(bag)} {' '.join(topics)}
+mkdir --parents /home/firefly/time_test
+timeout --foreground --signal=INT --kill-after=10s {duration}s ros2 bag record --output {shlex.quote(bag)} {' '.join(topics)}
 rc=$?
 if [ "$rc" != 0 ] && [ "$rc" != 124 ]; then exit "$rc"; fi
 test -f {shlex.quote(bag + '/metadata.yaml')} || exit 3
 ros2 bag info {shlex.quote(bag)}
-tar -C /home/firefly/time_test -czf {shlex.quote(bag + '.tar.gz')} {shlex.quote(Path(bag).name)}
+tar --directory /home/firefly/time_test --create --gzip --file {shlex.quote(bag + '.tar.gz')} {shlex.quote(Path(bag).name)}
 '''
 
 
@@ -118,12 +122,14 @@ def main():
     parser.add_argument('--boxes', nargs='+', default=['1=192.168.1.201', '2=192.168.1.202', '3=192.168.1.203'])
     parser.add_argument('--uwb-recorder', default='1', help='共享UWB录包盒号，默认1（201参考车）')
     parser.add_argument('--user', default='firefly')
-    parser.add_argument('--domain-id', type=int, default=107,
-                        help='ROS通信域，必须与已有驱动一致，默认107')
+    parser.add_argument('--domain-id', type=int, default=0,
+                        help='ROS通信域，必须与已有驱动一致，默认0')
     parser.add_argument('--rmw', default='rmw_fastrtps_cpp',
                         help='ROS中间件实现，必须与已有驱动一致')
     parser.add_argument('--run-id', default=datetime.now().strftime('joint_time_%Y%m%d_%H%M%S'))
     parser.add_argument('--duration', type=int, default=180, help='每路录包时长，秒，至少150')
+    parser.add_argument('--include-poses', action='store_true',
+                        help='在201共享UWB包中同时录/cooperative_localization/poses_2d')
     parser.add_argument('--analyze', type=Path, help='仅分析已下载的实验目录，需要电脑ROS环境')
     args = parser.parse_args()
     if args.analyze:
@@ -134,6 +140,7 @@ def main():
     if not 0 <= args.domain_id <= 232 or not re.fullmatch(r'[A-Za-z0-9_]+', args.rmw):
         parser.error('ROS domain须为0～232；RMW名称只能含字母、数字和下划线')
     environment = ros_env(args.domain_id, args.rmw)
+    print(f'录包通信域：ROS_DOMAIN_ID={args.domain_id}', flush=True)
     # 采集路径：解析盒号与地址，校验重复及字符，避免远程命令歧义。
     boxes = {}
     for spec in args.boxes:
@@ -151,7 +158,10 @@ def main():
     directory.mkdir(parents=True, exist_ok=False)
     # N个本机IMU包+1个共享UWB包；rec_v标记记录盒，不过滤UWB测距来源。
     jobs = [(v, ['/imu/raw'], f'{args.run_id}_imu_rec_v{v}') for v in boxes]
-    jobs.append((args.uwb_recorder, ['/uwb/range', '/node/id'],
+    uwb_topics = ['/uwb/range', '/node/id']
+    if args.include_poses:
+        uwb_topics.append('/cooperative_localization/poses_2d')
+    jobs.append((args.uwb_recorder, uwb_topics,
                  f'{args.run_id}_uwb_rec_v{args.uwb_recorder}'))
     (directory / 'manifest.json').write_text(json.dumps(vars(args) | {'analyze': None}, ensure_ascii=False, indent=2), encoding='utf-8')
     (directory / '实验备注.txt').write_text('请填写实际动作、初始摆放、是否重启、异常情况。\n电脑动作口令采用单调计时，不是传感器时钟真值。\n', encoding='utf-8')
@@ -159,7 +169,7 @@ def main():
     def preflight(item):
         # 只查SSH、timeout与驱动进程存在，不保证消息质量及驱动域号正确。
         vehicle, host = item
-        command = environment + "command -v timeout >/dev/null\npgrep -f '^/home/firefly/imu_ws/install/navcore/lib/navcore/navcore( |$)' >/dev/null && pgrep -f '^/home/firefly/imu_ws/install/gnss_uwb/lib/gnss_uwb/gnss_uwb( |$)' >/dev/null"
+        command = environment + "command -v timeout >/dev/null\npgrep --full '^/home/firefly/imu_ws/install/navcore/lib/navcore/navcore( |$)' >/dev/null && pgrep --full '^/home/firefly/imu_ws/install/gnss_uwb/lib/gnss_uwb/gnss_uwb( |$)' >/dev/null"
         subprocess.run(SSH + ['-T', f'{args.user}@{host}', 'bash -c ' + shlex.quote(command)],
                        check=True, timeout=20, stdin=subprocess.DEVNULL)
         print(f'盒{vehicle}：SSH和驱动进程检查完成', flush=True)

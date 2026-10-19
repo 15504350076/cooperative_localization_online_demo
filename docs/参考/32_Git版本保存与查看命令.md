@@ -13,22 +13,22 @@ cd /home/pdq/Code/cooperative_localization_online_demo/cooperative_localization_
 ```bash
 git status --short
 git diff --stat
-git add -A
+git add --all
 git diff --cached --stat
 git diff --cached --check
-git commit -m "完善联合录包离线分析说明并统一文档编号"
+git commit --message "完善联合录包离线分析说明并统一文档编号"
 git status --short
-git log -1 --oneline
+git log --max-count=1 --oneline
 ```
 
-`git add -A`包含当前工程全部新增、修改和删除；检查暂存清单符合本次意图后再commit。只想保存部分文件时，改用 `git add 文件路径`。如果没有修改，Git会提示nothing to commit，无需重复提交。
+`git add --all`包含当前工程全部新增、修改和删除；检查暂存清单符合本次意图后再commit。只想保存部分文件时，改用 `git add 文件路径`。如果没有修改，Git会提示nothing to commit，无需重复提交。
 
 `.gitignore`当前排除了 `data/`、构建、安装、日志等目录，因此原始录包、data内分析报告不会随代码保存。它们需单独备份。工具根目录的离线分析tar.gz已纳入版本管理。
 
 ## 2. 查看历史、版本差异
 
 ```bash
-git log --oneline -10
+git log --oneline --max-count=10
 git show --stat ea5ceb2
 git diff ea5ceb2 HEAD -- docs tools
 ```
@@ -48,7 +48,7 @@ git show ea5ceb2:tools/record_joint_time.py
 提交说明是版本描述；tag用于给一个版本起固定名称。不需要每次提交都打标签。
 
 ```bash
-git tag -a "三盒联合测试离线分析版_20260908" ea5ceb2 -m "保存三盒联合测试与离线分析工具版本"
+git tag --annotate "三盒联合测试离线分析版_20260908" ea5ceb2 --message "保存三盒联合测试与离线分析工具版本"
 git tag -n
 ```
 
@@ -59,14 +59,14 @@ git tag -n
 先查看远端和当前分支：
 
 ```bash
-git remote -v
+git remote --verbose
 git branch --show-current
 ```
 
 确认目标正确后执行；以下假定远端名为origin、分支为main：
 
 ```bash
-git push -u origin main
+git push --set-upstream origin main
 ```
 
 如果创建了上述标签并希望共享，再执行：

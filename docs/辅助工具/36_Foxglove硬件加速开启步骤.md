@@ -49,7 +49,7 @@ Hardware acceleration disabled
 
    ```bash
    sudo apt install mesa-utils
-   glxinfo -B | grep -E 'OpenGL renderer|direct rendering'
+   glxinfo -B | grep --extended-regexp 'OpenGL renderer|direct rendering'
    ```
 
    `direct rendering: Yes` 且 renderer 是实际显卡名称，才具备继续启用的条件；若仍是 `llvmpipe`/`SwiftShader`，就是软件渲染。

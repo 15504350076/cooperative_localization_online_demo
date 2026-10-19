@@ -50,7 +50,7 @@ IMU、雷达或RGB。每个物理盒只启动一套车辆launch，默认回环�
 cmake -S . -B build-arm64 \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_TESTING=ON
-cmake --build build-arm64 -j"$(nproc)"
+cmake --build build-arm64 --parallel "$(nproc)"
 ctest --test-dir build-arm64 --output-on-failure
 cmake --install build-arm64 --prefix install-arm64
 ```
@@ -185,7 +185,7 @@ DDS 发现与数据端口。每台盒子只启动一个 local；只有参考车 
 # 三台盒子都先执行
 source /opt/ros/humble/setup.bash
 source /path/to/install/ros2-box/setup.bash
-export ROS_DOMAIN_ID=107
+export ROS_DOMAIN_ID=0
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export ROS_LOCALHOST_ONLY=0
 
@@ -240,7 +240,7 @@ topic 图，并核对正式 UWB 消息类型；它不判断实测字段值是否
 ```bash
 source /opt/ros/humble/setup.bash
 source /path/to/install/setup.bash
-export ROS_DOMAIN_ID=107
+export ROS_DOMAIN_ID=0
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 export ROS_LOCALHOST_ONLY=0
 

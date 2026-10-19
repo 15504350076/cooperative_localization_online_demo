@@ -1,7 +1,7 @@
-"""只启动参考车的三边 UWB 相对队形解算，供最小在线排障使用。"""
+"""在默认ROS域0启动参考车的三边UWB解算，不继承终端残留的旧域号。"""
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -16,6 +16,8 @@ def generate_launch_description():
     poses_topic = LaunchConfiguration("poses_topic")
 
     return LaunchDescription([
+        DeclareLaunchArgument("domain_id", default_value="0"),
+        SetEnvironmentVariable("ROS_DOMAIN_ID", LaunchConfiguration("domain_id")),
         DeclareLaunchArgument(
             "fusion_config",
             default_value=PathJoinSubstitution([

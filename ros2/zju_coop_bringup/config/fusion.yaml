@@ -1,6 +1,6 @@
 /**/zju_cooperative_fusion_node:
   ros__parameters:
-    # Default deployment works with only three same-epoch UWB edges.
+    # Default deployment groups three UWB edges whose measurement times span <=10 ms.
     # Set imu_uwb only when all vehicles publish a common-horizontal-frame NodeState.
     input_mode: uwb_only
     node_ids: [1, 2, 3]
@@ -13,6 +13,7 @@
     # An incomplete epoch is invalidated after the longer timeout.
     uwb_epoch_wait_ms: 10
     uwb_epoch_timeout_ms: 100
+    uwb_epoch_max_span_ms: 10
     # 以下三个名称保留给旧 launch/YAML；当前只由三角形求解器做最终几何判定，
     # 不再在适配层重复拦截互测差异或距离跳变。
     uwb_reciprocal_max_difference_m: 0.5
