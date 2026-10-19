@@ -60,12 +60,13 @@ ros2 launch zju_coop_gazebo three_vehicle_gazebo.launch.py \
 
 ## 外部高保真环境候选
 
-- 公路/城市：优先 CARLA。官方 ROS bridge 支持多车控制，以及 LiDAR、相机、GNSS、IMU 等传感器；UWB 需要由本工程根据车辆真值自行生成。它依赖 Unreal Engine 和较强 GPU，不建议替换当前离线 Gazebo 流程。
+- 高保真三车/后续无人机：优先 AirSimAG。它已有 Unreal 场景、无人车和无人机接口；UWB 仍由本工程根据车辆真值自行生成。它依赖 Unreal Engine 和较强 GPU，不替换当前离线 Gazebo 流程。
+- 公路/城市备用：可评估 CARLA。其 ROS bridge 支持多车和常见传感器；UWB 需要由本工程根据车辆真值自行生成。
 - ROS 2 原生道路数字孪生：可评估 Autoware Foundation 的 AWSIM。它使用 Unity、ROS 2 原生通信和道路数字孪生，适合道路交通场景，但需要重新接入本工程的 UWB 和三车模型。
 - 仓库/平地/森林：继续使用 Gazebo，并从 Gazebo Fuel 引入网格、植被、地形或仓库模型后固定到本地资源路径。这样保留现有 UWB、算法和离线运行能力，但照片级效果取决于所选模型材质。
-- Webots 更轻量，适合快速多机器人传感器验证，但视觉真实度低于 CARLA/AWSIM。
+- Webots 更轻量，适合快速多机器人传感器验证，但视觉真实度低于 AirSimAG 等 Unreal 环境。
 
-建议：Gazebo 作为算法回归基线，CARLA/AWSIM 作为高保真视觉与道路数据源，二者通过 ROS 2 适配层复用本工程算法；不要直接把算法核心绑死在某个仿真器上。
+建议：Gazebo 作为算法回归基线，AirSimAG 作为当前高保真三车展示和后续无人机数据源；二者通过 ROS 2 适配层复用本工程算法。CARLA/AWSIM 仅作为道路场景备用入口，不把算法核心绑死在某个仿真器上。
 
 ## 3. 终端 2：直接输出定位精度
 

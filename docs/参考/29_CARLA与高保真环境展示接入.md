@@ -1,59 +1,73 @@
-# CARLA/AWSIM 高保真展示接入
+# AirSimAG 高保真三车接入
 
-## 目标
+当前主线使用 AirSimAG；CARLA 适配入口暂时保留，但不作为当前环境依赖。
 
-CARLA 或 AWSIM 负责道路、车辆、相机、LiDAR、IMU 和可视化；本工程负责 UWB 测距模拟、协同定位和结果显示。UWB 不要求仿真器原生实现。
+## 已接入的链路
 
-## 接口
-
-高保真仿真器需向 ROS 2 提供三路 `nav_msgs/msg/Odometry`，默认话题：
+AirSimAG 的 Unreal 场景负责三辆车的运动和画面；本工程负责把三车位姿转换为 ENU、生成 UWB 测距，再接现有融合节点：
 
 ```text
-/carla/vehicle_1/odometry
-/carla/vehicle_2/odometry
-/carla/vehicle_3/odometry
+AirSimAG → /airsim/Car_N/odometry → /uwb/range
+                                      → /cooperative_localization/poses_2d
 ```
 
-启动本工程的 UWB 适配节点：
+当前新增文件：
+
+- `ros2/zju_coop_gazebo/config/airsim_three_ugv_settings.json`：三车配置模板；
+- `ros2/zju_coop_gazebo/launch/airsim_three_car.launch.py`：启动 AirSim 位姿和 UWB 适配；
+- `ros2/zju_coop_gazebo/scripts/airsim_odometry_bridge.py`：AirSim RPC→ENU Odometry。
+
+## AirSimAG 端
+
+把配置模板复制为 AirSim 使用的配置文件：
+
+```bash
+mkdir --parents "$HOME/Documents/AirSim"
+cp ros2/zju_coop_gazebo/config/airsim_three_ugv_settings.json \
+  "$HOME/Documents/AirSim/settings.json"
+```
+
+在有图形显卡的电脑启动 AirSimAG Unreal 场景并保持运行。当前 VMware 电脑只能稳定做无界面数据测试，不能作为最终画面展示机。
+
+## ROS 2 端
+
+先构建本工程并加载环境：
 
 ```bash
 source /opt/ros/humble/setup.bash
-source install/ros2-sim-check-current/setup.bash
-export ROS_LOCALHOST_ONLY=1
-
-ros2 launch zju_coop_gazebo carla_uwb_bridge.launch.py
+source install/ros2-airsim-check/setup.bash
 ```
 
-输出：
-
-```text
-/uwb/range
-/simulation/ground_truth/poses_2d
-```
-
-默认 UWB 距离标准差为 0.02 m。演示丢包时可改为：
+启动 AirSim 位姿和 UWB 适配：
 
 ```bash
-ros2 launch zju_coop_gazebo carla_uwb_bridge.launch.py \
-  range_noise_std_m:=0.08 dropout_probability:=0.05
+ros2 launch zju_coop_gazebo airsim_three_car.launch.py \
+  airsim_python_path:=/home/pdq/Code/AirSimAG/PythonClient
 ```
 
-如果仿真器话题名称不同，只改启动参数，不改节点：
+启动适配器时会把三车放到 ENU `(0,0)`、`(12,0)`、`(0,12)` 米；需要改编队时传入 `initial_positions_enu:=x,y;x,y;x,y`。
+
+该命令要求 AirSim Python 客户端目录存在，且 AirSim RPC 服务可访问。远程仿真机时追加：
 
 ```bash
-ros2 launch zju_coop_gazebo carla_uwb_bridge.launch.py \
-  odom_topic_1:=/carla/ugv_1/odometry \
-  odom_topic_2:=/carla/ugv_2/odometry \
-  odom_topic_3:=/carla/ugv_3/odometry
+host:=<仿真机IP>
+```
+
+另开终端启动现有三车 UWB 融合节点，再检查：
+
+```bash
+ros2 topic list -t | grep --extended-regexp 'airsim|uwb|cooperative_localization'
+ros2 topic echo --once /uwb/range
+ros2 topic echo --once /cooperative_localization/poses_2d
 ```
 
 ## 当前边界
 
-- 适配节点不依赖 CARLA Python 包，当前开发机没有独显或 CARLA 时仍可编译检查。
-- 里程计坐标必须已经统一到同一平面坐标系；若仿真器使用不同轴向，应在适配节点前转换。
-- 当前输出的是“真值位置计算的 UWB 距离”，后续可加入遮挡、NLOS、范围限制和时间延迟。
-- 这不是 GNSS 输入；`/simulation/ground_truth/poses_2d` 只用于误差评估。
+- AirSimAG 当前只接入三辆无人车；无人机后续可以沿用同一适配思路。
+- UWB 不是 AirSim 原生传感器，而是根据三车真值位姿计算的带噪测距。
+- 适配器已将 AirSim 的 NED 位置转换为项目 ENU；不要再重复转换。
+- 当前融合输出仍是二维位置，暂不用于无人机高度融合。
+- AirSim ROS 2 原生封装依赖 `geographic_msgs`、`mavros_msgs` 等包；本工程先使用轻量 RPC 位姿适配，避免把这些依赖带入算法工程。
+- 当前配置使用 `Car_1`、`Car_2`、`Car_3`，三车初始位置已错开；运动控制和避撞策略仍由 AirSim 控制端负责。
 
-## 展示建议
-
-正式演示使用 CARLA/AWSIM 的道路场景；本地 Gazebo 继续作为无网、可重复的算法回归环境。展示界面至少同时显示三车轨迹、`position_valid`、UWB 状态和真值误差。
+CARLA/AWSIM 仍可通过 `carla_uwb_bridge.launch.py` 接入，但只作为备用适配，不影响 AirSimAG 主线。

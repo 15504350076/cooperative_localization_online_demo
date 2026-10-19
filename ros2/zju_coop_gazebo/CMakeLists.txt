@@ -20,6 +20,18 @@ install(PROGRAMS scripts/carla_uwb_bridge.py
   RENAME zju_carla_uwb_bridge
 )
 
+# The implementation is simulator-agnostic; keep the old CARLA name for
+# compatibility and expose the generic/AirSim names for new integrations.
+install(PROGRAMS scripts/carla_uwb_bridge.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME zju_sim_uwb_bridge
+)
+
+install(PROGRAMS scripts/airsim_odometry_bridge.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME zju_airsim_odometry_bridge
+)
+
 if(BUILD_TESTING)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
   add_test(NAME test_gazebo_assets

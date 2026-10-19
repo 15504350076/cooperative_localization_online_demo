@@ -1,0 +1,81 @@
+{
+  "SettingsVersion": 1.2,
+  "SimMode": "Car",
+  "ClockType": "ScalableClock",
+  "ViewMode": "SpringArmChase",
+  "Vehicles": {
+    "Car_1": {
+      "VehicleType": "PhysXCar",
+      "X": 0, "Y": 0, "Z": 0, "Yaw": 0,
+      "Sensors": {
+        "Lidar": {
+          "SensorType": 6, "Enabled": true,
+          "NumberOfChannels": 16, "RotationsPerSecond": 10,
+          "PointsPerSecond": 10000,
+          "VerticalFOVUpper": 52, "VerticalFOVLower": -7,
+          "HorizontalFOVStart": -180, "HorizontalFOVEnd": 180
+        }
+      },
+      "Cameras": {
+        "front_center_scene": {
+          "CaptureSettings": [
+            {"PublishToRos": 1, "ImageType": 0,
+             "Width": 640, "Height": 480, "FOV_Degrees": 100}
+          ],
+          "X": 2.0, "Y": 0, "Z": -1.2,
+          "Pitch": 0, "Roll": 0, "Yaw": 0
+        }
+      }
+    },
+    "Car_2": {
+      "VehicleType": "PhysXCar",
+      "X": 12, "Y": 0, "Z": 0, "Yaw": 0,
+      "Sensors": {
+        "Lidar": {
+          "SensorType": 6, "Enabled": true,
+          "NumberOfChannels": 16, "RotationsPerSecond": 10,
+          "PointsPerSecond": 10000,
+          "VerticalFOVUpper": 52, "VerticalFOVLower": -7,
+          "HorizontalFOVStart": -180, "HorizontalFOVEnd": 180
+        }
+      },
+      "Cameras": {
+        "front_center_scene": {
+          "CaptureSettings": [{"PublishToRos": 1, "ImageType": 0,
+            "Width": 640, "Height": 480, "FOV_Degrees": 100}],
+          "X": 2.0, "Y": 0, "Z": -1.2,
+          "Pitch": 0, "Roll": 0, "Yaw": 0
+        }
+      }
+    },
+    "Car_3": {
+      "VehicleType": "PhysXCar",
+      "X": 0, "Y": 12, "Z": 0, "Yaw": 0,
+      "Sensors": {
+        "Lidar": {
+          "SensorType": 6, "Enabled": true,
+          "NumberOfChannels": 16, "RotationsPerSecond": 10,
+          "PointsPerSecond": 10000,
+          "VerticalFOVUpper": 52, "VerticalFOVLower": -7,
+          "HorizontalFOVStart": -180, "HorizontalFOVEnd": 180
+        }
+      },
+      "Cameras": {
+        "front_center_scene": {
+          "CaptureSettings": [{"PublishToRos": 1, "ImageType": 0,
+            "Width": 640, "Height": 480, "FOV_Degrees": 100}],
+          "X": 2.0, "Y": 0, "Z": -1.2,
+          "Pitch": 0, "Roll": 0, "Yaw": 0
+        }
+      }
+    }
+  },
+  "SubWindows": [
+    {"WindowID": 0, "ImageType": 0,
+     "CameraName": "front_center_scene", "VehicleName": "Car_1"},
+    {"WindowID": 1, "ImageType": 0,
+     "CameraName": "front_center_scene", "VehicleName": "Car_2"},
+    {"WindowID": 2, "ImageType": 0,
+     "CameraName": "front_center_scene", "VehicleName": "Car_3"}
+  ]
+}

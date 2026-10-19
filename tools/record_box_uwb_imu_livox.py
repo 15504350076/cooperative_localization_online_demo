@@ -62,18 +62,33 @@ def stop_process(process: subprocess.Popen[bytes] | None) -> None:
     """按 Ctrl+C 语义停止一个独立进程组，必要时再强制结束。"""
     if process is None or process.poll() is not None:
         return
+
+    def wait_quietly(seconds: float) -> bool:
+        """等待退出，但不要让再次到达的 Ctrl+C 打断清理流程。"""
+        deadline = time.monotonic() + seconds
+        while process.poll() is None and time.monotonic() < deadline:
+            try:
+                process.wait(timeout=min(0.2, max(0.0, deadline - time.monotonic())))
+            except subprocess.TimeoutExpired:
+                continue
+            except KeyboardInterrupt:
+                # 终端的 Ctrl+C 可能同时打断 wait；继续清理，不再向上抛出。
+                continue
+        return process.poll() is not None
+
     try:
         os.killpg(process.pid, signal.SIGINT)
-        process.wait(timeout=8)
-        return
     except (ProcessLookupError, subprocess.TimeoutExpired):
-        pass
+        return
+    if wait_quietly(8):
+        return
     if process.poll() is None:
         try:
             os.killpg(process.pid, signal.SIGTERM)
-            process.wait(timeout=3)
-        except (ProcessLookupError, subprocess.TimeoutExpired):
-            pass
+        except ProcessLookupError:
+            return
+        if wait_quietly(3):
+            return
     if process.poll() is None:
         try:
             os.killpg(process.pid, signal.SIGKILL)
@@ -138,7 +153,7 @@ def main() -> int:
     try:
         time.sleep(args.duration)
     except KeyboardInterrupt:
-        print("收到 Ctrl+C，正在停止并保存两个 bag……")
+        print("收到 Ctrl+C，正在停止并保存三个 bag……")
     finally:
         for process in processes:
             stop_process(process)
