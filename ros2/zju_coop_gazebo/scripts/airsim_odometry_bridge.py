@@ -165,7 +165,13 @@ def main(args=None):
     try:
         node = AirsimOdometryBridge()
     except Exception as error:
-        print(f"AirSim里程计适配启动失败：{error}", file=sys.stderr)
+        detail = str(error)
+        if "Retry connection" in detail or "ECONNREFUSED" in detail:
+            detail = (
+                "无法连接 AirSim RPC（默认127.0.0.1:41461）；"
+                "先启动 tools/start_airsim_three_car.sh，再启动本节点。"
+            )
+        print(f"AirSim里程计适配启动失败：{detail}", file=sys.stderr)
         rclpy.shutdown()
         return 1
     try:
