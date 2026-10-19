@@ -67,8 +67,11 @@ WAYPOINTS = {
 WAYPOINT_REACHED_M = 0.65
 MAX_ANGULAR_SPEED_RAD_S = 0.85
 HEADING_GAIN = 1.6
-VEHICLE_AVOIDANCE_RADIUS_M = 2.2
-VEHICLE_MIN_CLEARANCE_M = 1.15
+# The body is about 0.9 m across diagonally.  Start braking well before
+# Gazebo's collision geometry can overlap.
+VEHICLE_AVOIDANCE_RADIUS_M = 3.0
+VEHICLE_MIN_CLEARANCE_M = 1.45
+VEHICLE_CONTACT_DISTANCE_M = 0.95
 STATIC_CLEARANCE_M = 0.85
 # Approximate 2-D footprints of the static SDF objects.  This is a small
 # local safety layer for the scripted test route; it is not a replacement for
@@ -260,24 +263,11 @@ class GazeboScenario(Node):
         if nearest_id is None or nearest_distance >= VEHICLE_AVOIDANCE_RADIUS_M:
             return desired_yaw, speed
 
-        if node_id < nearest_id:
-            # Priority vehicle keeps its route; the higher-id vehicle yields.
-            # Slowing both vehicles slightly prevents the priority vehicle
-            # from crossing the clearance boundary before the yield turn.
-            speed *= 0.65
-            if nearest_distance <= VEHICLE_MIN_CLEARANCE_M:
-                speed = 0.0
-            return desired_yaw, speed
-
         other_position = poses[nearest_id][0]
         away_yaw = math.atan2(
             position[1] - other_position[1],
             position[0] - other_position[0],
         )
-        # Give the lower node id priority.  The other vehicle yields and
-        # passes on a deterministic side, preventing symmetric deadlock.
-        side = 1.0 if node_id > nearest_id else -1.0
-        bypass_yaw = away_yaw + side * 0.5 * math.pi
         weight = min(
             1.0,
             max(
@@ -286,15 +276,40 @@ class GazeboScenario(Node):
                 / (VEHICLE_AVOIDANCE_RADIUS_M - VEHICLE_MIN_CLEARANCE_M),
             ),
         )
-        desired_yaw = self._blend_angles(desired_yaw, bypass_yaw, weight)
-        speed *= max(
-            0.0,
-            min(
-                1.0,
-                (nearest_distance - VEHICLE_MIN_CLEARANCE_M)
-                / (VEHICLE_AVOIDANCE_RADIUS_M - VEHICLE_MIN_CLEARANCE_M),
-            ),
+        to_other_error = self._wrap_angle(
+            math.atan2(
+                other_position[1] - position[1],
+                other_position[0] - position[0],
+            ) - desired_yaw
         )
+        approaching = abs(to_other_error) < 0.75 * math.pi
+
+        if node_id < nearest_id:
+            # Lower node id has priority, but it must not drive into a
+            # stationary yielding vehicle.  Turn slightly away and hard-stop
+            # while the other vehicle clears the envelope.
+            if approaching:
+                desired_yaw = self._blend_angles(
+                    desired_yaw, away_yaw, 0.35 * weight
+                )
+                if nearest_distance <= VEHICLE_MIN_CLEARANCE_M:
+                    speed = 0.0
+                else:
+                    speed *= max(0.25, 1.0 - 0.75 * weight)
+            return desired_yaw, speed
+
+        # Higher node id yields on a deterministic side.  At close range it
+        # is explicitly allowed to move away at a crawl; setting speed to
+        # zero here caused two cars to remain nose-to-nose indefinitely.
+        side = 1.0 if node_id > nearest_id else -1.0
+        bypass_yaw = away_yaw + side * 0.5 * math.pi
+        desired_yaw = self._blend_angles(desired_yaw, bypass_yaw, weight)
+        if nearest_distance <= VEHICLE_CONTACT_DISTANCE_M:
+            speed = 0.0
+        elif nearest_distance <= VEHICLE_MIN_CLEARANCE_M:
+            speed = max(0.22, min(speed, 0.30))
+        else:
+            speed *= max(0.20, 1.0 - 0.80 * weight)
         return desired_yaw, speed
 
     def _publish_commands(self, motion_elapsed_ns, poses):
