@@ -15,6 +15,11 @@ install(PROGRAMS scripts/gazebo_scenario.py
   RENAME zju_gazebo_scenario
 )
 
+install(PROGRAMS scripts/carla_uwb_bridge.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME zju_carla_uwb_bridge
+)
+
 if(BUILD_TESTING)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
   add_test(NAME test_gazebo_assets
