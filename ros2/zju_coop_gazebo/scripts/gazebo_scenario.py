@@ -69,8 +69,8 @@ MAX_ANGULAR_SPEED_RAD_S = 0.85
 HEADING_GAIN = 1.6
 # The body is about 0.9 m across diagonally.  Start braking well before
 # Gazebo's collision geometry can overlap.
-VEHICLE_AVOIDANCE_RADIUS_M = 3.0
-VEHICLE_MIN_CLEARANCE_M = 1.45
+VEHICLE_AVOIDANCE_RADIUS_M = 3.6
+VEHICLE_MIN_CLEARANCE_M = 1.80
 VEHICLE_CONTACT_DISTANCE_M = 0.95
 STATIC_CLEARANCE_M = 0.85
 # Approximate 2-D footprints of the static SDF objects.  This is a small

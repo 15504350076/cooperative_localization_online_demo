@@ -321,8 +321,8 @@ class GazeboAssetTest(unittest.TestCase):
             constants["LINEAR_SPEEDS_MPS"],
             {1: 0.75, 2: 0.80, 3: 0.72},
         )
-        self.assertEqual(constants["VEHICLE_AVOIDANCE_RADIUS_M"], 3.0)
-        self.assertEqual(constants["VEHICLE_MIN_CLEARANCE_M"], 1.45)
+        self.assertEqual(constants["VEHICLE_AVOIDANCE_RADIUS_M"], 3.6)
+        self.assertEqual(constants["VEHICLE_MIN_CLEARANCE_M"], 1.80)
         self.assertEqual(constants["VEHICLE_CONTACT_DISTANCE_M"], 0.95)
         self.assertGreaterEqual(len(constants["STATIC_OBSTACLES"]), 10)
         self.assertIn("_avoid_static_obstacles", scenario_source)
