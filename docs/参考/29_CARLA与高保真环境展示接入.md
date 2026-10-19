@@ -67,6 +67,22 @@ ros2 topic echo --once /uwb/range
 ros2 topic echo --once /cooperative_localization/poses_2d
 ```
 
+## 黑窗口或连接失败时
+
+如果适配节点提示 `ECONNREFUSED`，说明 Unreal 尚未启动成功；先关闭残留 ROS 启动终端，再重新按“终端1→终端2”顺序启动。若 AirSim 窗口显示“UE4Editor 无响应”，查看：
+
+```bash
+tail -50 /home/pdq/Code/AirSimAG/Unreal/Environments/Blocks/Saved/Logs/Blocks.log
+```
+
+日志若出现 `libvulkan_lvp.so`、`SIGSEGV`，就是当前电脑的 VMware/软件 Vulkan 渲染崩溃，不是三车或 ROS 配置错误；应换有硬件 GPU 的电脑运行图形场景。当前电脑只做连接冒烟测试：
+
+```bash
+./tools/start_airsim_three_car.sh --headless
+```
+
+若 Unreal 已退出但 UWB 终端仍出现 `sequence size exceeds remaining buffer`，先在对应 ROS 终端按 `Ctrl+C`；必要时结束本次残留进程后再启动，不要在旧进程上重复叠加。
+
 ## 当前边界
 
 - AirSimAG 当前只接入三辆无人车；无人机后续可以沿用同一适配思路。
