@@ -27,7 +27,7 @@ cp ros2/zju_coop_gazebo/config/airsim_three_ugv_settings.json \
   "$HOME/Documents/AirSim/settings.json"
 ```
 
-在有图形显卡的电脑启动 AirSimAG Unreal 场景并保持运行。当前 VMware 电脑只能稳定做无界面数据测试，不能作为最终画面展示机。
+在有图形显卡的电脑启动 AirSimAG Unreal 场景并保持运行。当前 VMware 电脑只能验证 AirSim RPC 可连接、三车名称和适配节点能启动；三车 PhysX 持续运行在 `-nullrhi` 软件环境下不稳定，不能作为动态三车验收或最终画面展示机。
 
 ## ROS 2 端
 
