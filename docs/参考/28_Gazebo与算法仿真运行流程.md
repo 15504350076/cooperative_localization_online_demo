@@ -56,6 +56,17 @@ ros2 launch zju_coop_gazebo three_vehicle_gazebo.launch.py \
 
 默认启动即可得到三车 IMU、仿真 UWB 和 `/cooperative_localization/poses_2d`；加上上面的参数后再得到三车 LiDAR 点云和相机 `Image/CameraInfo`。定位真值同时发布在 `/simulation/ground_truth/poses_2d`，用于验收算法误差。
 
+当前版本没有发布 GNSS 话题；`/simulation/ground_truth/poses_2d` 是真值，不是 GNSS 传感器。若要验证 GNSS 接入，需要另加 `NavSatFix` 仿真节点，不能把真值话题当作硬件 GNSS。
+
+## 外部高保真环境候选
+
+- 公路/城市：优先 CARLA。官方 ROS bridge 支持多车控制，以及 LiDAR、相机、GNSS、IMU 等传感器；UWB 需要由本工程根据车辆真值自行生成。它依赖 Unreal Engine 和较强 GPU，不建议替换当前离线 Gazebo 流程。
+- ROS 2 原生道路数字孪生：可评估 Autoware Foundation 的 AWSIM。它使用 Unity、ROS 2 原生通信和道路数字孪生，适合道路交通场景，但需要重新接入本工程的 UWB 和三车模型。
+- 仓库/平地/森林：继续使用 Gazebo，并从 Gazebo Fuel 引入网格、植被、地形或仓库模型后固定到本地资源路径。这样保留现有 UWB、算法和离线运行能力，但照片级效果取决于所选模型材质。
+- Webots 更轻量，适合快速多机器人传感器验证，但视觉真实度低于 CARLA/AWSIM。
+
+建议：Gazebo 作为算法回归基线，CARLA/AWSIM 作为高保真视觉与道路数据源，二者通过 ROS 2 适配层复用本工程算法；不要直接把算法核心绑死在某个仿真器上。
+
 ## 3. 终端 2：直接输出定位精度
 
 Gazebo 运行约 5 秒后，在终端 2 完整执行下面命令。程序采集 10 秒，将算法输出和仿真真值按时间戳配对，直接打印三车的数值精度。
