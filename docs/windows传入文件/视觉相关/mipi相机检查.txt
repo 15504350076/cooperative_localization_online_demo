@@ -1,0 +1,10 @@
+查看摄像头
+//摄像头通路测试
+media-ctl -d /dev/media0 -p 
+//获取摄像头的节点
+v4l2-ctl --list-devices
+//查看支持的格式  
+v4l2-ctl -d /dev/video42 --list-formats-ext
+v4l2-ctl -d /dev/video42 --stream-mmap --stream-count=300 --stream-to=/dev/null
+
+

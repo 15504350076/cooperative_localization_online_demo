@@ -18,6 +18,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 import statistics
+import sqlite3
 
 import matplotlib
 
@@ -125,8 +126,18 @@ def read_bag(bag):
     # 两类输出：每次测距及每次身份广播；身份广播不能代替真实测距。
     ranges = []
     identities = []
-    while reader.has_next():
-        topic, serialized, receive_ns = reader.read_next()
+    def records():
+        # 保留实际写入顺序；按接收时间排序会掩盖记录时钟回退。
+        if metadata.storage_identifier == "sqlite3":
+            for filename in metadata.relative_file_paths:
+                with sqlite3.connect((bag / filename).resolve().as_uri() + "?mode=ro", uri=True) as db:
+                    yield from db.execute("SELECT t.name,m.data,m.timestamp FROM messages m "
+                                          "JOIN topics t ON t.id=m.topic_id ORDER BY m.id")
+        else:
+            while reader.has_next():
+                yield reader.read_next()
+
+    for topic, serialized, receive_ns in records():
         if topic not in (RANGE_TOPIC, IDENTITY_TOPIC):
             continue
         message = deserialize_message(serialized, message_types[topic])

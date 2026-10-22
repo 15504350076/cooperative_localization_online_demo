@@ -5,6 +5,7 @@
 # 本程序不估计姿态、不补偿零偏、不转换单位；只检查上游消息已有数值。
 import argparse
 import math
+import sqlite3
 from pathlib import Path
 import sys
 
@@ -112,9 +113,18 @@ def analyze(bag_path, topic, max_details, orientation_jump_deg):
     linear_acceleration_covariance = []
     frame_ids = {}
 
-    # 按reader顺序保留全部帧，不按header重排、不降采样、不去异常。
-    while reader.has_next():
-        current_topic, serialized, received_ns = reader.read_next()
+    def records():
+        # SQLite按写入序号读取，不能让reader按接收时间排序后制造Header假回退。
+        if metadata.storage_identifier == "sqlite3":
+            for filename in metadata.relative_file_paths:
+                with sqlite3.connect((bag_path / filename).resolve().as_uri() + "?mode=ro", uri=True) as db:
+                    yield from db.execute("SELECT t.name,m.data,m.timestamp FROM messages m "
+                                          "JOIN topics t ON t.id=m.topic_id ORDER BY m.id")
+        else:
+            while reader.has_next():
+                yield reader.read_next()
+
+    for current_topic, serialized, received_ns in records():
         if current_topic != topic:
             continue
         message = deserialize_message(serialized, message_type)

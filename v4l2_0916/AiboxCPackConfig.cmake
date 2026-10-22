@@ -1,0 +1,22 @@
+
+set(AIBOX_VERSION_FILE "${CMAKE_CURRENT_LIST_DIR}/Common/Include/AiboxVersion.h")
+if (EXISTS ${AIBOX_VERSION_FILE})
+    file(READ ${AIBOX_VERSION_FILE} AIBOX_VERSION_CONTENT)
+    string(REGEX MATCH "#define FIRMWARE_VERSION \"([^\"]+)\"" MATCHED_VERSION ${AIBOX_VERSION_CONTENT})
+    if (MATCHED_VERSION)
+        set(FIRMWARE_VERSION ${CMAKE_MATCH_1})
+        message(STATUS "Find Firmware version: ${FIRMWARE_VERSION}")
+    else()
+        message(FATAL_ERROR "FIRMWARE_VERSION not found in AiboxVersion.h")
+    endif()
+else()
+    message(FATAL_ERROR "AiboxVersion.h file not found at ${AIBOX_VERSION_FILE}")
+endif()
+
+set(CPACK_PACKAGE_NAME "TdmmAi")
+set(CPACK_PACKAGE_VERSION "${FIRMWARE_VERSION}")
+set(CPACK_GENERATOR "TGZ")
+set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}")
+# 禁用安装命令
+set(CPACK_INSTALL_COMMANDS "")
+set(CPACK_OUTPUT_FILE_PREFIX "${CMAKE_CURRENT_LIST_DIR}/Install/Bin")

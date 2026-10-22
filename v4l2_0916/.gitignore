@@ -1,0 +1,9 @@
+# Ignore file for git track
+.vscode/
+*.o
+*.dll
+build/
+Logs/
+Install/Bin/
+!Install/Bin/.gitkeep
+Common/Include/AiboxVersion.h

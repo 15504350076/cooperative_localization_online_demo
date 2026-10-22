@@ -9,8 +9,10 @@ UWB使用跨盒环境，IMU和Livox使用本盒环境，分别写入uwb、imu、
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import os
+import re
 from pathlib import Path
 import signal
 import subprocess
@@ -101,10 +103,13 @@ def main() -> int:
     parser.add_argument("--box-id", default="201", choices=("201", "202", "203"),
                         help="本盒编号，默认201")
     parser.add_argument("--duration", type=float, default=10.0, help="录制秒数，默认10秒")
+    parser.add_argument("--run-id", help="三盒共用的实验编号；省略则使用本盒日期")
     parser.add_argument("--output-dir", type=Path, default=Path("/home/firefly/sensor_test"))
     args = parser.parse_args()
     if args.duration <= 0:
         parser.error("--duration 必须大于0")
+    if args.run_id and not re.fullmatch(r"[A-Za-z0-9_-]+", args.run_id):
+        parser.error("--run-id 只能包含字母、数字、下划线和横线")
 
     radar_rmw = livox_rmw()
     if not radar_rmw:
@@ -112,7 +117,8 @@ def main() -> int:
         return 2
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    root = args.output_dir / f"uwb_imu_livox_v{args.box_id}_{datetime.now():%Y%m%d_%H%M%S}"
+    run_id = args.run_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+    root = args.output_dir / f"uwb_imu_livox_v{args.box_id}_{run_id}"
     uwb_bag = root / "uwb"
     imu_bag = root / "imu"
     livox_bag = root / "livox"
@@ -155,8 +161,9 @@ def main() -> int:
     except KeyboardInterrupt:
         print("收到 Ctrl+C，正在停止并保存三个 bag……")
     finally:
-        for process in processes:
-            stop_process(process)
+        # 三路并行停止，避免等待前一路退出时后一路继续录十多秒。
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            list(pool.map(stop_process, processes))
         uwb_log.close()
         imu_log.close()
         livox_log.close()
@@ -174,6 +181,7 @@ def main() -> int:
     for bag in (uwb_bag, imu_bag, livox_bag):
         subprocess.run(["ros2", "bag", "info", str(bag)], check=False)
     archive = root.with_suffix(".tar.gz")
+    print(f"正在压缩：{archive}（点云较大，请等待）", flush=True)
     with tarfile.open(archive, "w:gz") as tar:
         tar.add(root, arcname=root.name)
     print(f"录包目录：{root}")

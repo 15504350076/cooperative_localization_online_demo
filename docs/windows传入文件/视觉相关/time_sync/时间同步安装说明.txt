@@ -1,0 +1,19 @@
+- RK3588时间同步
+
+1. 安装系统软件
+sudo apt install gpsd chrony pps-tools socat
+2. 配置虚拟串口
+拷贝virtual_com.service到/lib/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable virtual_com
+sudo systemctl start virtual_com
+3. 修改系统缺省的chrony.service和gpsd.service配置文件用本目录的替换
+这两个文件也在 /lib/systemd/system/目录
+4. 修改chrony配置文件，用本目录的chrony.conf替换/etc/chrony/chrony.conf
+5. 重启chrony和gpsd服务
+sudo systemctl daemon-reload
+sudo systemctl restart chrony
+sudo systemctl restart gpsd
+
+- v4l2_0727.tgz
+该文件是mipi采集成jpeg图像源代码，内附说明

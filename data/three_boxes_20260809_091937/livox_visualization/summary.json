@@ -1,0 +1,81 @@
+{
+  "201": {
+    "bag_frames": 39728,
+    "selected_frame_range": [
+      9819,
+      10043
+    ],
+    "selected_frames": 225,
+    "raw_points_in_window": 21600,
+    "nonzero_finite_points_plotted": 10417,
+    "zero_points_in_window": 11183,
+    "point_widths": [
+      96
+    ],
+    "xyz_min": [
+      -3.617000102996826,
+      -0.8309999704360962,
+      -0.460999995470047
+    ],
+    "xyz_max": [
+      3.4560000896453857,
+      3.361999988555908,
+      2.8469998836517334
+    ],
+    "html_written": true
+  },
+  "202": {
+    "bag_frames": 1795,
+    "selected_frame_range": [
+      443,
+      452
+    ],
+    "selected_frames": 10,
+    "raw_points_in_window": 187488,
+    "nonzero_finite_points_plotted": 84757,
+    "zero_points_in_window": 102731,
+    "point_widths": [
+      7584,
+      19968,
+      20064
+    ],
+    "xyz_min": [
+      -3.444999933242798,
+      -0.5479999780654907,
+      -0.6729999780654907
+    ],
+    "xyz_max": [
+      12.02299976348877,
+      3.2960000038146973,
+      1.9160000085830688
+    ],
+    "html_written": true
+  },
+  "203": {
+    "bag_frames": 1794,
+    "selected_frame_range": [
+      892,
+      901
+    ],
+    "selected_frames": 10,
+    "raw_points_in_window": 187584,
+    "nonzero_finite_points_plotted": 100081,
+    "zero_points_in_window": 87503,
+    "point_widths": [
+      7584,
+      19968,
+      20064
+    ],
+    "xyz_min": [
+      -12.508000373840332,
+      -0.6460000276565552,
+      -0.6129999756813049
+    ],
+    "xyz_max": [
+      2.572999954223633,
+      3.4089999198913574,
+      3.2279999256134033
+    ],
+    "html_written": true
+  }
+}

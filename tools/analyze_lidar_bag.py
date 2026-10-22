@@ -16,6 +16,7 @@ import argparse
 import bisect
 import math
 import statistics
+import sqlite3
 from collections import Counter
 from pathlib import Path
 
@@ -105,8 +106,18 @@ def read_bag(path: Path) -> dict[str, object]:
     point_fields = None
     point_meta = None
 
-    while reader.has_next():
-        topic, serialized, receive_ns = reader.read_next()
+    def records():
+        # reader按记录时间重排会掩盖系统时间回退，也可能制造Header乱序。
+        if metadata.storage_identifier == "sqlite3":
+            for filename in metadata.relative_file_paths:
+                with sqlite3.connect((path / filename).resolve().as_uri() + "?mode=ro", uri=True) as db:
+                    yield from db.execute("SELECT t.name,m.data,m.timestamp FROM messages m "
+                                          "JOIN topics t ON t.id=m.topic_id ORDER BY m.id")
+        else:
+            while reader.has_next():
+                yield reader.read_next()
+
+    for topic, serialized, receive_ns in records():
         if topic not in required:
             continue
         message = deserialize_message(serialized, message_types[topic])
@@ -202,7 +213,7 @@ def print_report(path: Path, data: dict[str, object]) -> None:
             f"{min(offsets):.6f}/{max(offsets):.6f}us"
         )
 
-    imu_headers = data["/livox/imu"]["header"]
+    imu_headers = sorted(data["/livox/imu"]["header"])
     lidar_headers = data["/livox/lidar"]["header"]
     nearest_ms = []
     for header in lidar_headers:
@@ -219,7 +230,7 @@ def print_report(path: Path, data: dict[str, object]) -> None:
         f"全部 median/min/max={statistics.median(nearest_ms):.6f}/"
         f"{min(nearest_ms):.6f}/{max(nearest_ms):.6f}ms; "
         f"去掉首帧后 median/max绝对值={statistics.median(nearest_ms[1:]):.6f}/"
-        f"{max(abs(value) for value in nearest_ms[1:]):.6f}ms"
+        f"{max((abs(value) for value in nearest_ms[1:]), default=math.nan):.6f}ms"
     )
 
 

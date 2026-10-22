@@ -1,0 +1,19 @@
+[Unit]
+Description=Virtual COM Port Pair for NMEA Testing
+After=network.target
+
+[Service]
+# 使用 link= 参数指定固定的路径，避免每次重启后端口名变化
+ExecStart=/usr/bin/socat -d -d \
+  PTY,raw,echo=0,link=/dev/ttyVUSB0,perm=0666 \
+  PTY,raw,echo=0,link=/dev/ttyVUSB1,perm=0666
+Restart=always
+RestartSec=3
+User=root
+Group=root
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=virtual-com
+
+[Install]
+WantedBy=multi-user.target
