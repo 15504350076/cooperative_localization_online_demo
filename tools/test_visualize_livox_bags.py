@@ -51,6 +51,9 @@ def main():
                 assert "实验窗口" in str(error)
             else:
                 raise AssertionError("Out-of-range windows must fail clearly")
+            adaptive = load_box(root, "201", allow_adaptive_window=True)
+            assert adaptive["adaptive_window"] is True
+            assert adaptive["selected_frames"] == 3
     print("Livox过滤、写入顺序及窗口边界检查通过")
 
 

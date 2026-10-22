@@ -3,7 +3,7 @@
 
 Usage (from the repository root, after sourcing ROS 2 Humble)::
 
-    python3 tools/visualize_livox_bags.py data/three_boxes_20260809_091937
+    python3 tools/visualize_livox_bags.py
 
 The default frame windows reproduce the 20260809_091937 experiment.
 Only single-file SQLite bags named livox_0.db3 are supported here.
@@ -34,7 +34,7 @@ SELECTION = {
 }
 
 
-def load_box(root: Path, box: str) -> dict[str, object]:
+def load_box(root: Path, box: str, allow_adaptive_window: bool = False) -> dict[str, object]:
     matches = sorted(root.glob(f"uwb_imu_livox_v{box}_*/livox"))
     if len(matches) != 1:
         raise ValueError(f"盒{box}需要唯一的 livox bag，找到 {len(matches)} 个：{matches}")
@@ -54,8 +54,12 @@ def load_box(root: Path, box: str) -> dict[str, object]:
         ).fetchone()[0]
         selection = SELECTION[box]
         lo = max(0, selection["center"] - selection["window"] // 2)
+        adaptive_window = False
         if count <= lo:
-            raise ValueError(f"盒{box}仅有{count}帧，无法读取从{lo}开始的实验窗口")
+            if not allow_adaptive_window:
+                raise ValueError(f"盒{box}仅有{count}帧，无法读取从{lo}开始的实验窗口")
+            lo = max(0, count - selection["window"])
+            adaptive_window = True
         hi = min(count, lo + selection["window"])
         rows = db.execute(
             "SELECT data FROM messages WHERE topic_id=? ORDER BY id LIMIT ? OFFSET ?",
@@ -99,6 +103,7 @@ def load_box(root: Path, box: str) -> dict[str, object]:
         "widths": sorted(set(widths)),
         "lo": lo,
         "hi": hi,
+        "adaptive_window": adaptive_window,
     }
 
 
@@ -153,14 +158,43 @@ def write_html(output: Path, box: str, data: dict[str, object]) -> bool:
     return True
 
 
+def find_latest_root(data_dir: Path) -> Path:
+    """Find the newest three-box directory containing all three Livox bags."""
+    candidates = sorted(data_dir.glob("three_boxes_*"), reverse=True)
+    for root in candidates:
+        if not root.is_dir():
+            continue
+        complete = True
+        for box in ("201", "202", "203"):
+            matches = sorted(root.glob(f"uwb_imu_livox_v{box}_*/livox"))
+            if len(matches) != 1 or not (matches[0] / "livox_0.db3").is_file():
+                complete = False
+                break
+            with sqlite3.connect(matches[0] / "livox_0.db3") as db:
+                topic = db.execute(
+                    "SELECT id FROM topics WHERE name='/livox/lidar'"
+                ).fetchone()
+                if topic is None or db.execute(
+                    "SELECT COUNT(*) FROM messages WHERE topic_id=?", (topic[0],)
+                ).fetchone()[0] == 0:
+                    complete = False
+                    break
+        if complete:
+            return root
+    raise ValueError(f"{data_dir}下没有找到三盒Livox目录完整的three_boxes_*实验")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("input", type=Path, help="三盒联合包解压后的目录")
+    parser.add_argument("input", nargs="?", type=Path, help="三盒联合包解压后的目录；省略时自动选择data/下最新完整实验")
     parser.add_argument("--output", type=Path, help="输出目录，默认 <input>/livox_visualization")
     args = parser.parse_args()
-    output = args.output or args.input / "livox_visualization"
+    root = args.input or find_latest_root(Path("data"))
+    if args.input is None:
+        print(f"自动选择最新三盒Livox实验：{root}")
+    output = args.output or root / "livox_visualization"
     output.mkdir(parents=True, exist_ok=True)
-    data = {box: load_box(args.input, box) for box in ("201", "202", "203")}
+    data = {box: load_box(root, box, allow_adaptive_window=True) for box in ("201", "202", "203")}
     write_overview(output, data)
     html = {box: write_html(output, box, data[box]) for box in data}
     summary = {}
@@ -174,6 +208,7 @@ def main() -> int:
             "nonzero_finite_points_plotted": len(value["points"]),
             "zero_points_in_window": value["zero_points"],
             "point_widths": value["widths"],
+            "adaptive_window": value["adaptive_window"],
             "xyz_min": xyz.min(0).round(4).tolist(),
             "xyz_max": xyz.max(0).round(4).tolist(),
             "html_written": html[box],

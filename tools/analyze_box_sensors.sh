@@ -4,8 +4,47 @@
 # 输出：每盒时间报告、IMU分析.txt、雷达分析.txt及uwb/中的测距报告和CSV。
 set -euo pipefail
 TOOLS_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+shopt -s nullglob
+bag_has_data() {
+  local metadata=$1 topic=$2
+  [[ -f "$metadata" ]] || return 1
+  grep --quiet "name: $topic" "$metadata" || return 1
+  grep --quiet --extended-regexp '^[[:space:]]+message_count:[[:space:]]+[1-9][0-9]*' "$metadata"
+}
 if [[ $# == 0 ]]; then
-  echo '用法：bash tools/analyze_box_sensors.sh 已解压盒201目录 [盒202目录 盒203目录]' >&2
+  # 不传参数时自动选择data/下最新且三盒目录完整的实验，避免每轮手填编号。
+  DATA_DIR="$TOOLS_DIR/../data"
+  while IFS= read -r candidate; do
+    box_dirs=()
+    for box in 201 202 203; do
+      matches=()
+      for run_dir in "$candidate"/uwb_imu_livox_v${box}_*/; do
+        [[ -d "$run_dir" ]] && matches+=("${run_dir%/}")
+      done
+      [[ ${#matches[@]} == 1 ]] || { box_dirs=(); break; }
+      box_dirs+=("${matches[0]}")
+    done
+    [[ ${#box_dirs[@]} == 3 ]] || continue
+    complete=true
+    for run_dir in "${box_dirs[@]}"; do
+      bag_has_data "$run_dir/uwb/metadata.yaml" '/uwb/range' || complete=false
+      bag_has_data "$run_dir/imu/metadata.yaml" '/imu/raw' || complete=false
+      bag_has_data "$run_dir/livox/metadata.yaml" '/livox/lidar' || complete=false
+    done
+    if [[ "$complete" == true ]]; then
+      set -- "${box_dirs[@]}"
+      printf '自动选择最新三盒联合包：%s\n' "$candidate"
+      break
+    fi
+  done < <(find "$DATA_DIR" -mindepth 1 -maxdepth 1 -type d -name 'three_boxes_*' -print | sort --reverse)
+  if [[ $# == 0 ]]; then
+    echo 'data/下没有找到三盒目录完整的three_boxes_*实验。请先解压总包。' >&2
+    exit 1
+  fi
+fi
+if [[ $# -lt 1 || $# -gt 3 ]]; then
+  echo '用法：bash tools/analyze_box_sensors.sh [盒201目录 盒202目录 盒203目录]' >&2
+  echo '不填目录时，自动选择data/下最新的三盒联合包。' >&2
   exit 2
 fi
 python3 - <<'PY'

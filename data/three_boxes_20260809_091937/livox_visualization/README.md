@@ -14,23 +14,28 @@ cd /home/pdq/Code/cooperative_localization_online_demo/cooperative_localization_
 
 ```bash
 source /opt/ros/humble/setup.bash
-python3 tools/visualize_livox_bags.py data/three_boxes_20260809_091937
+python3 tools/visualize_livox_bags.py
 ```
 
-当前数据已经解压，可以直接执行上面的复现命令。只有ZIP时才执行以下解包；已完整解压的目录跳过，避免覆盖已有文件：
+工具会自动选择`data/`下最新且三盒Livox目录完整的实验。当前数据已经解压，可以直接执行上面的复现命令。只有ZIP时才执行以下解包；已完整解压的目录跳过，避免覆盖已有文件：
 
 ```bash
-unzip -n -q data/three_boxes_20260809_091937.zip -d data
-for archive in data/three_boxes_20260809_091937/uwb_imu_livox_v*.tar.gz; do
-  tar --extract --gzip --keep-old-files --file "$archive" --directory data/three_boxes_20260809_091937
+ARCHIVE=$(find data -maxdepth 1 -type f \( -name 'three_boxes_*.zip' -o -name 'three_boxes_*.tar.gz' \) -print | sort --reverse | head -n1)
+case "$ARCHIVE" in
+  *.zip) RUN=${ARCHIVE%.zip}; [ -d "$RUN" ] || unzip -n -q "$ARCHIVE" -d data ;;
+  *.tar.gz) RUN=${ARCHIVE%.tar.gz}; [ -d "$RUN" ] || tar --extract --gzip --keep-old-files --file "$ARCHIVE" --directory data ;;
+esac
+for archive in "$RUN"/uwb_imu_livox_v*.tar.gz; do
+  BOX_DIR=${archive%.tar.gz}
+  [ -d "$BOX_DIR" ] || tar --extract --gzip --keep-old-files --file "$archive" --directory "$RUN"
 done
 source /opt/ros/humble/setup.bash
-python3 tools/visualize_livox_bags.py data/three_boxes_20260809_091937
+python3 tools/visualize_livox_bags.py
 ```
 
 输出仍写入本目录，覆盖PNG/HTML/summary.json；本README保留。可通过`--output /tmp/livox-preview`写到其他目录。HTML内嵌所需JavaScript，浏览器打开后可以拖动旋转、滚轮缩放，无需互联网。IDE文本编辑器显示HTML源码时，使用系统浏览器打开文件。
 
-工具按SQLite `messages.id`写入顺序读取固定窗口，过滤非有限XYZ与全零点；只支持本轮单文件`livox_0.db3`格式。默认帧号专门复现本轮结果，不能当成其他实验的自动窗口选择。点云累积没有运动补偿，窗口内移动可能产生重影。
+工具按SQLite `messages.id`写入顺序读取窗口，过滤非有限XYZ与全零点；只支持单文件`livox_0.db3`格式。无参数运行时会自动选择最新且三盒Livox包完整的实验；若该实验帧数不足本轮固定窗口，会自动取该盒最后一段可用帧。显式传入本目录时仍复现本轮固定窗口。点云累积没有运动补偿，窗口内移动可能产生重影。
 
 ## 在RViz2中回放整段点云
 
@@ -58,7 +63,9 @@ rviz2
 source /opt/ros/humble/setup.bash
 export ROS_DOMAIN_ID=0 ROS_LOCALHOST_ONLY=1 RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 BOX=201
-ros2 bag play "data/three_boxes_20260809_091937/uwb_imu_livox_v${BOX}_20260809_091937/livox" \
+RUN=$(find data -maxdepth 1 -type d -name 'three_boxes_*' -print | sort --reverse | head -n1)
+BAG=$(find "$RUN" -maxdepth 1 -type d -name "uwb_imu_livox_v${BOX}_*" -print -quit)/livox
+ros2 bag play "$BAG" \
   --topics /livox/lidar --rate 1.0 --loop
 ```
 
