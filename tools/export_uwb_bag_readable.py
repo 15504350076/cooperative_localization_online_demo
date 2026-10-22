@@ -296,14 +296,14 @@ def write_report(bag, ranges, identities, true_distance_m):
 
     # 单一真值参数会用于全部边，适合单对测试；不适合三边真值各异的实验。
     # 这里的误差=均值-真值，不是RMSE。
-    error_header = " | 相对真值误差(m)" if true_distance_m is not None else ""
+    error_header = " | 相对真值误差（米）" if true_distance_m is not None else ""
     lines.extend(("", "## 分方向测距统计", ""))
     if not ranges:
         lines.append("无测距样本，本节无可统计的方向。")
     else:
         lines.extend(
             (
-                f"| 方向 | 样本数 | 接收频率(Hz) | 均值(m) | 中位数(m) | 总体标准差(m) | P05～P95(m) | 最小～最大(m) | 每分钟线性变化(m){error_header} |",
+                f"| 方向 | 样本数 | 记录频率（赫兹） | 均值（米） | 中位数（米） | 总体标准差（米） | 5%～95%分位（米） | 最小～最大（米） | 每分钟线性变化（米）{error_header} |",
                 f"|---|---:|---:|---:|---:|---:|---:|---:|---:|{'---:|' if true_distance_m is not None else ''}",
             )
         )
@@ -326,7 +326,7 @@ def write_report(bag, ranges, identities, true_distance_m):
     else:
         lines.extend(
             (
-                "| 方向 | 接收跨度(s) | header跨度(s) | 时间尺度比 | 零时间戳 | 回退 | 重复 | 接收间隔>200ms |",
+                "| 方向 | 记录时间跨度（秒） | 消息时间跨度（秒） | 时间尺度比 | 零时间戳 | 回退 | 重复 | 记录间隔超过200毫秒 |",
                 "|---|---:|---:|---:|---:|---:|---:|---:|",
             )
         )
@@ -386,7 +386,7 @@ def write_plot(bag, ranges):
     )
     # y=x表示推进速度一致，因各自置零无法反映绝对时间起点偏差。
     axes[2].plot([0.0, receive_max], [0.0, receive_max], "k--", linewidth=1.0, label="理想一比一")
-    axes[0].set_title("静态测距时序", fontproperties=chinese_font)
+    axes[0].set_title("分方向测距时序", fontproperties=chinese_font)
     axes[0].set_xlabel("实际接收相对时间（秒）", fontproperties=chinese_font)
     axes[0].set_ylabel("距离（米）", fontproperties=chinese_font)
     axes[1].set_title("测距值分布", fontproperties=chinese_font)

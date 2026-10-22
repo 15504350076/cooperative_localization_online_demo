@@ -20,6 +20,9 @@ import matplotlib
 matplotlib.use('Agg')  # 离线保存PNG，不打开窗口；必须在导入pyplot前设置。
 import matplotlib.pyplot as plt
 
+plt.rcParams['font.sans-serif'] = ['Noto Sans CJK SC', 'Noto Sans CJK JP', 'WenQuanYi Micro Hei', 'DejaVu Sans']
+plt.rcParams['axes.unicode_minus'] = False
+
 
 HEADER_TYPES = {
     'sensor_msgs/msg/Imu', 'sensor_msgs/msg/PointCloud2',
@@ -62,6 +65,15 @@ def append_bag_streams(streams, bag, topics=None):
                 streams.setdefault(label, []).append((stamp, int(received)))
 
 
+def display_stream(label):
+    """内部流名保持兼容，只将报告与图例显示为中文。"""
+    for prefix, chinese in [('Livox IMU ', 'Livox内置IMU '), ('LiDAR ', '激光点云 '),
+                            ('IMU v', '车载IMU 盒'), ('IMU ', '车载IMU ')]:
+        if label.startswith(prefix):
+            return chinese + label[len(prefix):]
+    return label
+
+
 def plot_timestamp_comparison(directory, streams):
     """直接比较完整header时间：横纵轴使用同一个整数秒起点，不校正偏差。"""
     # R是各录包机写入bag的记录时间，H是消息自带时间；R不是独立同步真值。
@@ -74,7 +86,7 @@ def plot_timestamp_comparison(directory, streams):
             # 先做整数纳秒减法，再转浮点秒，避免大Unix秒相减损失精度。
             x, y = (a[:, 1] - origin) / 1e9, (a[:, 0] - origin) / 1e9
             stride = max(1, len(a) // 3000)
-            name = label.replace('IMU v', 'IMU 盒')
+            name = display_stream(label)
             style = '-' if label.startswith('IMU') else '--'
             axes[0].plot(x[::stride], y[::stride], style, color=colors[i % 10], label=name, alpha=.8)
             # 局部图不抽样；保留UWB约100ms采样间隔，不插造同时采样的数据。
@@ -90,7 +102,7 @@ def plot_timestamp_comparison(directory, streams):
             ax.set_ylabel('消息时间 H − T0（秒）')
             ax.grid(True, alpha=.3)
         fig.suptitle(f'传感器原始时间戳对比 · {directory.name}\n'
-                     f'H = header.stamp.sec + nanosec / 1e9；共同起点 T0 = {origin // 10**9} Unix秒', fontsize=12)
+                     f'消息时间由消息头的整秒与纳秒合成；共同起点 = {origin // 10**9} 秒（自1970年起）', fontsize=12)
         fig.text(.5, .015, '未平移对齐、未校正时间。曲线差距包含时钟偏差与处理/传输延迟，不等于采样同步误差。',
                  ha='center', fontsize=10)
         fig.tight_layout(rect=(0, .045, 1, .93))
@@ -121,16 +133,18 @@ def main(directory, lidar_bag=None):
     if not streams:
         raise ValueError('没有找到可分析的传感器Header消息；先检查bag消息数和类型')
     # 表头单位：跨度/偏差为s，间隔/分位宽度为ms；统计使用全部样本。
-    fields = ['stream', 'count', 'receive_span_s', 'receive_hz', 'header_span_s', 'zero', 'rollback', 'duplicate',
-              'header_dt_median_ms', 'header_dt_max_ms', 'header_gap_gt_100ms', 'receive_minus_header_median_s', 'offset_p95_minus_p05_ms',
-              'receive_rollback', 'receive_duplicate', 'first_header_ns', 'last_header_ns', 'first_receive_ns', 'last_receive_ns']
+    fields = ['数据流', '消息数量', '记录时间跨度（秒）', '记录频率（赫兹）', '消息时间跨度（秒）',
+              '消息零时间戳数', '消息时间回退数', '消息时间重复数', '消息间隔中位数（毫秒）',
+              '消息最大间隔（毫秒）', '消息间隔超过100毫秒次数', '记录减消息时间中位数（秒）',
+              '时间差95%与5%分位宽度（毫秒）', '记录时间回退数', '记录时间重复数',
+              '首条消息时间（纳秒）', '末条消息时间（纳秒）', '首条记录时间（纳秒）', '末条记录时间（纳秒）']
     # 所有流共用一个纵轴原点，保留IMU与UWB之间的epoch差异。
     # 这是各流首帧的最小值，不保证是发生回退后全部样本的最小值。
     origin = min(v[0][0] for v in streams.values())
     fig, axes = plt.subplots(2, 1, figsize=(12, 9))
     report = ['# 联合时间验收', '', '原始bag只读；按数据库写入顺序逐流统计，UWB按src_id→target_id拆流。',
               '缺失话题不会出现在表中，必须先结合采集清单和ros2 bag info核对各盒各传感器。', '',
-              '| 数据流 | 数量 | 接收频率Hz | Header首时间s | Header末时间s | Header零/回退/重复 | 接收回退/重复 | R−H中位数ms |',
+              '| 数据流 | 数量 | 记录频率（赫兹） | 消息首时间（秒） | 消息末时间（秒） | 消息零值/回退/重复 | 记录回退/重复 | 记录减消息时间中位数（毫秒） |',
               '|---|---:|---:|---:|---:|---:|---:|---:|']
     # BOM便于Excel识别UTF-8；同名分析文件会覆盖，原始bag不改。
     with (directory / '联合时间详细统计.csv').open('w', encoding='utf-8-sig', newline='') as f:
@@ -153,24 +167,24 @@ def main(directory, lidar_bag=None):
                    int(np.sum(dt > 100_000_000)), float(np.median(offset)), float(np.ptp(np.percentile(offset, [5, 95])) * 1000),
                    int(np.sum(receive_dt < 0)), int(np.sum(receive_dt == 0)),
                    int(a[0, 0]), int(a[-1, 0]), int(a[0, 1]), int(a[-1, 1])]
-            writer.writerow(row)
+            writer.writerow([display_stream(label), *row[1:]])
             print(row)
             first = f'{int(a[0, 0]) // 10**9}.{int(a[0, 0]) % 10**9:09d}'
             last = f'{int(a[-1, 0]) // 10**9}.{int(a[-1, 0]) % 10**9:09d}'
-            report.append(f'| {label} | {len(a)} | {row[3]:.3f} | {first} | {last} | '
+            report.append(f'| {display_stream(label)} | {len(a)} | {row[3]:.3f} | {first} | {last} | '
                           f'{row[5]}/{row[6]}/{row[7]} | {row[13]}/{row[14]} | {row[11] * 1000:.3f} |')
             # 仅绘图抽样到约2000点；短暂尖峰可能没画到，CSV统计仍保留它。
             stride = max(1, len(a)//2000)
             # 横轴每流各自置零，不能据曲线重合证明跨盒同一物理事件同步。
             elapsed = (a[:, 1] - a[0, 1])/1e9
-            axes[0].plot(elapsed[::stride], ((a[:, 0]-origin)/1e9)[::stride], label=label)
+            axes[0].plot(elapsed[::stride], ((a[:, 0]-origin)/1e9)[::stride], label=display_stream(label))
             # 下图去除首帧偏差，只展示偏差变化；绝对偏差看CSV及上图。
-            axes[1].plot(elapsed[::stride], ((offset-offset[0])*1000)[::stride], label=label)
-    axes[0].set_ylabel('Header time - ONE shared origin (s)')
-    axes[0].set_title('Static recording: overlapping curves do NOT prove synchronization')
-    axes[1].set_ylabel('Change in (receive - header) since first sample (ms)')
+            axes[1].plot(elapsed[::stride], ((offset-offset[0])*1000)[::stride], label=display_stream(label))
+    axes[0].set_ylabel('消息时间减共同起点（秒）')
+    axes[0].set_title('各传感器时间推进：曲线重叠不等于精确同步')
+    axes[1].set_ylabel('记录减消息时间相对首帧的变化（毫秒）')
     for ax in axes:
-        ax.set_xlabel('Receive elapsed time WITHIN each bag (s; not common event time)')
+        ax.set_xlabel('各数据流记录时间相对自身首帧（秒，非共同事件时间）')
         ax.grid(True)
         ax.legend(ncol=3)
     fig.tight_layout()

@@ -53,14 +53,77 @@ expected = ['header', 'src_id', 'target_id', 'rolling', 'distance']
 if list(UwbRange.get_fields_and_field_types()) != expected:
     raise SystemExit('UWB消息安装版本过旧：请重新构建cooperative_interfaces并加载新环境；不能用旧定义解析新包。')
 PY
-for RUN_DIR in "$@"; do
-  for BAG in uwb imu livox; do
-    [[ -f "$RUN_DIR/$BAG/metadata.yaml" ]] || { echo "缺少$RUN_DIR/$BAG/metadata.yaml" >&2; exit 1; }
+# 所有子程序都等待退出；报告先写临时文件，失败时保留旧报告并另存错误日志。
+active_pid=''
+active_tmp=''
+active_output=''
+summary=''
+stop_analysis() {
+  trap '' INT TERM
+  if [[ -n "$active_pid" ]]; then
+    kill -TERM "$active_pid" 2>/dev/null || true
+    wait "$active_pid" 2>/dev/null || true
+  fi
+  if [[ -n "$active_tmp" && -f "$active_tmp" ]]; then
+    mv -- "$active_tmp" "$active_output.失败.log"
+  fi
+  [[ -z "$summary" ]] || sed --in-place 's/^状态：运行中。/状态：已中断。/' "$summary"
+  [[ -z "$summary" ]] || printf '\n本次分析被中断，尚未完成的项目不可视为成功。\n' >> "$summary"
+  printf '\n[已中断] 本次分析没有全部完成。\n' >&2
+  exit 130
+}
+trap stop_analysis INT TERM
+
+run_step() {
+  local name=$1 output=$2 started=$SECONDS next_notice=$((SECONDS + 10)) rc
+  shift 2
+  active_output=$output
+  active_tmp=$(mktemp "$output.tmp.XXXXXX")
+  printf '[开始] %s；详细输出：%s\n' "$name" "$active_tmp"
+  "$@" > "$active_tmp" 2>&1 &
+  active_pid=$!
+  while kill -0 "$active_pid" 2>/dev/null; do
+    sleep 2
+    if (( SECONDS >= next_notice )); then
+      printf '[运行中] %s，已用时%s秒，请等待。\n' "$name" "$((SECONDS - started))"
+      next_notice=$((SECONDS + 10))
+    fi
   done
+  if wait "$active_pid"; then rc=0; else rc=$?; fi
+  active_pid=''
+  if (( rc == 0 )); then
+    mv -- "$active_tmp" "$output"
+    printf '[成功] %s，用时%s秒；输出：%s\n' "$name" "$((SECONDS - started))" "$output"
+    printf '| %s | 成功 | %s | [%s](%s) |\n' "$name" "$((SECONDS - started))" "$(basename "$output")" "$(basename "$output")" >> "$summary"
+  else
+    mv -- "$active_tmp" "$output.失败.log"
+    printf '[失败] %s（退出码%s）；错误日志：%s.失败.log\n' "$name" "$rc" "$output" >&2
+    tail -n 8 "$output.失败.log" >&2
+    printf '| %s | 失败（退出码%s） | %s | [%s.失败.log](%s.失败.log) |\n' "$name" "$rc" "$((SECONDS - started))" "$(basename "$output")" "$(basename "$output")" >> "$summary"
+    failures=$((failures + 1))
+  fi
+  active_tmp=''
+}
+
+failures=0
+for RUN_DIR in "$@"; do
+  [[ -d "$RUN_DIR" ]] || { printf '盒端目录不存在：%s\n' "$RUN_DIR" >&2; exit 1; }
+  summary="$RUN_DIR/分析执行结果.md"
+  printf '# 分析执行结果\n\n执行时间：%s\n\n状态：运行中。程序成功仅表示完成统计，数据是否合格须查看各报告。\n\n失败项目的旧报告可能仍存在，不能当成本次成功结果。联合时间报告只包含实际存在的流，仍须核对采集清单。\n\n| 分析项目 | 执行结果 | 用时（秒） | 日志或报告 |\n|---|---|---:|---|\n' "$(date --iso-8601=seconds)" > "$summary"
+  before=$failures
   printf '\n正在分析：%s\n' "$RUN_DIR"
-  python3 "$TOOLS_DIR/analyze_joint_time.py" "$RUN_DIR" > "$RUN_DIR/time_analysis.log" 2>&1
-  python3 "$TOOLS_DIR/analyze_imu_bag.py" "$RUN_DIR/imu" > "$RUN_DIR/IMU分析.txt" 2>&1
-  python3 "$TOOLS_DIR/analyze_lidar_bag.py" "$RUN_DIR/livox" > "$RUN_DIR/雷达分析.txt" 2>&1
-  python3 "$TOOLS_DIR/export_uwb_bag_readable.py" "$RUN_DIR/uwb" > "$RUN_DIR/uwb_analysis.log" 2>&1
-  printf '完成：%s（完成分析不等于验收通过）\n' "$RUN_DIR"
+  run_step '1/4 联合时间统计及绘图' "$RUN_DIR/time_analysis.log" python3 -u "$TOOLS_DIR/analyze_joint_time.py" "$RUN_DIR"
+  run_step '2/4 车载IMU分析' "$RUN_DIR/IMU分析.txt" python3 -u "$TOOLS_DIR/analyze_imu_bag.py" "$RUN_DIR/imu"
+  run_step '3/4 Livox点云与内置IMU分析' "$RUN_DIR/雷达分析.txt" python3 -u "$TOOLS_DIR/analyze_lidar_bag.py" "$RUN_DIR/livox"
+  run_step '4/4 UWB测距统计及绘图' "$RUN_DIR/uwb_analysis.log" python3 -u "$TOOLS_DIR/export_uwb_bag_readable.py" "$RUN_DIR/uwb"
+  sed --in-place 's/^状态：运行中。/状态：已结束。/' "$summary"
+  if (( failures == before )); then
+    printf '\n最终状态：四项程序全部执行成功，数据质量请继续查看专项报告。\n' >> "$summary"
+    printf '[全部完成] %s；先看：%s\n' "$RUN_DIR" "$summary"
+  else
+    printf '\n最终状态：部分失败（%s项）。其余项目已执行完毕；失败原因和缺失数据需处理。\n' "$((failures - before))" >> "$summary"
+    printf '[部分失败] %s，失败%s项；先看：%s\n' "$RUN_DIR" "$((failures - before))" "$summary" >&2
+  fi
 done
+printf '\n本次所有分析进程均已结束；失败项目总数：%s。\n' "$failures"
+(( failures == 0 ))

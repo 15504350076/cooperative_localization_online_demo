@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """分析 Livox ROS 2 雷达短包。
 
-功能：读取 /livox/lidar 和 /livox/imu，比较录包接收时间与消息 Header 时间，
+功能：读取 /livox/lidar 和 /livox/imu，比较录包接收时间与消息头时间，
 检查消息频率、时间回退、点云尺寸、点字段、零点比例和点内 timestamp。
 程序只读 bag，不修改数据库，也不把接收时间差直接当作传输延迟。
 
@@ -61,12 +61,12 @@ def print_time_stats(label: str, values: list[int]) -> None:
     """打印一组时间的可读统计。"""
     result = time_stats(values)
     print(
-        f"{label}: n={result['count']}, span={result['span_s']:.9f}s, "
-        f"rate={result['rate_hz']:.6f}Hz, "
-        f"dt median/min/max={result['median_ms']:.6f}/"
+        f"{label}: 数量={result['count']}, 跨度={result['span_s']:.9f}s, "
+        f"频率={result['rate_hz']:.6f}Hz, "
+        f"间隔中位数/最小值/最大值={result['median_ms']:.6f}/"
         f"{result['min_ms']:.6f}/{result['max_ms']:.6f}ms, "
-        f"backward={result['backward']}, duplicate={result['duplicate']}, "
-        f"over_2x={result['over_2x']}"
+        f"回退次数={result['backward']}, 重复次数={result['duplicate']}, "
+        f"超过两倍典型间隔次数={result['over_2x']}"
     )
 
 
@@ -176,20 +176,20 @@ def read_bag(path: Path) -> dict[str, object]:
 
 def print_report(path: Path, data: dict[str, object]) -> None:
     """打印离线分析报告。"""
-    print(f"bag: {path}")
+    print(f"数据包: {path}")
     lidar = data["/livox/lidar"]
     imu = data["/livox/imu"]
     for topic, entry in (("/livox/lidar", lidar), ("/livox/imu", imu)):
-        print(f"\n[{topic}] frame_id={dict(entry['frame_ids'])}")
-        print_time_stats("bag 接收时间", entry["receive"])
-        print_time_stats("Header 时间", entry["header"])
+        print(f"\n[{topic}] 坐标系标识={dict(entry['frame_ids'])}")
+        print_time_stats("记录时间", entry["receive"])
+        print_time_stats("消息时间", entry["header"])
         delays = [
             (receive - header) / 1e6
             for receive, header in zip(entry["receive"], entry["header"])
         ]
         print(
-            "接收时间-Header 时间（含时钟偏移，不等于纯传输延迟）: "
-            f"min/median/max={min(delays):.6f}/{statistics.median(delays):.6f}/"
+            "接收时间-消息时间（含时钟偏移，不等于纯传输延迟）: "
+            f"最小值/中位数/最大值={min(delays):.6f}/{statistics.median(delays):.6f}/"
             f"{max(delays):.6f}ms"
         )
 
@@ -200,16 +200,16 @@ def print_report(path: Path, data: dict[str, object]) -> None:
     print(
         f"点总数={lidar['total_points']}, 有限XYZ={lidar['finite_points']}, "
         f"XYZ全零={lidar['zero_points']} "
-        f"({lidar['zero_points'] / lidar['total_points'] * 100:.3f}%)"
+        f"({lidar['zero_points'] / max(lidar['total_points'], 1) * 100:.3f}%)"
     )
     spans = lidar["point_timestamp_spans_ms"]
     offsets = lidar["point_timestamp_first_offsets_us"]
     if spans:
         print(
             "逐点timestamp（按纳秒时间解释）: "
-            f"帧内跨度 median/min/max={statistics.median(spans):.6f}/"
+            f"帧内跨度 中位数/最小值/最大值={statistics.median(spans):.6f}/"
             f"{min(spans):.6f}/{max(spans):.6f}ms, "
-            f"首点相对Header median/min/max={statistics.median(offsets):.6f}/"
+            f"首点相对Header 中位数/最小值/最大值={statistics.median(offsets):.6f}/"
             f"{min(offsets):.6f}/{max(offsets):.6f}us"
         )
 
@@ -227,9 +227,9 @@ def print_report(path: Path, data: dict[str, object]) -> None:
         )
     print(
         "\n雷达Header与最近内置IMU Header差: "
-        f"全部 median/min/max={statistics.median(nearest_ms):.6f}/"
+        f"全部 中位数/最小值/最大值={statistics.median(nearest_ms):.6f}/"
         f"{min(nearest_ms):.6f}/{max(nearest_ms):.6f}ms; "
-        f"去掉首帧后 median/max绝对值={statistics.median(nearest_ms[1:]):.6f}/"
+        f"去掉首帧后 中位数/最大绝对值={(statistics.median(nearest_ms[1:]) if len(nearest_ms) > 1 else math.nan):.6f}/"
         f"{max((abs(value) for value in nearest_ms[1:]), default=math.nan):.6f}ms"
     )
 

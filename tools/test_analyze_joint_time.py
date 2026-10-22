@@ -47,11 +47,11 @@ def check():
         main(root, [images])
         with (root / '联合时间详细统计.csv').open(encoding='utf-8-sig', newline='') as source:
             rows = list(csv.DictReader(source))
-        imu = next(row for row in rows if row['stream'] == 'IMU v1')
-        camera = next(row for row in rows if row['stream'].startswith('/camera/'))
-        assert imu['receive_rollback'] == '1'
-        assert imu['rollback'] == '0'
-        assert camera['count'] == '1'
+        imu = next(row for row in rows if row['数据流'] == '车载IMU 盒1')
+        camera = next(row for row in rows if row['数据流'].startswith('/camera/'))
+        assert imu['记录时间回退数'] == '1'
+        assert imu['消息时间回退数'] == '0'
+        assert camera['消息数量'] == '1'
         assert 'R−H' in (root / '联合时间验收.md').read_text(encoding='utf-8')
     print('联合时间离线检查通过')
 

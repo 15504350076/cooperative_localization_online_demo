@@ -29,7 +29,7 @@ def _format_stamp(ns):
 def _print_vector_stats(name, values):
     # values形状N×3；std默认ddof=0，即总体标准差，不是均值估计的不确定度。
     print(f"\n{name}（消息单位）")
-    print("轴              mean            std            min            max")
+    print("轴              均值            标准差            最小值            最大值")
     for axis, column in zip("xyz", values.T):
         print(
             f"{axis:<2} {np.mean(column):>16.9f} {np.std(column):>14.9f}"
@@ -37,8 +37,8 @@ def _print_vector_stats(name, values):
         )
     magnitudes = np.linalg.norm(values, axis=1)  # 每帧sqrt(x²+y²+z²)，再统计模长。
     print(
-        f"模长 mean={np.mean(magnitudes):.9f}, std={np.std(magnitudes):.9f}, "
-        f"min={np.min(magnitudes):.9f}, max={np.max(magnitudes):.9f}"
+        f"模长 均值={np.mean(magnitudes):.9f}, 标准差={np.std(magnitudes):.9f}, "
+        f"最小值={np.min(magnitudes):.9f}, 最大值={np.max(magnitudes):.9f}"
     )
 
 
@@ -177,27 +177,27 @@ def analyze(bag_path, topic, max_details, orientation_jump_deg):
     jump_threshold_ns = max(10 * nominal_ns, 100_000_000) if nominal_ns else 100_000_000
     forward_jump_indices = np.flatnonzero(sensor_deltas > jump_threshold_ns) + 1
 
-    print(f"bag: {bag_path}")
-    print(f"Topic: {topic} [{topic_types[topic]}]")
+    print(f"数据包: {bag_path}")
+    print(f"话题: {topic} [{topic_types[topic]}]")
     print(f"消息数: {count}")
-    print(f"bag接收时长: {bag_duration_ns / 1e9:.9f}s")
-    print(f"bag平均接收频率: {bag_rate_hz:.6f}Hz")
-    print(f"header非零: {np.count_nonzero(valid_sensor)}/{count}")
-    print(f"frame_id: {frame_ids}")
+    print(f"记录时间跨度: {bag_duration_ns / 1e9:.9f}s")
+    print(f"记录平均频率: {bag_rate_hz:.6f}Hz")
+    print(f"消息时间非零: {np.count_nonzero(valid_sensor)}/{count}")
+    print(f"坐标系标识: {frame_ids}")
     if np.any(valid_sensor):
         valid_values = sensor_ns[valid_sensor]
         print(
-            f"header首末时间: {_format_stamp(valid_values[0])}"
+            f"消息首末时间: {_format_stamp(valid_values[0])}"
             f" -> {_format_stamp(valid_values[-1])}"
         )
-        print(f"header首末跨度: {(int(valid_values[-1]) - int(valid_values[0])) / 1e9:.9f}s")
-    print(f"header标称间隔（正间隔中位数）: {nominal_ns / 1e6:.6f}ms")
+        print(f"消息时间跨度: {(int(valid_values[-1]) - int(valid_values[0])) / 1e9:.9f}s")
+    print(f"消息标称间隔（正间隔中位数）: {nominal_ns / 1e6:.6f}ms")
     if np.all(valid_sensor):
         delay_ms = (bag_ns - sensor_ns) / 1e6  # 含时钟偏移，未必是纯传输延迟。
         print(
-            "bag接收时间-header时间: "
-            f"min={np.min(delay_ms):.6f}ms, median={np.median(delay_ms):.6f}ms, "
-            f"max={np.max(delay_ms):.6f}ms"
+            "记录减消息时间（含时钟偏差）: "
+            f"最小值={np.min(delay_ms):.6f}ms, 中位数={np.median(delay_ms):.6f}ms, "
+            f"最大值={np.max(delay_ms):.6f}ms"
         )
 
     print("\n时间戳异常")
@@ -272,9 +272,9 @@ def analyze(bag_path, topic, max_details, orientation_jump_deg):
         print("最大相邻旋转步进: 无法计算")
 
     print("\n协方差")
-    _print_covariance("orientation_covariance", orientation_covariance, orientation=True)
-    _print_covariance("angular_velocity_covariance", angular_velocity_covariance)
-    _print_covariance("linear_acceleration_covariance", linear_acceleration_covariance)
+    _print_covariance("姿态协方差（orientation_covariance）", orientation_covariance, orientation=True)
+    _print_covariance("角速度协方差（angular_velocity_covariance）", angular_velocity_covariance)
+    _print_covariance("加速度协方差（linear_acceleration_covariance）", linear_acceleration_covariance)
 
 
 def main():

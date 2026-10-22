@@ -13,6 +13,7 @@ Bags are read-only; points remain in each sensor's local frame.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sqlite3
 from pathlib import Path
@@ -21,6 +22,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
+
+plt.rcParams["font.sans-serif"] = ["Noto Sans CJK SC", "Noto Sans CJK JP", "WenQuanYi Micro Hei", "DejaVu Sans"]
+plt.rcParams["axes.unicode_minus"] = False
 import numpy as np
 from rclpy.serialization import deserialize_message
 from sensor_msgs.msg import PointCloud2
@@ -112,7 +116,7 @@ def write_overview(output: Path, data: dict[str, dict[str, object]]) -> None:
     for row, box in enumerate(("201", "202", "203")):
         points = data[box]["points"]
         xyz = points[:, :3]
-        for col, (yidx, title) in enumerate(((1, "Top view XY"), (2, "Side view XZ"))):
+        for col, (yidx, title) in enumerate(((1, "俯视图（XY平面）"), (2, "侧视图（XZ平面）"))):
             scatter = axes[row, col].scatter(
                 xyz[:, 0], xyz[:, yidx], c=xyz[:, 2 if col == 0 else 1],
                 s=1.0, alpha=0.42, cmap="turbo", linewidths=0,
@@ -122,16 +126,16 @@ def write_overview(output: Path, data: dict[str, dict[str, object]]) -> None:
                 ),
             )
             axes[row, col].set(
-                xlabel="X (m)", ylabel="Y (m)" if col == 0 else "Z (m)",
-                title=(f"Box {box} · {title}\n"
-                       f"frames {data[box]['lo']}–{data[box]['hi'] - 1}, "
-                       f"valid points {len(points):,}"),
+                xlabel="X方向（米）", ylabel="Y方向（米）" if col == 0 else "Z方向（米）",
+                title=(f"盒{box} · {title}\n"
+                       f"消息序号 {data[box]['lo']}–{data[box]['hi'] - 1}, "
+                       f"绘制点数 {len(points):,}"),
             )
             axes[row, col].set_aspect("equal", adjustable="box")
             axes[row, col].grid(alpha=0.2)
             figure.colorbar(scatter, ax=axes[row, col], fraction=0.046, pad=0.03,
-                            label="Z (m)" if col == 0 else "Y (m)")
-    figure.suptitle("Latest three-box Livox representative windows (XYZ zeros removed)")
+                            label="Z方向（米）" if col == 0 else "Y方向（米）")
+    figure.suptitle("三盒Livox点云代表窗口（已过滤全零点与非有限点）")
     figure.savefig(output / "livox_overview.png", dpi=180)
     plt.close(figure)
 
@@ -145,13 +149,13 @@ def write_html(output: Path, box: str, data: dict[str, object]) -> bool:
     figure = go.Figure(data=[go.Scatter3d(
         x=points[:, 0], y=points[:, 1], z=points[:, 2], mode="markers",
         marker={"size": 1.5, "color": points[:, 2], "colorscale": "Turbo", "opacity": 0.65,
-                "colorbar": {"title": "Z (m)"}},
+                "colorbar": {"title": "Z方向（米）"}},
         hoverinfo="skip",
     )])
     figure.update_layout(
-        title=(f"Box {box} Livox · frames {data['lo']}–{data['hi'] - 1} · "
-               f"valid points {len(points):,}"),
-        scene={"xaxis_title": "X (m)", "yaxis_title": "Y (m)", "zaxis_title": "Z (m)",
+        title=(f"盒{box} Livox点云 · 消息序号 {data['lo']}–{data['hi'] - 1} · "
+               f"绘制点数 {len(points):,}"),
+        scene={"xaxis_title": "X方向（米）", "yaxis_title": "Y方向（米）", "zaxis_title": "Z方向（米）",
                "aspectmode": "data"}, margin={"l": 0, "r": 0, "t": 45, "b": 0},
     )
     figure.write_html(output / f"box{box}_livox_3d.html", include_plotlyjs="inline")
@@ -216,6 +220,15 @@ def main() -> int:
     (output / "summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    with (output / "点云可视化统计.csv").open("w", encoding="utf-8-sig", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(["盒号", "整包消息数量", "窗口首消息序号", "窗口末消息序号", "选取消息数量",
+                         "窗口原始点数", "窗口全零点数", "绘制点数（已过滤并可能抽样）", "自动调整窗口"])
+        for box, value in data.items():
+            writer.writerow([box, value["bag_frames"], value["lo"], value["hi"] - 1,
+                             value["selected_frames"], value["raw_points"], value["zero_points"],
+                             len(value["points"]), "是" if value["adaptive_window"] else "否"])
+    print(f"已生成：{output / '点云可视化统计.csv'}")
     print(f"已生成：{output / 'livox_overview.png'}")
     for box in data:
         if html[box]:
