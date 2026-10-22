@@ -301,3 +301,9 @@ install(PROGRAMS
     tools/imu_online_smoke_test.py
     DESTINATION ${CMAKE_INSTALL_DATADIR}/zju_coop/tools
 )
+
+# 论文算法为显式可选扩展；默认构建/依赖/节点均保持稳定基线。
+option(ZJU_COOP_BUILD_RTE "Build the independent paper RTE algorithm library" OFF)
+if(ZJU_COOP_BUILD_RTE)
+  add_subdirectory(src/rte)
+endif()
