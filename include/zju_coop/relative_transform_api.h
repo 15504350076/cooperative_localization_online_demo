@@ -104,6 +104,11 @@ zju_coop_push_sample_rte(zju_coop_rte_handle_t* handle,
 ZJU_COOP_RTE_API zju_coop_error_code_t ZJU_COOP_CALL
 zju_coop_step_rte(zju_coop_rte_handle_t* handle,
                   zju_coop_estimate_rte_t* estimate);
+/* 显式固定两局部坐标原点的高度差，只估计tx/ty/yaw；现有四自由度入口不变。 */
+ZJU_COOP_RTE_API zju_coop_error_code_t ZJU_COOP_CALL
+zju_coop_step_planar_rte(zju_coop_rte_handle_t* handle,
+                        double origin_height_difference_m,
+                        zju_coop_estimate_rte_t* estimate);
 
 /* 适配接口复用c_api.h中的输入结构、错误码和处理回执。
  * RTE中NodeState的*_enu字段表示各车自己的重力对齐局部里程计系。

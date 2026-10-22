@@ -45,6 +45,29 @@ endfunction()
 zju_coop_add_node(zju_local_inertial_node src/local_inertial_node.cpp)
 zju_coop_add_node(zju_cooperative_fusion_node src/cooperative_fusion_node.cpp)
 
+option(ZJU_COOP_ROS2_BUILD_RTE "Build the optional three-vehicle RTE node" OFF)
+if(ZJU_COOP_ROS2_BUILD_RTE)
+  find_package(std_msgs REQUIRED)
+  unset(ZJU_COOP_RTE_LIBRARY CACHE)
+  find_library(ZJU_COOP_RTE_LIBRARY NAMES zju_coop_rte
+    HINTS "${ZJU_COOP_SDK_ROOT}/lib" "${ZJU_COOP_SDK_ROOT}/lib64" NO_DEFAULT_PATH)
+  if(NOT ZJU_COOP_RTE_LIBRARY OR NOT EXISTS "${ZJU_COOP_INCLUDE_DIR}/zju_coop/three_vehicle_rte_api.h")
+    message(FATAL_ERROR "RTE SDK missing; build/install native SDK with ZJU_COOP_BUILD_RTE=ON")
+  endif()
+  get_filename_component(ZJU_COOP_RTE_REALPATH "${ZJU_COOP_RTE_LIBRARY}" REALPATH)
+  zju_coop_add_node(zju_three_vehicle_rte_node src/three_vehicle_rte_node.cpp)
+  target_link_libraries(zju_three_vehicle_rte_node "${ZJU_COOP_RTE_LIBRARY}")
+  ament_target_dependencies(zju_three_vehicle_rte_node std_msgs)
+  # Install the resolved ELF file.  Installing the SDK's version symlink with
+  # RENAME would create a self-referential link in an ament prefix.
+  install(FILES "${ZJU_COOP_RTE_REALPATH}" DESTINATION lib
+    RENAME libzju_coop_rte.so.1)
+  install(FILES "${ZJU_COOP_RTE_REALPATH}" DESTINATION lib
+    RENAME libzju_coop_rte.so)
+  install(PROGRAMS scripts/three_vehicle_rte_simulator.py
+    DESTINATION lib/${PROJECT_NAME} RENAME zju_three_vehicle_rte_simulator)
+endif()
+
 install(PROGRAMS scripts/three_vehicle_simulator.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME zju_three_vehicle_simulator)

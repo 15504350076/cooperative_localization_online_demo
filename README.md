@@ -17,6 +17,7 @@
 - UWB NLOS、有效率、频率、残差的滑窗质量评估，以及正常使用、降权、暂缓、剔除和试探恢复。
 - 稳定 C ABI 动态库 `zju_coop`；核心接口只使用普通 C 结构体，不依赖 ROS 2 消息。
 - 独立的论文相对变换估计扩展库 `zju_coop_rte`；函数采用 `_rte` 方法后缀，通过 `-DZJU_COOP_BUILD_RTE=ON` 显式构建，说明见 [`docs/参考/44_论文相对变换估计扩展库说明.md`](docs/参考/44_论文相对变换估计扩展库说明.md)。
+- 独立的三车 RTE 初始化与 IMU-UWB 连续修正节点；通过 `-DZJU_COOP_ROS2_BUILD_RTE=ON` 和 `rte_three_vehicle_demo.launch.py` 显式启用，默认 `uwb_only` 三角形路径不变，说明见 [`docs/参考/45_三车RTE初始化与IMU航位推算链路说明.md`](docs/参考/45_三车RTE初始化与IMU航位推算链路说明.md)。
 - 分布式首版：每车本地 15 维惯导输出紧凑 NodeState，参考车按 UWB 时刻对齐三车状态并维护独立二维修正；协同修正不覆盖本地惯导。
 - 盒端选择性DDS隔离适配：设置 `use_localhost_imu_bridge:=true` 后，本地惯导在 `ROS_LOCALHOST_ONLY=1` 读取 `/imu/raw`，仅把校验后的紧凑 NodeState 经本机回环转发器发布到 `ROS_LOCALHOST_ONLY=0` 的共享DDS；原始IMU不跨车发送。该开关默认关闭，不影响同机仿真。
 - 整组三车统一算法时刻必须新鲜；非参考车还只有经近期且被滤波接受的测距边连通到参考车时才设置 `position_valid=true`。任一车状态冻结或测距失联后仍保留有限数值用于诊断，但 GCS/规划不得继续使用无效结果。

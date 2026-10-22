@@ -1,0 +1,22 @@
+/**/zju_three_vehicle_rte_node:
+  ros__parameters:
+    # 使用UWB消息中的逻辑编号；盒名201/202/203不必等于逻辑ID。
+    node_ids: [1, 2, 3]
+    planar: true
+    local_frame_prefix: rte_odom_
+    local_origin_heights_m: [0.0, 0.0, 0.0]
+    antenna_lever_arms_body_m: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    range_std_m: 0.1
+    max_samples_per_edge: 128
+    minimum_samples: 12
+    window_duration_ms: 5000
+    solve_interval_ms: 200
+    max_epoch_skew_ms: 50
+    node_timeout_ms: 300
+    range_timeout_ms: 500
+    max_rms_residual_m: 0.3
+    max_range_innovation_m: 1.0
+    max_translation_std_m: 0.25
+    max_yaw_std_rad: 0.1
+    condition_limit: 10000000000.0
+    publish_rate_hz: 20.0

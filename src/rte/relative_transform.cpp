@@ -1,6 +1,7 @@
 // 论文式(7)、(34)-(43)、(16)：平方测距QCQP的可行参数消元与多初值LM。
 // Eigen仅在显式启用RTE扩展时需要；默认库不依赖本文件。
 #include "zju_coop/relative_transform_api.h"
+#include "rte_detail.hpp"
 
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
@@ -16,55 +17,13 @@
 #include <vector>
 
 namespace {
-constexpr double kPi = 3.14159265358979323846;
+using namespace zju::coop::rte_detail;
 using State = Eigen::Vector4d;
 using Matrix4 = Eigen::Matrix4d;
 using Vector3 = Eigen::Vector3d;
 using Vector9 = Eigen::Matrix<double, 9, 1>;
 using Derivative = Eigen::Matrix<double, 9, 4>;
 using Design = Eigen::Matrix<double, Eigen::Dynamic, 9>;
-
-template <class T>
-zju_coop_error_code_t header(const T* value, uint32_t version = ZJU_COOP_RTE_ABI_VERSION_V1) {
-  if (!value || reinterpret_cast<uintptr_t>(value) % alignof(T)) return ZJU_COOP_INVALID_ARGUMENT;
-  if (value->struct_size < sizeof(T)) return ZJU_COOP_STRUCT_SIZE_MISMATCH;
-  if (value->abi_version != version) return ZJU_COOP_ABI_MISMATCH;
-  return ZJU_COOP_OK;
-}
-
-template <class T>
-zju_coop_error_code_t initialize(T* value) {
-  if (!value || reinterpret_cast<uintptr_t>(value) % alignof(T)) return ZJU_COOP_INVALID_ARGUMENT;
-  std::memset(value, 0, sizeof(T));
-  value->struct_size = sizeof(T);
-  value->abi_version = ZJU_COOP_RTE_ABI_VERSION_V1;
-  return ZJU_COOP_OK;
-}
-
-template <class T, std::size_t N>
-bool zeros(const T (&values)[N]) {
-  return std::all_of(std::begin(values), std::end(values), [](T x) { return x == 0; });
-}
-
-bool finite_position(const double* data) {
-  return Eigen::Map<const Vector3>(data).allFinite() &&
-         Eigen::Map<const Vector3>(data).cwiseAbs().maxCoeff() <= 1e5;
-}
-
-double wrap(double angle) {
-  double result = std::remainder(angle, 2.0 * kPi);
-  return result >= kPi ? result - 2.0 * kPi : result;
-}
-
-Eigen::Matrix3d rotation(double angle) {
-  return Eigen::AngleAxisd(angle, Vector3::UnitZ()).toRotationMatrix();
-}
-
-struct Pose {
-  uint64_t time{};
-  Vector3 position{Vector3::Zero()};
-  Eigen::Quaterniond orientation{Eigen::Quaterniond::Identity()};
-};
 
 struct Sample {
   uint64_t time{};
@@ -126,15 +85,18 @@ struct Candidate {
   bool converged{};
 };
 
-Candidate optimize(const Design& b, State state, const zju_coop_config_rte_t& config) {
+Candidate optimize(const Design& b, State state, const zju_coop_config_rte_t& config,
+                   bool planar, double height) {
   Candidate out;
   if (!state.allFinite()) return out;
+  if (planar) state[2] = height;
   double damping = 1e-3;
   double cost = 0.5 * (b * lifted_state(state)).squaredNorm();
   for (uint32_t iteration = 0; iteration < config.max_iterations; ++iteration) {
     out.iterations = iteration + 1;
     const Eigen::VectorXd residual = b * lifted_state(state);
-    const Eigen::MatrixXd jacobian = b * lifted_derivative(state);
+    Eigen::MatrixXd jacobian = b * lifted_derivative(state);
+    if (planar) jacobian.col(2).setZero();
     const State gradient = jacobian.transpose() * residual;
     const Matrix4 normal = jacobian.transpose() * jacobian;
     if (!gradient.allFinite() || !normal.allFinite()) break;
@@ -226,7 +188,8 @@ std::vector<State> starting_points(const Design& b, const std::deque<Sample>& sa
 }
 
 zju_coop_estimate_rte_t solve(const std::deque<Sample>& samples,
-                             const zju_coop_config_rte_t& config) {
+                             const zju_coop_config_rte_t& config,
+                             bool planar = false, double height = 0.0) {
   zju_coop_estimate_rte_t out{};
   initialize(&out);
   out.sample_count = static_cast<uint32_t>(samples.size());
@@ -235,7 +198,7 @@ zju_coop_estimate_rte_t solve(const std::deque<Sample>& samples,
   const Design b = design_matrix(samples);
   std::vector<Candidate> candidates;
   for (const auto& seed : starting_points(b, samples, config.yaw_starts)) {
-    candidates.push_back(optimize(b, seed, config));
+    candidates.push_back(optimize(b, seed, config, planar, height));
   }
   const auto best = std::min_element(candidates.begin(), candidates.end(),
       [](const Candidate& a, const Candidate& c) { return a.cost < c.cost; });
@@ -263,17 +226,23 @@ zju_coop_estimate_rte_t solve(const std::deque<Sample>& samples,
     fim.noalias() += (jacobian * jacobian.transpose()) / (sample.sigma * sample.sigma);
   }
   out.rms_residual_m = std::sqrt(squared_error / samples.size());
-  const Eigen::SelfAdjointEigenSolver<Matrix4> eigen(fim);
+  const std::vector<int> indices = planar ? std::vector<int>{0, 1, 3} : std::vector<int>{0, 1, 2, 3};
+  Eigen::MatrixXd reduced(indices.size(), indices.size());
+  for (std::size_t i = 0; i < indices.size(); ++i)
+    for (std::size_t j = 0; j < indices.size(); ++j) reduced(i, j) = fim(indices[i], indices[j]);
+  const Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> eigen(reduced);
+  const Eigen::Index last = static_cast<Eigen::Index>(indices.size()) - 1;
   out.condition_number = std::numeric_limits<double>::max();
-  if (eigen.info() != Eigen::Success || eigen.eigenvalues()[3] <= 0.0 ||
-      eigen.eigenvalues()[0] <= eigen.eigenvalues()[3] / config.condition_limit) {
+  if (eigen.info() != Eigen::Success || eigen.eigenvalues()[last] <= 0.0 ||
+      eigen.eigenvalues()[0] <= eigen.eigenvalues()[last] / config.condition_limit) {
     out.status = ZJU_COOP_RTE_UNOBSERVABLE;
     return out;
   }
-  out.condition_number = eigen.eigenvalues()[3] / eigen.eigenvalues()[0];
-  const Matrix4 covariance = eigen.eigenvectors() * eigen.eigenvalues().cwiseInverse().asDiagonal() *
+  out.condition_number = eigen.eigenvalues()[last] / eigen.eigenvalues()[0];
+  const Eigen::MatrixXd covariance = eigen.eigenvectors() * eigen.eigenvalues().cwiseInverse().asDiagonal() *
                              eigen.eigenvectors().transpose();
-  Eigen::Map<Eigen::Matrix<double, 4, 4, Eigen::RowMajor>>(out.covariance) = covariance;
+  for (std::size_t i = 0; i < indices.size(); ++i)
+    for (std::size_t j = 0; j < indices.size(); ++j) out.covariance[4 * indices[i] + indices[j]] = covariance(i, j);
   out.covariance_valid = ZJU_COOP_TRUE;
   for (const auto& candidate : candidates) {
     if (candidate.converged && std::abs(candidate.cost - best->cost) <= 1e-6 * (1.0 + best->cost) &&
@@ -285,28 +254,6 @@ zju_coop_estimate_rte_t solve(const std::deque<Sample>& samples,
   return out;
 }
 
-uint64_t difference(uint64_t a, uint64_t b) { return a > b ? a - b : b - a; }
-
-bool at_time(const std::deque<Pose>& poses, uint64_t time, uint64_t tolerance, Pose& out) {
-  if (poses.empty()) return false;
-  auto next = std::lower_bound(poses.begin(), poses.end(), time,
-      [](const Pose& pose, uint64_t t) { return pose.time < t; });
-  if (next != poses.begin() && next != poses.end() && next->time != time &&
-      difference(next->time, time) <= tolerance && difference((next - 1)->time, time) <= tolerance) {
-    const auto& previous = *(next - 1);
-    const double fraction = static_cast<double>(time - previous.time) / (next->time - previous.time);
-    out.position = previous.position + fraction * (next->position - previous.position);
-    out.orientation = previous.orientation.slerp(fraction, next->orientation);
-    out.time = time;
-    return true;
-  }
-  auto nearest = next == poses.end() ? poses.end() - 1 : next;
-  if (next != poses.begin() && difference((next - 1)->time, time) < difference(nearest->time, time)) --nearest;
-  if (difference(nearest->time, time) > tolerance) return false;
-  out = *nearest;
-  out.time = time;
-  return true;
-}
 }  // namespace
 
 struct zju_coop_rte_handle {
@@ -327,7 +274,7 @@ void append(zju_coop_rte_handle_t& handle, const Sample& sample) {
 
 extern "C" {
 uint32_t ZJU_COOP_CALL zju_coop_abi_version_rte(void) { return ZJU_COOP_RTE_ABI_VERSION_V1; }
-const char* ZJU_COOP_CALL zju_coop_version_string_rte(void) { return "1.1.0-rte-qcqp-local"; }
+const char* ZJU_COOP_CALL zju_coop_version_string_rte(void) { return "1.2.0-three-rte"; }
 
 zju_coop_error_code_t ZJU_COOP_CALL zju_coop_config_init_rte(zju_coop_config_rte_t* value) {
   const auto error = initialize(value);
@@ -417,6 +364,24 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_step_rte(
   if (error != ZJU_COOP_OK) return error;
   try {
     auto result = solve(handle->samples, handle->config);
+    handle->estimate = result;
+    handle->estimate_current = true;
+    result.struct_size = estimate->struct_size;
+    *estimate = result;
+    return handle->samples.size() < handle->config.minimum_samples ? ZJU_COOP_NOT_READY : ZJU_COOP_OK;
+  } catch (const std::bad_alloc&) { return ZJU_COOP_OUT_OF_MEMORY; }
+    catch (...) { return ZJU_COOP_INTERNAL_ERROR; }
+}
+
+zju_coop_error_code_t ZJU_COOP_CALL zju_coop_step_planar_rte(
+    zju_coop_rte_handle_t* handle, double origin_height_difference_m,
+    zju_coop_estimate_rte_t* estimate) {
+  if (!handle || !std::isfinite(origin_height_difference_m) ||
+      std::abs(origin_height_difference_m) > 1e5) return ZJU_COOP_INVALID_ARGUMENT;
+  const auto error = header(estimate);
+  if (error != ZJU_COOP_OK) return error;
+  try {
+    auto result = solve(handle->samples, handle->config, true, origin_height_difference_m);
     handle->estimate = result;
     handle->estimate_current = true;
     result.struct_size = estimate->struct_size;
