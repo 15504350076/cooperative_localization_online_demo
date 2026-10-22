@@ -170,7 +170,7 @@ def find_latest_root(data_dir: Path) -> Path:
             if len(matches) != 1 or not (matches[0] / "livox_0.db3").is_file():
                 complete = False
                 break
-            with sqlite3.connect(matches[0] / "livox_0.db3") as db:
+            with sqlite3.connect((matches[0] / "livox_0.db3").resolve().as_uri() + "?mode=ro", uri=True) as db:
                 topic = db.execute(
                     "SELECT id FROM topics WHERE name='/livox/lidar'"
                 ).fetchone()
@@ -194,7 +194,7 @@ def main() -> int:
         print(f"自动选择最新三盒Livox实验：{root}")
     output = args.output or root / "livox_visualization"
     output.mkdir(parents=True, exist_ok=True)
-    data = {box: load_box(root, box, allow_adaptive_window=True) for box in ("201", "202", "203")}
+    data = {box: load_box(root, box, allow_adaptive_window=args.input is None) for box in ("201", "202", "203")}
     write_overview(output, data)
     html = {box: write_html(output, box, data[box]) for box in data}
     summary = {}
