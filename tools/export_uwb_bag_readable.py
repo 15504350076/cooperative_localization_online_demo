@@ -61,6 +61,7 @@ def edge_stats(rows):
     header_span = (header[-1] - header[0]) / 1e9 if len(rows) > 1 else 0.0
     receive_dt = [(b - a) / 1e9 for a, b in zip(receive, receive[1:])]
     header_dt = [(b - a) / 1e9 for a, b in zip(header, header[1:])]
+    receive_rollback = sum(value < 0 for value in receive_dt)
     elapsed = [(value - receive[0]) / 1e9 for value in receive]
     mean_elapsed = statistics.fmean(elapsed)
     mean_distance = statistics.fmean(distances)
@@ -85,16 +86,18 @@ def edge_stats(rows):
         "p95": percentile(distances, 0.95),
         "max": max(distances),
         "receive_span": receive_span,
-        "receive_rate": (len(rows) - 1) / receive_span if receive_span else math.nan,
+        "receive_rate": (len(rows) - 1) / receive_span if receive_span > 0 and not receive_rollback else math.nan,
         "header_span": header_span,
         "header_rate": (len(rows) - 1) / header_span if header_span else math.nan,
         # 跨度比≈1只能说明首末推进量相近，中途跳变仍可能相互抵消。
-        "time_scale": receive_span / header_span if header_span else math.inf,
+        "time_scale": receive_span / header_span if header_span > 0 and not receive_rollback else math.nan,
+        "receive_rollback": receive_rollback,
+        "receive_duplicate": sum(value == 0 for value in receive_dt),
         "zero_stamp": sum(value == 0 for value in header),
         "rollback": sum(value < 0 for value in header_dt),
         "duplicate": sum(value == 0 for value in header_dt),
         "receive_gap_gt_200ms": sum(value > 0.2 for value in receive_dt),
-        "slope_m_per_min": slope * 60.0,  # m/s换成m/min。
+        "slope_m_per_min": slope * 60.0 if not receive_rollback else math.nan,  # m/s换成m/min。
     }
 
 
@@ -268,13 +271,12 @@ def write_report(bag, ranges, identities, true_distance_m):
         lines.append(
             "- 标准差由本文件全部距离样本离线计算，采用总体标准差（分母为N），不是ROS消息字段。"
         )
-    # ±2%为时间尺度提示阈值；依赖接收时钟，不能据此断言硬件时钟根因。
+    # 记录时钟本身不稳定时，不能把它当作真实秒基准指责消息时钟。
     scales = [item["time_scale"] for item in stats.values() if math.isfinite(item["time_scale"])]
-    if scales and not all(0.98 <= value <= 1.02 for value in scales):
-        lines.append(
-            f"- **时间戳异常：实际接收时间/header时间跨度约为{statistics.fmean(scales):.2f}倍，"
-            "消息时间没有按真实秒速前进。**"
-        )
+    if any(item["receive_rollback"] for item in stats.values()):
+        lines.append("- **记录时间存在回退：相应方向的记录频率、时间尺度比及按记录时间拟合的趋势标为nan（不可用）。不能据此断言消息时间没有按真实秒推进。请分别检查记录时钟与消息时间。**")
+    elif scales and not all(0.98 <= value <= 1.02 for value in scales):
+        lines.append(f"- **记录时间与消息时间跨度比约为{statistics.fmean(scales):.2f}，偏离1；需检查双方时钟、时间跳变及处理链路，不能单凭比值判定哪一侧时钟错误。**")
     if not ranges:
         lines.append("- 本包没有距离样本，即使有卷尺真值也无法计算误差。")
     elif true_distance_m is None:
@@ -326,8 +328,8 @@ def write_report(bag, ranges, identities, true_distance_m):
     else:
         lines.extend(
             (
-                "| 方向 | 记录时间跨度（秒） | 消息时间跨度（秒） | 时间尺度比 | 零时间戳 | 回退 | 重复 | 记录间隔超过200毫秒 |",
-                "|---|---:|---:|---:|---:|---:|---:|---:|",
+                "| 方向 | 记录时间跨度（秒） | 消息时间跨度（秒） | 时间尺度比 | 零时间戳 | 回退 | 重复 | 记录回退 | 记录重复 | 记录间隔超过200毫秒 |",
+                "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
             )
         )
     for edge, item in stats.items():
@@ -335,6 +337,7 @@ def write_report(bag, ranges, identities, true_distance_m):
             f"| {edge[0]}→{edge[1]} | {item['receive_span']:.6f} | "
             f"{item['header_span']:.6f} | {item['time_scale']:.2f} | "
             f"{item['zero_stamp']} | {item['rollback']} | {item['duplicate']} | "
+            f"{item['receive_rollback']} | {item['receive_duplicate']} | "
             f"{item['receive_gap_gt_200ms']} |"
         )
 

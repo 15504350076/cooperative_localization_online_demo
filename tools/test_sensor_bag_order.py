@@ -2,6 +2,7 @@
 """回归检查：接收时间回退时，IMU、点云、UWB分析仍按SQLite写入顺序读取。"""
 from contextlib import redirect_stdout
 import io
+import math
 from pathlib import Path
 import tempfile
 
@@ -9,8 +10,8 @@ from sensor_msgs.msg import Imu, PointCloud2, PointField
 from cooperative_interfaces.msg import UwbRange
 from test_analyze_joint_time import write_bag
 from analyze_imu_bag import analyze
-from analyze_lidar_bag import read_bag
-from export_uwb_bag_readable import read_bag as read_uwb
+from analyze_lidar_bag import read_bag, time_stats
+from export_uwb_bag_readable import read_bag as read_uwb, edge_stats, write_report
 
 
 def check():
@@ -24,6 +25,8 @@ def check():
         with redirect_stdout(output):
             analyze(root / 'imu', '/imu/raw', 2, 10)
         assert '回退: 0 次' in output.getvalue()
+        assert '记录平均频率不可用' in output.getvalue()
+        assert math.isnan(time_stats([2_000_000_000, 1_000_000_000])['rate_hz'])
         # 写入包含两种雷达话题的临时bag。
         import rosbag2_py
         from rclpy.serialization import serialize_message
@@ -52,6 +55,12 @@ def check():
                   [(u1, 2_000_000_000), (u2, 1_000_000_000)])
         ranges, _ = read_uwb(root / 'uwb')
         assert [row['header_ns'] for row in ranges] == [5_000_000_000, 6_000_000_000]
+        stats = edge_stats(ranges)
+        assert stats['receive_rollback'] == 1
+        assert math.isnan(stats['receive_rate']) and math.isnan(stats['time_scale'])
+        report = write_report(root / 'uwb', ranges, [], None).read_text()
+        assert '记录时间存在回退' in report
+        assert '消息时间没有按真实秒速前进。' not in report
     print('传感器包写入顺序检查通过')
 
 

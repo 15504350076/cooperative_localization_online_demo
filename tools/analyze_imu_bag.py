@@ -165,7 +165,9 @@ def analyze(bag_path, topic, max_details, orientation_jump_deg):
     count = len(bag_ns)
     bag_duration_ns = int(bag_ns[-1] - bag_ns[0]) if count > 1 else 0
     # N帧对应N-1个时间间隔。接收频率不等同于硬件实际采样频率。
-    bag_rate_hz = (count - 1) * 1e9 / bag_duration_ns if bag_duration_ns > 0 else math.nan
+    receive_rollbacks = int(np.sum(np.diff(bag_ns) < 0))
+    bag_rate_hz = ((count - 1) * 1e9 / bag_duration_ns
+                   if bag_duration_ns > 0 and not receive_rollbacks else math.nan)
     valid_sensor = sensor_ns != 0
     sensor_deltas = np.diff(sensor_ns)
     positive_deltas = sensor_deltas[sensor_deltas > 0]
@@ -182,6 +184,9 @@ def analyze(bag_path, topic, max_details, orientation_jump_deg):
     print(f"消息数: {count}")
     print(f"记录时间跨度: {bag_duration_ns / 1e9:.9f}s")
     print(f"记录平均频率: {bag_rate_hz:.6f}Hz")
+    print(f"记录时间回退: {receive_rollbacks} 次")
+    if receive_rollbacks:
+        print("记录时钟发生回退，记录平均频率不可用；不能按消息数量除以该记录跨度判断采样率。")
     print(f"消息时间非零: {np.count_nonzero(valid_sensor)}/{count}")
     print(f"坐标系标识: {frame_ids}")
     if np.any(valid_sensor):

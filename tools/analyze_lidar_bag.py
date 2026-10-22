@@ -44,7 +44,7 @@ def time_stats(values: list[int]) -> dict[str, float | int]:
         "count": len(values),
         "span_s": (values[-1] - values[0]) / NS if len(values) > 1 else 0.0,
         "rate_hz": (len(values) - 1) / ((values[-1] - values[0]) / NS)
-        if len(values) > 1 and values[-1] > values[0]
+        if len(values) > 1 and values[-1] > values[0] and not any(delta < 0 for delta in deltas)
         else math.nan,
         "median_ms": nominal / 1e6 if nominal else math.nan,
         "min_ms": min(deltas) / 1e6 if deltas else math.nan,
