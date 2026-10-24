@@ -59,6 +59,68 @@ ros2 launch zju_coop_gazebo airsim_three_car.launch.py \
 host:=<仿真机IP>
 ```
 
+## Windows 宿主机显示、Ubuntu 虚拟机运行 ROS
+
+当前电脑的 RTX 4060 在 Windows 宿主机可用，但 Ubuntu 虚拟机只识别到 VMware SVGA/llvmpipe。因此不要在虚拟机里运行 Unreal 图形窗口，按下面方式分工：
+
+### 1. Windows 宿主机（一次性）
+
+1. 安装 UE4.27、Visual Studio 2019（Desktop development with C++、Windows 10 SDK）。
+2. 在 AirSimAG 的 Developer Command Prompt 中执行：
+
+```powershell
+cd D:\Code\AirSimAG
+build.cmd
+Unreal\Environments\Blocks\update_from_git.bat
+```
+
+3. 打开 `Unreal\Environments\Blocks\Blocks.sln`，选择 `Development Editor`、`Win64`，将 Blocks 设为启动项目，按 F5 编译并启动 Unreal Editor，点击 Play。
+4. 把本工程的 `airsim_three_ugv_settings.json` 复制到 Windows：
+   `%USERPROFILE%\Documents\AirSim\settings.json`
+   并在 JSON 顶层加入 Windows 用于连接虚拟机的 VMnet 网卡地址（从 `ipconfig` 查看）：
+
+```json
+"LocalHostIp": "<WINDOWS_VMNET_IP>",
+"ApiServerPortCar": 41461,
+```
+
+不要填 `127.0.0.1`，它只适用于同一台机器内连接。
+
+5. 以管理员 PowerShell 放行 RPC 端口：
+
+```powershell
+New-NetFirewallRule -DisplayName AirSim-RPC-41461 -Direction Inbound -Protocol TCP -LocalPort 41461 -Action Allow
+```
+
+### 2. Ubuntu 虚拟机（每次启动）
+
+先确认能访问 Windows：
+
+```bash
+ping --count 3 <WINDOWS_VMNET_IP>
+```
+
+然后启动 ROS 适配器：
+
+```bash
+cd /home/pdq/Code/cooperative_localization_online_demo/cooperative_localization_online_demo
+source /opt/ros/humble/setup.bash
+source install/ros2-airsim-check/setup.bash
+ros2 launch zju_coop_gazebo airsim_three_car.launch.py \
+  host:=<WINDOWS_VMNET_IP> \
+  port:=41461 \
+  airsim_python_path:=/home/pdq/Code/AirSimAG/PythonClient
+```
+
+再检查数据：
+
+```bash
+ros2 topic echo --once /airsim/Car_1/odometry
+ros2 topic echo --once /uwb/range
+```
+
+Windows Unreal 窗口显示三车，Ubuntu 终端应能看到 `/airsim/Car_N/odometry` 和 `/uwb/range`；随后按下面的通用 ROS 2 融合步骤检查定位输出。若只需检查 RPC，不开画面时才使用虚拟机的 `./tools/start_airsim_three_car.sh --headless`。
+
 另开终端启动现有三车 UWB 融合节点，再检查：
 
 ```bash
