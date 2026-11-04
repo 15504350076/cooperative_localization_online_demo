@@ -1,0 +1,2079 @@
+--- docs/报告/20261028_协同定位V1.4/内部材料/20261029_结果说明与费用依据修订前/多平台协同定位硬件仿真测试报告与联调方案_V1.4_设备分级与锚点仿真版.md
++++ docs/报告/20261028_协同定位V1.4/多平台协同定位硬件仿真测试报告与联调方案_V1.4_设备分级与锚点仿真版.md
+@@ -31,23 +31,33 @@
+ 
+ 仿真时长300秒，前30秒静止，30～60秒积累起步及转弯数据用于求初始坐标关系，60～300秒统计连续定位结果。三车整体运动范围约85×115米，最高速度2.39米/秒，最大车间距24.56米。位置、测距及运动输入按10赫兹处理，保持连续视距测距，不添加人为中断。平面模型采用同高天线参考点。
+ 
+-位置误差评价202、203车相对201车的位置向量：分别将估计相对向量减去同一坐标定义下的真值向量，取二维长度。每次运行的位置均方根误差（Root Mean Square Error，RMSE）为两车全部评价时刻的误差平方均值再开平方，单位为米；随后统计20次运行RMSE的均值、样本标准差及最小至最大范围。它直接量化相对位置偏差，测距拟合残差另行说明。
++仿真程序保存每辆车的真实位置作为对照，称为真值。位置误差评价202、203车相对201车的位置向量：将估计相对向量减去同一坐标定义下的真值向量，取二维长度。每次运行的位置均方根误差（Root Mean Square Error，RMSE）为两车全部评价时刻的误差平方均值再开平方，单位为米；随后统计20次运行RMSE的均值、样本标准差及最小至最大范围。它直接量化相对位置偏差，测距拟合残差另行说明。
+ 
+ ### 1.2 对比试验的组成
+ 
+ IMU、视觉惯性里程计（Visual-Inertial Odometry，VIO）、激光惯性里程计（LiDAR-Inertial Odometry，LIO）各设三档输入质量。VIO/LIO在本轮用局部位移输出误差模型生成数据，包含尺度、方向漂移和随机位移项。传感器原始图像、点云处理在实车安装后按实际视场接入，仿真数值对应本报告列出的输入条件。
+ 
+-本次新增9档输入的无锚点及单锚点布置对比，共63种条件、1260次运行。无锚点组在初始化及后续处理中均只使用车间距离；单锚点组增加到同一个已知点的距离。各组使用同一轨迹、同编号运动扰动和测距噪声，初始化按各自实际具有的测量求解。另保留此前84种条件、1680次测距精度对照；区域中部单点的9组、180次结果与本次重复核对一致。因此两批合计为2940次执行记录、2760个不重复的条件—重复试验组合。
++试验比较三件事：提高本车运动输入质量能降低多少误差，增加一个已知位置UWB点有多大作用，以及点的位置和测距精度怎样影响结果。三类输入各设三档，共9种运动输入。无锚点组使用车间距离和本车运动，单点组再加入三车到同一个点的距离；各组按实际可用测量求解初始关系，同编号对比使用相同运动与测距噪声样本。
+ 
+ 20次重复用于观察固定轨迹下随机误差带来的离散程度，属于噪声蒙特卡洛分析。所有重复均进入统计，过程图固定采用重复试验1。仿真真值用于生成测量及事后评价，估计器接收带误差的运动和距离输入，输出不做真值配准或事后平滑。
++表1 仿真项目与分组
++
++| 试验目的 | 条件设置 | 条件数 | 重复次数 |
++|---|---|---|---|
++| 比较运动输入质量 | 9档输入×仅传播/加入车间测距 | 18 | 每条件20次 |
++| 比较单点位置 | 9档输入×5个候选位置，每次只有一个点 | 45 | 每条件20次 |
++| 比较测距精度 | 中部单点下，9档输入×5/20厘米测距；10厘米归入上行 | 18 | 每条件20次 |
++| 检验默认UWB队形 | 5/10/20厘米三档测距 | 3 | 每条件20次 |
++
++以上共84种条件、1680次重复运行。另用三组无误差局部里程计输入检查RTE求解过程，单独说明首次有效时刻及位置跳变。输入质量、测距精度和布点的作用分别用表格及实际误差曲线对照。
+ 
+ ## 2 传感器分级与配置投入
+ 
+ ### 2.1 默认UWB方案
+ 
+-默认方案根据三条车间距离求解三角形，以201车为原点、201至202连线为正X轴，203位于Y轴正侧。该方案直接给出相对队形，适合车间距离、相对布局和编队显示。下表调用已有C++库，在各时刻规范队形坐标内与真值比较。
+-
+-表1 默认纯UWB队形仿真
++默认方案根据三条车间距离求解三角形，以201车为原点、201至202连线为正X轴，203位于Y轴正侧。该方案直接给出相对队形，适合车间距离、相对布局和编队显示。下表调用项目C++库，在各时刻规范队形坐标内与真值比较。
++
++表2 默认纯UWB队形仿真
+ 
+ | 测距标准差（厘米） | RMSE均值±标准差（米） | RMSE范围（米） |
+ |---|---|---|
+@@ -59,9 +69,9 @@
+ 
+ ### 2.2 UWB与六轴MEMS
+ 
+-六轴MEMS输入包含加速度、角速度及启动校准后的残余误差。三档参数用于比较残余偏置、短时噪声、倾角误差和随时间变化的偏置影响，未将设备划为导航级或寻北配置。本轮不使用地球自转和磁场方向。
+-
+-表2 MEMS初始残余误差
++六轴MEMS输入包含加速度、角速度及启动校准后的残余误差。三档参数用于比较残余偏置、短时噪声、倾角误差和随时间变化的偏置影响，按这些输入进行运动传播和车间测距更新。
++
++表3 MEMS初始残余误差
+ 
+ | 输入档位 | 加计偏置标准差（米/秒²） | 陀螺偏置标准差（度/小时） | 倾角标准差（度） |
+ |---|---|---|---|
+@@ -69,7 +79,7 @@
+ | 增强 | 0.01 | 10.31 | 0.1 |
+ | 精细 | 0.003 | 3.09 | 0.05 |
+ 
+-表3 MEMS动态误差设定
++表4 MEMS动态误差设定
+ 
+ | 误差项 | 基础 | 增强 | 精细 |
+ |---|---|---|---|
+@@ -80,7 +90,7 @@
+ 
+ 白噪声按100赫兹逐样本标准差设置，取10样本均值进入10赫兹计算；偏置游走每步按系数乘以时间间隔平方根增加。倾角残余按重力加速度乘小角度计入水平加速度，0.1度约对应0.0171米/秒²。前30秒按已知静止处理，运动后连续积分。融合器估计位置、速度和局部坐标转角，本轮将残余偏置作为输入扰动。
+ 
+-表4 IMU输入的无锚点结果
++表5 IMU输入的无锚点结果
+ 
+ | 档位 | 仅运动传播RMSE（米） | 加入车间测距RMSE（米） | 加入测距后均值±标准差（米） |
+ |---|---|---|---|
+@@ -98,7 +108,7 @@
+ 
+ VIO输入对逐步位移施加固定尺度扰动、随运动时间增加的方向漂移，以及按行驶距离平方根增加的位置随机项。三档数值是本轮输入质量条件，实车通过相机、IMU安装标定及室外轨迹测量对应到同一口径。
+ 
+-表5 VIO局部位移误差
++表6 VIO局部位移误差
+ 
+ | 输入档位 | 尺度标准差（%） | 方向漂移标准差（弧度/秒） | 位置随机项（米/√米） |
+ |---|---|---|---|
+@@ -106,7 +116,7 @@
+ | 增强 | 0.5 | 5e-05 | 0.03 |
+ | 精细 | 0.2 | 2e-05 | 0.015 |
+ 
+-表6 VIO输入的无锚点结果
++表7 VIO输入的无锚点结果
+ 
+ | 档位 | 仅运动传播RMSE（米） | 加入车间测距RMSE（米） | 加入测距后均值±标准差（米） |
+ |---|---|---|---|
+@@ -116,11 +126,13 @@
+ 
+ ![图3 VIO输入的无锚点对比](figures/layout_vio_无锚点分级.png)
+ 
++VIO输入由基础改善到增强时，加入车间测距后的相对位置RMSE由0.286～1.423米变为0.174～0.681米；精细输入为0.093～0.326米。这组对比用于明确本车运动输出质量对连续相对定位的影响，为实车前端标定和选配提供参考。
++
+ ### 2.4 UWB、雷达与IMU
+ 
+ LIO输入采用同样的位移接口，以更细的尺度、方向与随机位移误差设定对比雷达与IMU组合。VIO增强与LIO基础、VIO精细与LIO增强的输入参数相同，并使用同编号扰动，因此相应结果一致；设备类别本身不代替前端输出质量。
+ 
+-表7 LIO局部位移误差
++表8 LIO局部位移误差
+ 
+ | 输入档位 | 尺度标准差（%） | 方向漂移标准差（弧度/秒） | 位置随机项（米/√米） |
+ |---|---|---|---|
+@@ -128,7 +140,7 @@
+ | 增强 | 0.2 | 2e-05 | 0.015 |
+ | 精细 | 0.1 | 1e-05 | 0.008 |
+ 
+-表8 LIO输入的无锚点结果
++表9 LIO输入的无锚点结果
+ 
+ | 档位 | 仅运动传播RMSE（米） | 加入车间测距RMSE（米） | 加入测距后均值±标准差（米） |
+ |---|---|---|---|
+@@ -138,28 +150,25 @@
+ 
+ ![图4 LIO输入的无锚点对比](figures/layout_lio_无锚点分级.png)
+ 
++LIO输入由基础改善到增强时，加入车间测距后的相对位置RMSE由0.174～0.681米变为0.093～0.326米；精细输入为0.057～0.221米。这组对比用于明确本车运动输出质量对连续相对定位的影响，为实车前端标定和选配提供参考。
++
+ 在固定轴向目标下，改善本车运动输入能够降低相对位置误差；具体收益同时取决于起步运动和初始坐标求解。仿真中的输出档位用于提出设备与前端要求，硬件配置概算按设备构成列示。
+ 
+-### 2.5 三车硬件配置概算
+-
+-下表按三车整套配置估算，包含UWB、相应运动传感器、计算与通信配套、电源防护及安装件，并计入配套选型和备件余量。金额以人民币万元计，用于配置方案比较；型号和采购价确定后按实际配置调整。各档不以器件价格直接保证相应仿真输出精度。
+-
+-表9 三车硬件配置概算
+-
+-| 配置类别 | 硬件组成 | 配置概算（万元） |
++### 2.5 设备数量与费用比较
++
++本项目采用完整传感器盒，一套指一只完整盒，每车配置一只，三车合计三只。单盒采购价为人民币3万余元，包含已采用的传感器与盒端配套。费用以完整盒的实际成交价为基准，相机、雷达和IMU在盒内复用，按仿真输入档位比较算法结果时不重复购买盒内设备。
++
++表10 三车配置及单点增量费用
++
++| 方案 | 明确的设备数量 | 费用口径 |
+ |---|---|---|
+-| 默认UWB | 三车UWB及计算、通信与供电配套 | 2.4～3.8 |
+-| IMU 基础 | UWB＋六轴IMU | 3.2～5.5 |
+-| IMU 增强 | UWB＋六轴IMU | 4.2～7 |
+-| IMU 精细 | UWB＋六轴IMU | 7～12 |
+-| VIO 基础 | UWB＋相机＋IMU | 5.5～9.5 |
+-| VIO 增强 | UWB＋相机＋IMU | 7.5～13 |
+-| VIO 精细 | UWB＋相机＋IMU | 11.5～19 |
+-| LIO 基础 | UWB＋雷达＋IMU | 7.5～12 |
+-| LIO 增强 | UWB＋雷达＋IMU | 9.5～16.5 |
+-| LIO 精细 | UWB＋雷达＋IMU | 14.5～24 |
+-
+-相机、雷达及配套计算配置提高了硬件投入，同时为本车运动估计提供更丰富的观测。除提高本车输入质量外，还可增加一个已知位置UWB点，以较小的增量配置为三车共同提供距离参考。单点配套概算为0.5～1.2万元，包含UWB、供电防护及安装件；若装在已落地无人机上，沿用其平台，不另计飞行平台价格。该方案与无锚点方案按同一批运动输入直接对比。
++| 现有三车配置 | 3只完整传感器盒 | 单盒3万余元；总额为单盒成交价×3 |
++| 三车加一个已知UWB点 | 3只车载盒＋1只同型完整盒 | 新增1只盒约3万余元；四只总额为单盒成交价×4 |
++| 三车分别增加高配IMU | 3只现有盒＋3只ADIS16495-2BMLZ | 在三盒费用外，三只IMU采购预留共15万元 |
++
++高配器件作为投入比较：ADIS16495-2BMLZ为六轴MEMS惯性器件，[公开含税参考单价](https://www.digikey.cn/zh/products/detail/analog-devices-inc/ADIS16495-2BMLZ/7931993)约4.72万元/只，三只按单只价格计算约14.17万元；按5万元/只留采购余量，三车合计预留15万元。价格来自DigiKey销售页，核对日期为2026年10月29日，具体采用以报价和安装适配为准。该器件用于说明逐车升级的投入规模，前述九档仿真仍按明确的输入误差条件评价。
++
++本方案优先使用已采用的传感器盒完成运动估计，再增加一个同型盒作为已知位置UWB点。这样只增加一只设备，就能为三车同时提供距离参考；相对于每车增加高配器件，设备数量和投入更集中。下一节用相同运动输入比较增加该点前后的误差，判断这项新增配置的实际作用。
+ 
+ ## 3 单锚点辅助与布置对比
+ 
+@@ -177,7 +186,7 @@
+ 
+ 初始化把各车自己的局部运动变成同一个局部坐标内的初始位置与转角。先由静止段平均测距形成几何候选，再累计0～60秒运动与测距、按1秒抽样求解。60秒是本轮统一数据窗口，起步与转弯提供了多时刻约束。数值优化仅以测距残差选解，静止状态用于恢复形状，运动信息用于确定局部坐标之间的关系。
+ 
+-表10 初始化输入与求解
++表11 初始化输入与求解
+ 
+ | 方案 | 使用的测量 | 坐标约定后的未知量 | 候选与选择 |
+ |---|---|---|---|
+@@ -190,7 +199,7 @@
+ 
+ 先把同一个点放在场景中部（55，75）米。测距白噪声标准差均为10厘米，链路固定偏差标准差为3厘米，同编号运动输入和车间测距逐点相同。无锚点组只使用三条距离建系及更新，单点组增加三条车锚距离；对比包含新增测量对初始化和连续更新的共同作用。
+ 
+-表11 同输入条件下增加单点的结果
++表12 同输入条件下增加单点的结果
+ 
+ | 运动输入 | 无锚点RMSE范围（米） | 中部单点RMSE范围（米） | 中部单点均值±标准差（米） |
+ |---|---|---|---|
+@@ -204,16 +213,16 @@
+ | LIO 增强 | 0.093～0.326 | 0.066～0.177 | 0.099±0.032 |
+ | LIO 精细 | 0.057～0.221 | 0.052～0.129 | 0.077±0.020 |
+ 
+-表12 输入条件、精度与配置投入
+-
+-| 配置方案 | 相对位置RMSE（米） | 硬件概算（万元） |
++表13 输入条件、精度与设备数量
++
++| 仿真输入与方案 | 相对位置RMSE（米） | 完整盒数量 |
+ |---|---|---|
+-| VIO 增强，无锚点 | 0.174～0.681 | 7.5～13 |
+-| VIO 精细，无锚点 | 0.093～0.326 | 11.5～19 |
+-| VIO 增强＋中部单点 | 0.089～0.345 | 8～14.2 |
+-| LIO 增强＋中部单点 | 0.066～0.177 | 10～17.7 |
+-
+-VIO增强加单点与VIO精细无锚点在本轮得到接近的误差范围，前者可采用较低一档本车运动输入，并增加共同距离参考。配置表给出两种实现路线的投入比较，实车以安装后的运动输入和测距结果确定选型。
++| VIO 增强，无锚点 | 0.174～0.681 | 三只车载盒 |
++| VIO 精细，无锚点 | 0.093～0.326 | 三只车载盒 |
++| VIO 增强＋中部单点 | 0.089～0.345 | 三只车载盒＋一只单点盒 |
++| LIO 增强＋中部单点 | 0.066～0.177 | 三只车载盒＋一只单点盒 |
++
++VIO增强加单点与VIO精细无锚点得到接近的误差范围，说明增加共同距离参考能够降低对本车运动输入质量的要求。两种无点输入均复用三只现有盒，单点方案增加一只同型盒；输入档位的变化通过实车标定和前端输出质量核对。
+ 
+ ![图6 VIO输入的定位误差过程](figures/layout_vio_逐时定位误差.png)
+ 
+@@ -221,7 +230,7 @@
+ 
+ 过程图分别给出基础和增强输入下的定位误差，纵轴为202、203两车位置误差平方均值的平方根，保留每次距离更新后的波动。相对运动改变测量方向，本车运动漂移与测距更新在各时刻共同作用；图中的修正直接来自估计器计算，没有人工加入跳变。
+ 
+-单锚点提供了相对于固定点的距离约束，较低误差的运动输入可进一步改善相对位置。默认纯UWB以较少设备满足本轮相对形状目标；连续固定轴向位置可按本节结果选择运动输入及是否增加单点，不要求为相对形状目标配置高价惯导。
++单锚点提供了相对于固定点的距离约束，较低误差的运动输入可进一步改善相对位置。默认纯UWB使用现有盒内设备完成相对形状输出；连续固定轴向位置按本节结果选择运动输入及单点配置，结合设备数量和费用安排实车验证。
+ 
+ ### 3.4 同一个点放在哪里
+ 
+@@ -229,7 +238,7 @@
+ 
+ ![图8 三车轨迹与候选布点](figures/layout_候选布点.png)
+ 
+-表13 候选位置与测距几何
++表14 候选位置与测距几何
+ 
+ | 候选位置 | 场景坐标（米） | 车锚距离范围（米） | 5秒方向变化中位数（度） |
+ |---|---|---|---|
+@@ -241,7 +250,7 @@
+ 
+ 表中方向变化指车辆相对点的视线角在连续5秒内的跨度，对评价时段及三车取中位数，用于描述测距方向随运动的变化。布点比较同时包含距离、方向变化、起点几何与整段运动，不以某一个几何量单独判定最优位置。超过100米的车锚距离是候选位置比较中的几何条件，车间距始终保持在24.56米以内；这些候选均沿用相同测距误差模型，未模拟随距离变化的无线传播或天线遮挡。
+ 
+-表14 不同布点下增强输入的结果
++表15 不同布点下增强输入的结果
+ 
+ | 候选位置 | IMU增强RMSE（米） | VIO增强RMSE（米） | LIO增强RMSE（米） |
+ |---|---|---|---|
+@@ -257,11 +266,11 @@
+ 
+ 在本轮轨迹及等测距误差条件下，区域右侧的VIO/LIO增强结果优于区域中部；IMU输入下各位置的结果仍受惯性传播误差显著影响。起点侧方的轨迹最近处仅约0.24米，实车布设需按安全距离和天线安装位置调整。选点时结合行驶路线检查车锚距离、遮挡和起步几何，再按同一位置误差口径复测，仿真位置排序不替代现场测距结果。
+ 
+-### 3.5 测距精度变化与既有RTE对照
+-
+-此前单点对照进一步改变逐时测距标准差，固定链路偏差仍为3厘米。下表均为区域中部单点，保留全部20次结果。5厘米表示改善后的输入条件，10厘米为主对照，20厘米为较大误差条件。
+-
+-表15 单点方案的测距精度对照
++### 3.5 测距精度与RTE求解结果
++
++测距精度对比保持中部单点和运动输入不变，改变逐时测距标准差，固定链路偏差仍为3厘米。下表保留每个条件的全部20次结果，直接观察改善测距后位置误差的变化。
++
++表16 单点方案的测距精度对照
+ 
+ | 运动输入 | 20厘米测距RMSE（米） | 10厘米测距RMSE（米） | 5厘米测距RMSE（米） |
+ |---|---|---|---|
+@@ -277,11 +286,13 @@
+ 
+ ![图11 测距与运动输入质量的影响](figures/single_20_传感器与测距精度.png)
+ 
+-原RTE库保留既有300秒无误差局部里程计对照，以下为C++库实际输出，按2、5、10厘米测距噪声分别绘制，与本轮带误差运动模型区分。
+-
+-![图12 既有RTE逐车定位误差](figures/16_RTE逐车定位误差.png)
+-
+-294.48秒时，原RTE窗口更新使203车位置变化约2.76米，位置误差由0.646米变为2.117米，而测距拟合残差约1.7厘米。代码重建表明，新窗口对相对变换约束较弱时直接更新变换，造成位置跳变。这里的厘米级残差描述距离拟合，位置误差仍由独立真值评价；本轮保留原输出和默认程序。
++RTE求解测试采用300秒运动轨迹及仿真无误差局部里程计，分别加入2、5、10厘米测距噪声，用于观察测距误差对初次建系和后续位置修正的影响。下图直接读取C++算法输出，横轴均从仿真0秒开始，纵轴为逐车相对位置误差。
++
++![图12 RTE逐车相对位置误差](figures/replay_RTE逐车定位误差.png)
++
++三组首次有效输出分别为127.20、215.52、216.24秒。出线前的灰色区间表示算法正在建立初始坐标关系：程序积累运动与测距，检查求解是否收敛，以及初始位置、方向是否得到足够约束。测距噪声改变了这些检查通过的时刻，因此三条曲线的出线位置不同。图中保留真实时刻，统一横轴便于直接比较建系所需时间和后续误差。
++
++2厘米组在294.48秒时，窗口更新使203车位置变化约2.76米，位置误差由0.646米变为2.117米，而测距拟合残差约1.7厘米。代码重建表明，新窗口对相对变换约束较弱时直接更新变换，造成位置跳变。厘米级残差描述距离拟合，位置误差由仿真真值直接计算。这组测试帮助确定初始关系检查及后续变换更新对位置输出的影响。
+ 
+ ## 4 实测数据与接口应用
+ 
+@@ -289,7 +300,7 @@
+ 
+ 六组静止采集共记录3,229,145帧车载IMU及48,985帧UWB测距，已用于传感器分析、默认UWB位置回放及输入检查。下表用数据编号1～6列示采集规模。消息头时间戳（Header）为消息携带的测量时间，实测曲线按其相对起点表示。
+ 
+-表16 六组静止实测数据
++表17 六组静止实测数据
+ 
+ | 数据编号 | 采集状态 | 车载IMU帧数 | UWB测距帧数 | 已开展的分析 |
+ |---|---|---|---|---|
+@@ -308,11 +319,15 @@
+ 
+ ![图15 主盒三目视觉采集画面](figures/03_三路相机实拍.png)
+ 
++![图16 主盒实测雷达点云](figures/replay_主盒实测点云.png)
++
++点云图直接读取主盒/livox/lidar消息，累积225条消息，去除全零和非有限点后固定抽样绘制12万个点，分别给出俯视及侧视投影，颜色辅助区分点高。它展示采集场景的空间结构，与三目图像一起为后续实车视场检查、特征提取和安装标定提供数据。图中使用本盒雷达局部坐标。
++
+ ### 4.2 对外位置接口
+ 
+-默认UWB输出话题为/cooperative_localization/poses_2d，坐标系为coop_ref_1_relative，继续使用瞬时三角形定义。原RTE使用/cooperative_localization/rte/poses_2d，固定轴向相对坐标由已有转换程序输出。下表保留定位输入及输出，接收方按车辆编号、坐标系、测量时间与有效性使用位置。
+-
+-表17 定位输入与输出
++默认UWB输出话题为/cooperative_localization/poses_2d，坐标系为coop_ref_1_relative，采用瞬时三角形定义。RTE使用/cooperative_localization/rte/poses_2d，固定轴向相对坐标由坐标转换程序输出。下表给出定位输入及输出，接收方按车辆编号、坐标系、测量时间与有效性使用位置。
++
++表18 定位输入与输出
+ 
+ | 输入或输出 | 话题及消息类型 | 频率 |
+ |---|---|---|
+@@ -338,7 +353,7 @@
+ 
+ ### 6.1 仿真与图表重算
+ 
+-前一批测距精度数据位于data/single_anchor_outdoor_20261029，本次无锚点和布点结果位于data/single_anchor_layout_20261029。各目录summary.json给出逐条件统计，蒙特卡洛分组统计.csv便于查表，outputs保存全部重复的逐时位置。新数据独立结果核对.json记录1260次RMSE复算及输入重放结果。
++测距精度数据位于data/single_anchor_outdoor_20261029，无锚点和布点数据位于data/single_anchor_layout_20261029。各目录summary.json给出逐条件统计，蒙特卡洛分组统计.csv便于查表，outputs保存全部重复的逐时位置。本版实验条件清单.json逐项列出报告采用的84个条件及输出文件；按对应输出能够复算全部1680次统计。
+ 
+ ```bash
+ PYTHONPATH=tools OPENBLAS_NUM_THREADS=1 python3 tools/evaluate_single_anchor.py --trials 20
+@@ -346,6 +361,9 @@
+ PYTHONPATH=tools python3 tools/check_anchor_layout.py
+ PYTHONPATH=tools python3 tools/plot_single_anchor.py
+ PYTHONPATH=tools python3 tools/plot_anchor_layout.py
++source /opt/ros/humble/setup.bash
++python3 tools/plot_report_replay.py --replay-rte
++python3 tools/check_report_results.py
+ ```
+ 
+ 手工修改本报告Markdown后，用以下命令更新其他格式；它们保留手工源稿：
+@@ -355,7 +373,7 @@
+ python3 tools/export_formal_pdf.py
+ ```
+ 
+-图1直接使用提供的原图；新结果图由保存的位置与真值通过绘图脚本生成，提供PNG、SVG及矢量PDF。SVG保留文字和图形对象，可用Inkscape修改，操作及原图保留说明见配套文件。
++图1直接使用提供的原图。误差图及统计表读取保存的算法输出与真值，点云读取原始消息，三目图像使用实际采集画面。图中文字由绘图程序按明确文字与字体排版；结果图提供PNG、SVG及矢量PDF。逐图数据和重算命令见配套复现说明，SVG可用Inkscape修改。
+ 
+ ### 6.2 阶段结论
+ 
+--- docs/报告/20261028_协同定位V1.4/内部材料/20261029_结果说明与费用依据修订前/阅读与复现说明.md
++++ docs/报告/20261028_协同定位V1.4/阅读与复现说明.md
+@@ -4,10 +4,10 @@
+ 
+ ## 数据与运行
+ 
+-- data/single_anchor_outdoor_20261029：84种条件×20次，原有测距精度对照。
+-- data/single_anchor_layout_20261029：63种条件×20次，新无锚点与5种单点布置对照；每次最多一个点。中部单点180次与前一批一致，不重复算作新增独立样本。
+-- 新批次首轮三转角初值结果保留在同目录子文件夹，当前正式统计采用扩大初值覆盖后的结果；输入测量保持相同。旧结果不作为新增独立噪声样本。
+-- summary.json、蒙特卡洛分组统计.csv及outputs分别用于查统计、查表和复核逐时位置；独立结果核对.json记录全部1260次复算和无点/单点输入重放。
++- 本版实验条件清单.json给出正文所用的84个条件、1680次输出文件和分组统计，不要求读者先了解历史版本。试验目的及条件构成见正文表1。
++- data/single_anchor_layout_20261029提供无锚点及五种单点位置的63个条件；data/single_anchor_outdoor_20261029提供另外18个5/20厘米测距条件及3个默认UWB条件。全部位置结果都保留在outputs中。
++- data/report_replay_20261029保存三组C++重新回放输出、首次有效时刻、点云绘图点及复现核对.json。C++输出逐字段比较时只排除随电脑负载变化的计算耗时列，位置、状态、时间及修正计数都核对。
++- 本次费用与图线说明修订不改变传感器仿真输出。图12的灰色区间为建系阶段，首次有效时刻127.20、215.52、216.24秒，横轴只在整图底部标注一次；没有补零或移动出线时刻。
+ 
+ ```bash
+ PYTHONPATH=tools OPENBLAS_NUM_THREADS=1 python3 tools/evaluate_single_anchor.py --trials 20
+@@ -16,6 +16,9 @@
+ PYTHONPATH=tools python3 -m unittest tools/test_single_anchor.py tools/test_anchor_layout.py
+ PYTHONPATH=tools python3 tools/plot_single_anchor.py
+ PYTHONPATH=tools python3 tools/plot_anchor_layout.py
++source /opt/ros/humble/setup.bash
++python3 tools/plot_report_replay.py --replay-rte
++python3 tools/check_report_results.py
+ PYTHONPATH=/tmp/cooperative_report_deps python3 tools/render_formal_report.py
+ python3 tools/export_formal_pdf.py
+ ```
+@@ -30,6 +33,20 @@
+ 
+ 参数来源核对与参考实现保留在参数来源_可观性_初始化核对.md、锚点布置参考与比较说明.md及data/single_anchor_outdoor_20261029/参数与可观性核对，不在客户正式正文列出外部项目。VIO/LIO采用显式位移输出模型；没有把模型结果写成已运行原始图像/点云前端的精度。
+ 
+-硬件配置概算.json仅保留三车配置概算和单点增量，包含配套、防护安装件和余量，不再列人日、算法研发或联调人工费用。它是配置级估计，不冒充已有型号的厂商报价。
++费用按用户确认的一套等于一只完整盒、单盒3万余元计。三车三只，单点再增加一只同型完整盒；总价分别为单盒成交价×3或×4。高配IMU比较使用ADIS16495-2BMLZ，公开含税单价47224.54元，采购预留5万元/只、三只15万元。数值与产品、来源、数量详见硬件配置概算.json和硬件费用依据核对.md。九档输入质量不逐档绑定采购价格；旧的无逐型号依据区间撤回。
++
++## 图线与数据对应
++
++| 图线或表格 | 输入与输出 | 重算命令（工程根目录） |
++|---|---|---|
++| 传感器分级、单点及布点统计 | 本版实验条件清单.json列出的84个输出；对应summary.json和outputs | python3 tools/check_report_results.py |
++| 无锚点、布点及定位误差图 | data/single_anchor_layout_20261029/outputs | python3 tools/plot_anchor_layout.py |
++| 测距精度影响图 | data/single_anchor_outdoor_20261029/outputs | python3 tools/plot_single_anchor.py |
++| RTE逐车误差图 | data/rte_expanded_20261025/exp_odometry_*_seed0.csv及.truth.csv，C++回放输出另存report_replay目录 | source /opt/ros/humble/setup.bash 后 python3 tools/plot_report_replay.py --replay-rte |
++| 主盒实测点云 | data/three_boxes_20260811_012046中201盒/livox/lidar原始消息 | 同上；225条消息，过滤全零/非有限点后按固定编号抽样绘制 |
++| 实测测距、位置及相对队形 | data/rte_accuracy_20261023/uwb_baseline_20261017的uwb_records.csv、pose_records.csv | python3 -c 'import tools.plot_sensor_anchor_v14 as p; p.measured_plots()'；使用PYTHONPATH=tools |
++| 三目采集画面 | data/camera_samples_analysis/video33_preview.png、video42_preview.png、video51_preview.png | 原始采集画面，未以仿真或生成图替代 |
++
++RTE的三组轨迹和带噪运动输入的融合仿真均由程序输出计算误差；VIO/LIO使用位移输出误差模型，不声称已经运行原始相机/雷达前端。点云图表示本机采集结构，不将它写成共同地图或定位融合结果。图中文字是代码中写明的文字，由字体排版，非生成式图片。
+ 
+ 每次修改前后对照、意见与版本记录分别保存在docs/报告改动前后对照记录.md、docs/报告编制与对外表述要求_持续记录.md和docs/报告内部版本记录.md。默认UWB、原RTE库和V1.3均按既有哈希核对保留。
+--- docs/报告/20261028_协同定位V1.4/内部材料/20261029_结果说明与费用依据修订前/参数来源_可观性_初始化核对.md
++++ docs/报告/20261028_协同定位V1.4/参数来源_可观性_初始化核对.md
+@@ -54,3 +54,10 @@
+ 初始候选覆盖不足导致的约12米误差已用更充分的测量驱动多初值求解修正，并用完全相同输入重跑。不得将这一变化写成硬件性能改善。旧代码与结果保留，不计为新增独立噪声样本。
+ 
+ 最新费用只列硬件配置概算，含必要计算通信配套、供电防护、安装件及余量；旧数据目录中成本预算.json及预算图为历史人工分项口径，当前报告不再引用。最新文件为硬件配置概算.json，不列人力开发费用，也不把旧人工分项改名为硬件。
++
++
++## 7 当前正文与费用依据
++
++当前正式报告按本版实验条件清单.json组织84个条件、1680次结果，去掉跨版本执行记录的叙述；内部原始批次及初始化修订仍完整保留。data/report_replay_20261029/本版结果复算.json记录本版全部误差统计核对，三组RTE重新调用C++后的首次有效时刻为127.20、215.52、216.24秒，图内灰色区间为建系阶段，保持同一0～300秒横轴。
++
++费用以用户确认的一套一只完整盒、单盒3万余元为依据，三车三只，加同型单点共四只。旧无型号区间撤回，高配IMU例仅用于采购比较，见硬件费用依据核对.md；不把ADIS16495-2BMLZ的价格或类别写成本轮IMU误差档位的实测依据。
+--- docs/报告/20261028_协同定位V1.4/内部材料/20261029_结果说明与费用依据修订前/硬件费用依据核对.md
++++ docs/报告/20261028_协同定位V1.4/硬件费用依据核对.md
+@@ -0,0 +1,36 @@
++# 硬件费用依据核对（内部）
++
++## 1 已采用完整盒：数量先于金额
++
++用户于2026年10月29日明确确认：“一套是一只完整传感器盒”，单盒价格为“三万多”。因此本版使用“人民币3万余元/只”，不擅自写成3.2、3.5或3.8万元；准确单价沿用采购成交价。
++
++| 方案 | 盒数 | 价格计算 |
++|---|---|---|
++| 三车 | 3只完整盒，每车1只 | 实际单盒价×3 |
++| 三车加唯一UWB点，按同型完整盒配置 | 3只车载盒＋1只固定盒，共4只 | 原三盒之外增加1只约3万余元；合计单盒价×4 |
++| 复用已有落地无人机UWB | 与三车使用相同协议的UWB设备 | 是否有现成设备、能否互通、配套范围和价格均需按实际清单核对，本版不擅自给出便宜单模块价 |
++
++完整盒和单个UWB模块不是同一产品。单点方案按已采用完整盒增配作比较，撤回上一版0.5～1.2万元/点的无型号估计；也撤回按IMU/VIO/LIO输入档位分别定的三车价格区间。九档输入用于算法敏感性分析，不逐档冒充已经选定不同采购产品。
++
++## 2 可核对的高配器件示例
++
++- 产品：ADIS16495-2BMLZ，六轴MEMS惯性器件。
++- 型号与类别：[Analog Devices官方产品页](https://www.analog.com/en/products/adis16495.html)，明确列出该系列为Tactical Grade、三轴加速度与三轴陀螺。引用型号类别不意味着本项目已运行该器件或已达到某器件的精度。
++- 单只公开含13%增值税参考价：47224.54元，核对日期2026-10-29。[DigiKey中国公开销售页](https://www.digikey.cn/zh/products/detail/analog-devices-inc/ADIS16495-2BMLZ/7931993)。该数字为公开单只参考价，不是项目已收到的正式批量报价。
++- 三只按公开单只价等额计算：141673.62元，约14.17万元；不擅自假设批量折扣。
++- 三车采购预留：按5万元/只，三只15万元。相较公开单只价上浮约5.88%，作为器件采购余量；不在该项中核算人力开发费用。
++- 原三只完整盒仍计入基础配置。本例是额外配置高配IMU的费用，不能用裸器件价代替完整盒，也不能因换器件而把UWB、计算及通信费用漏掉。
++
++厂家页面的1ku价格是千件级起始价，不用它冒充单只国内采购价；-1、-2、-3不同型号不混用价格或详细性能。报告不把ADIS16495-2BMLZ与某一档仿真参数强行对应，也不宣称采购该型号即可自动达到某个定位误差。
++
++## 3 相机与雷达产品核对的处理
++
++项目文档和录包确认现有雷达为Livox MID360，计算端为RK3588，相机、车载IMU具体型号按采购清单确认；这些设备随完整盒计价。本版不对盒内设备再次编造分项售价。
++
++作为后续询价参考，已核对[ZED 2i官方产品页](https://www.stereolabs.com/store/products/zed-2i)：基础相机499美元，户外偏振片选项另50美元，线缆和计算端另计。这是不同的视觉产品，不写成已装盒相机，不直接与本轮VIO某档绑定，也不把美元裸机价不经税费及配置核对就折成完整系统人民币价。
++
++Livox官方商城当前页面显示地区不可购买，未给出可核对的国内售价，因此没有将搜索到的其他经销或新型号MID360S价格当成当前MID360的国内报价。已有完整盒价格仍以实际采购为准。
++
++## 4 选择单点的工程理由
++
++当前三只盒已有相机、雷达、IMU及UWB输入，可先提高标定与前端输出质量。增加一个已知位置UWB点，在本轮同输入对比中降低相对位置误差，并为三车共同提供距离参考；若增配同型盒，只增加1只设备。逐车额外加入上述高配IMU则增加3只、采购预留15万元。这个比较说明设备数量与费用差别，不把未进行的高配器件试验写成精度结论。
+--- docs/报告/20261028_协同定位V1.4/内部材料/20261029_结果说明与费用依据修订前/硬件配置概算.json
++++ docs/报告/20261028_协同定位V1.4/硬件配置概算.json
+@@ -1,51 +1,37 @@
+ {
+-  "unit": "人民币万元",
+-  "scope": "三车硬件配置，含必要配套、防护安装件及余量；不列人力开发成本",
+-  "basis": "配置级概算，非厂商报价；输入档位不等同于器件采购等级",
+-  "packages": {
+-    "uwb": [
+-      2.4,
+-      3.8
+-    ],
+-    "imu_基础": [
+-      3.2,
+-      5.5
+-    ],
+-    "imu_增强": [
+-      4.2,
+-      7.0
+-    ],
+-    "imu_精细": [
+-      7.0,
+-      12.0
+-    ],
+-    "vio_基础": [
+-      5.5,
+-      9.5
+-    ],
+-    "vio_增强": [
+-      7.5,
+-      13.0
+-    ],
+-    "vio_精细": [
+-      11.5,
+-      19.0
+-    ],
+-    "lio_基础": [
+-      7.5,
+-      12.0
+-    ],
+-    "lio_增强": [
+-      9.5,
+-      16.5
+-    ],
+-    "lio_精细": [
+-      14.5,
+-      24.0
+-    ]
++  "unit": "人民币元",
++  "scope": "一套=一只完整传感器盒；三车=三只；增加单点按另配一只同型完整盒；不列人力开发成本",
++  "complete_box_unit_price": {
++    "value": null,
++    "known_description": "3万余元/只",
++    "basis": "用户2026-10-29确认：一套是一只完整传感器盒",
++    "exact_transaction_price_pending": true
+   },
+-  "single_point_increment_wan": [
+-    0.5,
+-    1.2
+-  ]
++  "configurations": [
++    {
++      "name": "三车现有配置",
++      "complete_box_count": 3,
++      "total": "实际单盒成交价×3"
++    },
++    {
++      "name": "三车加一个已知UWB点",
++      "complete_box_count": 4,
++      "increment": "1只同型完整盒，3万余元",
++      "total": "实际单盒成交价×4"
++    },
++    {
++      "name": "三车增加高配IMU",
++      "complete_box_count": 3,
++      "imu_model": "ADIS16495-2BMLZ",
++      "imu_count": 3,
++      "reference_unit_price_including_vat_yuan": 47224.54,
++      "reference_extended_price_yuan": 141673.62,
++      "reserved_unit_price_yuan": 50000.0,
++      "reserved_extended_price_yuan": 150000.0
++    }
++  ],
++  "reference_date": "2026-10-29",
++  "public_price_source": "https://www.digikey.cn/zh/products/detail/analog-devices-inc/ADIS16495-2BMLZ/7931993",
++  "manufacturer_model_source": "https://www.analog.com/en/products/adis16495.html",
++  "sensor_model_scope": "九档输入是误差模型条件，不声称该IMU已参与仿真或与某档逐项等同"
+ }
+--- docs/报告/20261028_协同定位V1.4/内部材料/20261029_结果说明与费用依据修订前/报告图表顺序.json
++++ docs/报告/20261028_协同定位V1.4/报告图表顺序.json
+@@ -11,12 +11,14 @@
+     "layout_布点误差分布",
+     "layout_单点估计轨迹",
+     "single_20_传感器与测距精度",
+-    "16_RTE逐车定位误差",
++    "replay_RTE逐车定位误差",
+     "05_实测在线输入输出",
+     "06_实测三车相对三角形",
+-    "03_三路相机实拍"
++    "03_三路相机实拍",
++    "replay_主盒实测点云"
+   ],
+   "table_titles": [
++    "仿真项目与分组",
+     "默认纯UWB队形仿真",
+     "MEMS初始残余误差",
+     "MEMS动态误差设定",
+@@ -25,10 +27,10 @@
+     "VIO输入的无锚点结果",
+     "LIO局部位移误差",
+     "LIO输入的无锚点结果",
+-    "三车硬件配置概算",
++    "三车配置及单点增量费用",
+     "初始化输入与求解",
+     "同输入条件下增加单点的结果",
+-    "输入条件、精度与配置投入",
++    "输入条件、精度与设备数量",
+     "候选位置与测距几何",
+     "不同布点下增强输入的结果",
+     "单点方案的测距精度对照",
+--- docs/报告/20261028_协同定位V1.4/内部材料/20261029_结果说明与费用依据修订前/本版图线来源.json
++++ docs/报告/20261028_协同定位V1.4/本版图线来源.json
+@@ -132,10 +132,12 @@
+     "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+     "source_directory": "data/single_anchor_outdoor_20261029"
+   },
+-  "16_RTE逐车定位误差": {
+-    "png_sha256": "ce4718628f841fef78ab389c5d281ee6b50668f50f665aef1ef0c7befe7c00a6",
+-    "source": "沿用前版已保存的图，图像SHA256未改动",
+-    "previous_copy": "docs/报告/20261028_协同定位V1.4/内部材料/20261029_布点对比与叙述调整前/figures/16_RTE逐车定位误差.png"
++  "replay_RTE逐车定位误差": {
++    "source_directory": "data/report_replay_20261029",
++    "reproduction": "source /opt/ros/humble/setup.bash 后 python3 tools/plot_report_replay.py --replay-rte",
++    "input_and_replay_record": "data/report_replay_20261029/复现核对.json",
++    "drawing": "实际C++回放输出或原始/livox/lidar测量；Matplotlib真实字体排版",
++    "png_sha256": "4f536f279010c0adb916644382395cd1d1ccda217ecaa8dd59bf0dbe186b3ded"
+   },
+   "05_实测在线输入输出": {
+     "png_sha256": "91595ff95f56fdbe7d3e4e78e2e481bc44db50abeb9e1ee4a427a15f891a2e07",
+@@ -151,5 +153,12 @@
+     "png_sha256": "9aa1c3a34f663f012424ec9c8246e7fe14ac171f26b6f36866befb8ad2723146",
+     "source": "沿用前版已保存的图，图像SHA256未改动",
+     "previous_copy": "docs/报告/20261028_协同定位V1.4/内部材料/20261029_布点对比与叙述调整前/figures/03_三路相机实拍.png"
++  },
++  "replay_主盒实测点云": {
++    "source_directory": "data/report_replay_20261029",
++    "reproduction": "source /opt/ros/humble/setup.bash 后 python3 tools/plot_report_replay.py --replay-rte",
++    "input_and_replay_record": "data/report_replay_20261029/复现核对.json",
++    "drawing": "实际C++回放输出或原始/livox/lidar测量；Matplotlib真实字体排版",
++    "png_sha256": "52e2a49205cc646c58a537b0f0e66a2ca049aae3dd9b45fbcf44d0de014f1364"
+   }
+ }
+--- docs/报告/20261028_协同定位V1.4/内部材料/20261029_结果说明与费用依据修订前/本版实验条件清单.json
++++ docs/报告/20261028_协同定位V1.4/本版实验条件清单.json
+@@ -0,0 +1,1015 @@
++{
++  "conditions": 84,
++  "trials": 1680,
++  "rte_diagnostic_runs": 3,
++  "conditions_index": [
++    {
++      "name": "imu_基础_no_anchor_start",
++      "profile": "imu_基础",
++      "mode": "start",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_基础_no_anchor_start.npz",
++      "trials": 20,
++      "mean_rmse_m": 382.34687746629095,
++      "sample_std_rmse_m": 120.02428827020441,
++      "minimum_rmse_m": 179.53667305816722,
++      "maximum_rmse_m": 597.9049436723386
++    },
++    {
++      "name": "imu_基础_no_anchor_peer",
++      "profile": "imu_基础",
++      "mode": "peer",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_基础_no_anchor_peer.npz",
++      "trials": 20,
++      "mean_rmse_m": 21.985689761441662,
++      "sample_std_rmse_m": 1.5580632975356594,
++      "minimum_rmse_m": 17.376469647308884,
++      "maximum_rmse_m": 26.165164585678365
++    },
++    {
++      "name": "imu_基础_anchor_区域中部",
++      "profile": "imu_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_基础_anchor_区域中部.npz",
++      "trials": 20,
++      "mean_rmse_m": 16.969640920681698,
++      "sample_std_rmse_m": 6.853831472834866,
++      "minimum_rmse_m": 4.065417859827409,
++      "maximum_rmse_m": 22.4973317534017
++    },
++    {
++      "name": "imu_基础_anchor_起点侧方",
++      "profile": "imu_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_基础_anchor_起点侧方.npz",
++      "trials": 20,
++      "mean_rmse_m": 19.136425374587695,
++      "sample_std_rmse_m": 4.42365433714788,
++      "minimum_rmse_m": 10.561248250949145,
++      "maximum_rmse_m": 25.751833553064333
++    },
++    {
++      "name": "imu_基础_anchor_区域左侧",
++      "profile": "imu_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_基础_anchor_区域左侧.npz",
++      "trials": 20,
++      "mean_rmse_m": 20.061080645504422,
++      "sample_std_rmse_m": 7.291451527529212,
++      "minimum_rmse_m": 2.771611942826677,
++      "maximum_rmse_m": 29.16478974385776
++    },
++    {
++      "name": "imu_基础_anchor_区域右侧",
++      "profile": "imu_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_基础_anchor_区域右侧.npz",
++      "trials": 20,
++      "mean_rmse_m": 19.32577300581226,
++      "sample_std_rmse_m": 6.442280972338054,
++      "minimum_rmse_m": 4.590410886021924,
++      "maximum_rmse_m": 28.409119250481574
++    },
++    {
++      "name": "imu_基础_anchor_区域角部",
++      "profile": "imu_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_基础_anchor_区域角部.npz",
++      "trials": 20,
++      "mean_rmse_m": 19.916904272541434,
++      "sample_std_rmse_m": 3.5648087557259487,
++      "minimum_rmse_m": 10.009471760050554,
++      "maximum_rmse_m": 24.600738451270843
++    },
++    {
++      "name": "imu_增强_no_anchor_start",
++      "profile": "imu_增强",
++      "mode": "start",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_增强_no_anchor_start.npz",
++      "trials": 20,
++      "mean_rmse_m": 172.5749004740356,
++      "sample_std_rmse_m": 67.04660363860233,
++      "minimum_rmse_m": 84.43391698801,
++      "maximum_rmse_m": 343.5910959616925
++    },
++    {
++      "name": "imu_增强_no_anchor_peer",
++      "profile": "imu_增强",
++      "mode": "peer",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_增强_no_anchor_peer.npz",
++      "trials": 20,
++      "mean_rmse_m": 19.266024804149957,
++      "sample_std_rmse_m": 5.258321834009777,
++      "minimum_rmse_m": 5.530987662658888,
++      "maximum_rmse_m": 26.337015054824406
++    },
++    {
++      "name": "imu_增强_anchor_区域中部",
++      "profile": "imu_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_增强_anchor_区域中部.npz",
++      "trials": 20,
++      "mean_rmse_m": 12.957174017865142,
++      "sample_std_rmse_m": 9.065027484233488,
++      "minimum_rmse_m": 2.3501826908555867,
++      "maximum_rmse_m": 28.716730795022677
++    },
++    {
++      "name": "imu_增强_anchor_起点侧方",
++      "profile": "imu_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_增强_anchor_起点侧方.npz",
++      "trials": 20,
++      "mean_rmse_m": 13.5023779842202,
++      "sample_std_rmse_m": 7.75708214618375,
++      "minimum_rmse_m": 2.4522455139456008,
++      "maximum_rmse_m": 21.544758861550772
++    },
++    {
++      "name": "imu_增强_anchor_区域左侧",
++      "profile": "imu_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_增强_anchor_区域左侧.npz",
++      "trials": 20,
++      "mean_rmse_m": 10.225280205455125,
++      "sample_std_rmse_m": 9.428048959171742,
++      "minimum_rmse_m": 0.8820201508502813,
++      "maximum_rmse_m": 30.06555485945664
++    },
++    {
++      "name": "imu_增强_anchor_区域右侧",
++      "profile": "imu_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_增强_anchor_区域右侧.npz",
++      "trials": 20,
++      "mean_rmse_m": 12.05483422798321,
++      "sample_std_rmse_m": 9.89752930982505,
++      "minimum_rmse_m": 0.9796157292409594,
++      "maximum_rmse_m": 28.319697183008415
++    },
++    {
++      "name": "imu_增强_anchor_区域角部",
++      "profile": "imu_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_增强_anchor_区域角部.npz",
++      "trials": 20,
++      "mean_rmse_m": 12.598491116918957,
++      "sample_std_rmse_m": 7.866898712941787,
++      "minimum_rmse_m": 2.4167465342106813,
++      "maximum_rmse_m": 21.460234597967105
++    },
++    {
++      "name": "imu_精细_no_anchor_start",
++      "profile": "imu_精细",
++      "mode": "start",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_精细_no_anchor_start.npz",
++      "trials": 20,
++      "mean_rmse_m": 77.03450584017818,
++      "sample_std_rmse_m": 34.79232560144056,
++      "minimum_rmse_m": 39.126389977714155,
++      "maximum_rmse_m": 144.13620755921283
++    },
++    {
++      "name": "imu_精细_no_anchor_peer",
++      "profile": "imu_精细",
++      "mode": "peer",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_精细_no_anchor_peer.npz",
++      "trials": 20,
++      "mean_rmse_m": 9.739262203955779,
++      "sample_std_rmse_m": 7.628945408540882,
++      "minimum_rmse_m": 1.2439867125733197,
++      "maximum_rmse_m": 22.595438542662183
++    },
++    {
++      "name": "imu_精细_anchor_区域中部",
++      "profile": "imu_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_精细_anchor_区域中部.npz",
++      "trials": 20,
++      "mean_rmse_m": 3.851278396249467,
++      "sample_std_rmse_m": 4.936053492526187,
++      "minimum_rmse_m": 0.6504836645959077,
++      "maximum_rmse_m": 22.691032809804366
++    },
++    {
++      "name": "imu_精细_anchor_起点侧方",
++      "profile": "imu_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_精细_anchor_起点侧方.npz",
++      "trials": 20,
++      "mean_rmse_m": 5.829753441471029,
++      "sample_std_rmse_m": 5.713494982386668,
++      "minimum_rmse_m": 0.9812782365973322,
++      "maximum_rmse_m": 21.37428494152118
++    },
++    {
++      "name": "imu_精细_anchor_区域左侧",
++      "profile": "imu_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_精细_anchor_区域左侧.npz",
++      "trials": 20,
++      "mean_rmse_m": 2.553074984931195,
++      "sample_std_rmse_m": 1.2136363660518037,
++      "minimum_rmse_m": 0.8651337436862292,
++      "maximum_rmse_m": 4.816464477764715
++    },
++    {
++      "name": "imu_精细_anchor_区域右侧",
++      "profile": "imu_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_精细_anchor_区域右侧.npz",
++      "trials": 20,
++      "mean_rmse_m": 2.781230716777362,
++      "sample_std_rmse_m": 2.6553298813198203,
++      "minimum_rmse_m": 0.44742283749654954,
++      "maximum_rmse_m": 11.503711580366044
++    },
++    {
++      "name": "imu_精细_anchor_区域角部",
++      "profile": "imu_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/imu_精细_anchor_区域角部.npz",
++      "trials": 20,
++      "mean_rmse_m": 5.50352983833344,
++      "sample_std_rmse_m": 5.786593382357443,
++      "minimum_rmse_m": 0.9093233747864007,
++      "maximum_rmse_m": 21.44361011579721
++    },
++    {
++      "name": "vio_基础_no_anchor_start",
++      "profile": "vio_基础",
++      "mode": "start",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_基础_no_anchor_start.npz",
++      "trials": 20,
++      "mean_rmse_m": 2.2339252045108378,
++      "sample_std_rmse_m": 0.7886207599777755,
++      "minimum_rmse_m": 1.1587651160872612,
++      "maximum_rmse_m": 3.8716955826595694
++    },
++    {
++      "name": "vio_基础_no_anchor_peer",
++      "profile": "vio_基础",
++      "mode": "peer",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_基础_no_anchor_peer.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.7130627821635478,
++      "sample_std_rmse_m": 0.30871023921400353,
++      "minimum_rmse_m": 0.2859256702217123,
++      "maximum_rmse_m": 1.4230281488752112
++    },
++    {
++      "name": "vio_基础_anchor_区域中部",
++      "profile": "vio_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_基础_anchor_区域中部.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.28015281553457305,
++      "sample_std_rmse_m": 0.16218272962905367,
++      "minimum_rmse_m": 0.10883967740491583,
++      "maximum_rmse_m": 0.6528911777375187
++    },
++    {
++      "name": "vio_基础_anchor_起点侧方",
++      "profile": "vio_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_基础_anchor_起点侧方.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.4632778496876143,
++      "sample_std_rmse_m": 0.3275414572973885,
++      "minimum_rmse_m": 0.12124058777507264,
++      "maximum_rmse_m": 1.357605348308249
++    },
++    {
++      "name": "vio_基础_anchor_区域左侧",
++      "profile": "vio_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_基础_anchor_区域左侧.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.21405710115741372,
++      "sample_std_rmse_m": 0.10647621089014658,
++      "minimum_rmse_m": 0.11154178646037549,
++      "maximum_rmse_m": 0.45529660040175585
++    },
++    {
++      "name": "vio_基础_anchor_区域右侧",
++      "profile": "vio_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_基础_anchor_区域右侧.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.15542747311761682,
++      "sample_std_rmse_m": 0.04048699763590739,
++      "minimum_rmse_m": 0.10511696479189699,
++      "maximum_rmse_m": 0.2553618558101193
++    },
++    {
++      "name": "vio_基础_anchor_区域角部",
++      "profile": "vio_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_基础_anchor_区域角部.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.2709395612879842,
++      "sample_std_rmse_m": 0.190853142458455,
++      "minimum_rmse_m": 0.10896245590171548,
++      "maximum_rmse_m": 0.8490720789721775
++    },
++    {
++      "name": "vio_增强_no_anchor_start",
++      "profile": "vio_增强",
++      "mode": "start",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_增强_no_anchor_start.npz",
++      "trials": 20,
++      "mean_rmse_m": 1.2479808954350533,
++      "sample_std_rmse_m": 0.44665430138542156,
++      "minimum_rmse_m": 0.6695824930432477,
++      "maximum_rmse_m": 2.1999313512189556
++    },
++    {
++      "name": "vio_增强_no_anchor_peer",
++      "profile": "vio_增强",
++      "mode": "peer",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_增强_no_anchor_peer.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.3860256711457667,
++      "sample_std_rmse_m": 0.15320527850472532,
++      "minimum_rmse_m": 0.17364320135390288,
++      "maximum_rmse_m": 0.6811822523706427
++    },
++    {
++      "name": "vio_增强_anchor_区域中部",
++      "profile": "vio_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_增强_anchor_区域中部.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.1658902334541657,
++      "sample_std_rmse_m": 0.07965345855475263,
++      "minimum_rmse_m": 0.08899316764519777,
++      "maximum_rmse_m": 0.34474066661817804
++    },
++    {
++      "name": "vio_增强_anchor_起点侧方",
++      "profile": "vio_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_增强_anchor_起点侧方.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.2560853962794126,
++      "sample_std_rmse_m": 0.17322344150464775,
++      "minimum_rmse_m": 0.09199763654774676,
++      "maximum_rmse_m": 0.7193452663234906
++    },
++    {
++      "name": "vio_增强_anchor_区域左侧",
++      "profile": "vio_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_增强_anchor_区域左侧.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.14285613928265514,
++      "sample_std_rmse_m": 0.061362427213416296,
++      "minimum_rmse_m": 0.07629913875076672,
++      "maximum_rmse_m": 0.29237699224775715
++    },
++    {
++      "name": "vio_增强_anchor_区域右侧",
++      "profile": "vio_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_增强_anchor_区域右侧.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.10722522819388972,
++      "sample_std_rmse_m": 0.021727646151473542,
++      "minimum_rmse_m": 0.08346903834811045,
++      "maximum_rmse_m": 0.16011862082608913
++    },
++    {
++      "name": "vio_增强_anchor_区域角部",
++      "profile": "vio_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_增强_anchor_区域角部.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.1626647349659664,
++      "sample_std_rmse_m": 0.11113944657981019,
++      "minimum_rmse_m": 0.07107694974570095,
++      "maximum_rmse_m": 0.5159456137956581
++    },
++    {
++      "name": "vio_精细_no_anchor_start",
++      "profile": "vio_精细",
++      "mode": "start",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_精细_no_anchor_start.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.5886786240780342,
++      "sample_std_rmse_m": 0.2114072870917826,
++      "minimum_rmse_m": 0.34205682212854716,
++      "maximum_rmse_m": 1.077204221165847
++    },
++    {
++      "name": "vio_精细_no_anchor_peer",
++      "profile": "vio_精细",
++      "mode": "peer",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_精细_no_anchor_peer.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.19543419264435433,
++      "sample_std_rmse_m": 0.06664267149284993,
++      "minimum_rmse_m": 0.09319108680738648,
++      "maximum_rmse_m": 0.32571809109403327
++    },
++    {
++      "name": "vio_精细_anchor_区域中部",
++      "profile": "vio_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_精细_anchor_区域中部.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.0992489047730223,
++      "sample_std_rmse_m": 0.03217214692435783,
++      "minimum_rmse_m": 0.06649409233593562,
++      "maximum_rmse_m": 0.1766291670671322
++    },
++    {
++      "name": "vio_精细_anchor_起点侧方",
++      "profile": "vio_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_精细_anchor_起点侧方.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.1444123293250197,
++      "sample_std_rmse_m": 0.08789985237572275,
++      "minimum_rmse_m": 0.05866171524500028,
++      "maximum_rmse_m": 0.3764488577386409
++    },
++    {
++      "name": "vio_精细_anchor_区域左侧",
++      "profile": "vio_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_精细_anchor_区域左侧.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.09853574864809211,
++      "sample_std_rmse_m": 0.03389844964576381,
++      "minimum_rmse_m": 0.057956258085102824,
++      "maximum_rmse_m": 0.18455458475433342
++    },
++    {
++      "name": "vio_精细_anchor_区域右侧",
++      "profile": "vio_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_精细_anchor_区域右侧.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.07796508278136657,
++      "sample_std_rmse_m": 0.017391927808462618,
++      "minimum_rmse_m": 0.055833210494580614,
++      "maximum_rmse_m": 0.11659657794722847
++    },
++    {
++      "name": "vio_精细_anchor_区域角部",
++      "profile": "vio_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/vio_精细_anchor_区域角部.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.10622733523154253,
++      "sample_std_rmse_m": 0.05815461433051577,
++      "minimum_rmse_m": 0.05092729853440573,
++      "maximum_rmse_m": 0.29620293496726813
++    },
++    {
++      "name": "lio_基础_no_anchor_start",
++      "profile": "lio_基础",
++      "mode": "start",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_基础_no_anchor_start.npz",
++      "trials": 20,
++      "mean_rmse_m": 1.2479808954350533,
++      "sample_std_rmse_m": 0.44665430138542156,
++      "minimum_rmse_m": 0.6695824930432477,
++      "maximum_rmse_m": 2.1999313512189556
++    },
++    {
++      "name": "lio_基础_no_anchor_peer",
++      "profile": "lio_基础",
++      "mode": "peer",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_基础_no_anchor_peer.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.3860256711457667,
++      "sample_std_rmse_m": 0.15320527850472532,
++      "minimum_rmse_m": 0.17364320135390288,
++      "maximum_rmse_m": 0.6811822523706427
++    },
++    {
++      "name": "lio_基础_anchor_区域中部",
++      "profile": "lio_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_基础_anchor_区域中部.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.1658902334541657,
++      "sample_std_rmse_m": 0.07965345855475263,
++      "minimum_rmse_m": 0.08899316764519777,
++      "maximum_rmse_m": 0.34474066661817804
++    },
++    {
++      "name": "lio_基础_anchor_起点侧方",
++      "profile": "lio_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_基础_anchor_起点侧方.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.2560853962794126,
++      "sample_std_rmse_m": 0.17322344150464775,
++      "minimum_rmse_m": 0.09199763654774676,
++      "maximum_rmse_m": 0.7193452663234906
++    },
++    {
++      "name": "lio_基础_anchor_区域左侧",
++      "profile": "lio_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_基础_anchor_区域左侧.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.14285613928265514,
++      "sample_std_rmse_m": 0.061362427213416296,
++      "minimum_rmse_m": 0.07629913875076672,
++      "maximum_rmse_m": 0.29237699224775715
++    },
++    {
++      "name": "lio_基础_anchor_区域右侧",
++      "profile": "lio_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_基础_anchor_区域右侧.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.10722522819388972,
++      "sample_std_rmse_m": 0.021727646151473542,
++      "minimum_rmse_m": 0.08346903834811045,
++      "maximum_rmse_m": 0.16011862082608913
++    },
++    {
++      "name": "lio_基础_anchor_区域角部",
++      "profile": "lio_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_基础_anchor_区域角部.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.1626647349659664,
++      "sample_std_rmse_m": 0.11113944657981019,
++      "minimum_rmse_m": 0.07107694974570095,
++      "maximum_rmse_m": 0.5159456137956581
++    },
++    {
++      "name": "lio_增强_no_anchor_start",
++      "profile": "lio_增强",
++      "mode": "start",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_增强_no_anchor_start.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.5886786240780342,
++      "sample_std_rmse_m": 0.2114072870917826,
++      "minimum_rmse_m": 0.34205682212854716,
++      "maximum_rmse_m": 1.077204221165847
++    },
++    {
++      "name": "lio_增强_no_anchor_peer",
++      "profile": "lio_增强",
++      "mode": "peer",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_增强_no_anchor_peer.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.19543419264435433,
++      "sample_std_rmse_m": 0.06664267149284993,
++      "minimum_rmse_m": 0.09319108680738648,
++      "maximum_rmse_m": 0.32571809109403327
++    },
++    {
++      "name": "lio_增强_anchor_区域中部",
++      "profile": "lio_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_增强_anchor_区域中部.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.0992489047730223,
++      "sample_std_rmse_m": 0.03217214692435783,
++      "minimum_rmse_m": 0.06649409233593562,
++      "maximum_rmse_m": 0.1766291670671322
++    },
++    {
++      "name": "lio_增强_anchor_起点侧方",
++      "profile": "lio_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_增强_anchor_起点侧方.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.1444123293250197,
++      "sample_std_rmse_m": 0.08789985237572275,
++      "minimum_rmse_m": 0.05866171524500028,
++      "maximum_rmse_m": 0.3764488577386409
++    },
++    {
++      "name": "lio_增强_anchor_区域左侧",
++      "profile": "lio_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_增强_anchor_区域左侧.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.09853574864809211,
++      "sample_std_rmse_m": 0.03389844964576381,
++      "minimum_rmse_m": 0.057956258085102824,
++      "maximum_rmse_m": 0.18455458475433342
++    },
++    {
++      "name": "lio_增强_anchor_区域右侧",
++      "profile": "lio_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_增强_anchor_区域右侧.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.07796508278136657,
++      "sample_std_rmse_m": 0.017391927808462618,
++      "minimum_rmse_m": 0.055833210494580614,
++      "maximum_rmse_m": 0.11659657794722847
++    },
++    {
++      "name": "lio_增强_anchor_区域角部",
++      "profile": "lio_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_增强_anchor_区域角部.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.10622733523154253,
++      "sample_std_rmse_m": 0.05815461433051577,
++      "minimum_rmse_m": 0.05092729853440573,
++      "maximum_rmse_m": 0.29620293496726813
++    },
++    {
++      "name": "lio_精细_no_anchor_start",
++      "profile": "lio_精细",
++      "mode": "start",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_精细_no_anchor_start.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.32029901514502557,
++      "sample_std_rmse_m": 0.11414346694389892,
++      "minimum_rmse_m": 0.18917618473918024,
++      "maximum_rmse_m": 0.6011561425397712
++    },
++    {
++      "name": "lio_精细_no_anchor_peer",
++      "profile": "lio_精细",
++      "mode": "peer",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_精细_no_anchor_peer.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.12539999501159532,
++      "sample_std_rmse_m": 0.04207096573137396,
++      "minimum_rmse_m": 0.05723137514919119,
++      "maximum_rmse_m": 0.22126914980473664
++    },
++    {
++      "name": "lio_精细_anchor_区域中部",
++      "profile": "lio_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_精细_anchor_区域中部.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.07667771294673237,
++      "sample_std_rmse_m": 0.019677560604148745,
++      "minimum_rmse_m": 0.052358350615767324,
++      "maximum_rmse_m": 0.12947262138094603
++    },
++    {
++      "name": "lio_精细_anchor_起点侧方",
++      "profile": "lio_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_精细_anchor_起点侧方.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.10920377602246796,
++      "sample_std_rmse_m": 0.05750400330523207,
++      "minimum_rmse_m": 0.044585304775786344,
++      "maximum_rmse_m": 0.2686532724664879
++    },
++    {
++      "name": "lio_精细_anchor_区域左侧",
++      "profile": "lio_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_精细_anchor_区域左侧.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.07942500241136793,
++      "sample_std_rmse_m": 0.02562645294750827,
++      "minimum_rmse_m": 0.04132485457967307,
++      "maximum_rmse_m": 0.1377588552245477
++    },
++    {
++      "name": "lio_精细_anchor_区域右侧",
++      "profile": "lio_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_精细_anchor_区域右侧.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.06634814932945284,
++      "sample_std_rmse_m": 0.01700515777359186,
++      "minimum_rmse_m": 0.041275839052642815,
++      "maximum_rmse_m": 0.10133185159474702
++    },
++    {
++      "name": "lio_精细_anchor_区域角部",
++      "profile": "lio_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_layout_20261029",
++      "output_file": "data/single_anchor_layout_20261029/outputs/lio_精细_anchor_区域角部.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.08819032096041411,
++      "sample_std_rmse_m": 0.03957612636468504,
++      "minimum_rmse_m": 0.04169232283202064,
++      "maximum_rmse_m": 0.2178945657852392
++    },
++    {
++      "name": "imu_基础_single_s0.20",
++      "profile": "imu_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/imu_基础_single_s0.20.npz",
++      "trials": 20,
++      "mean_rmse_m": 17.31753601240651,
++      "sample_std_rmse_m": 7.219720012193562,
++      "minimum_rmse_m": 4.3314936005861515,
++      "maximum_rmse_m": 28.33191562522575
++    },
++    {
++      "name": "imu_基础_single_s0.05",
++      "profile": "imu_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/imu_基础_single_s0.05.npz",
++      "trials": 20,
++      "mean_rmse_m": 16.999654393222933,
++      "sample_std_rmse_m": 6.445939605775672,
++      "minimum_rmse_m": 3.739346156012362,
++      "maximum_rmse_m": 22.47418630151499
++    },
++    {
++      "name": "imu_增强_single_s0.20",
++      "profile": "imu_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/imu_增强_single_s0.20.npz",
++      "trials": 20,
++      "mean_rmse_m": 13.202513735696536,
++      "sample_std_rmse_m": 9.286807986642616,
++      "minimum_rmse_m": 2.4466538467412406,
++      "maximum_rmse_m": 30.28530054460296
++    },
++    {
++      "name": "imu_增强_single_s0.05",
++      "profile": "imu_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/imu_增强_single_s0.05.npz",
++      "trials": 20,
++      "mean_rmse_m": 12.954052563511647,
++      "sample_std_rmse_m": 9.165785868241377,
++      "minimum_rmse_m": 2.4612249089494473,
++      "maximum_rmse_m": 29.014527398169307
++    },
++    {
++      "name": "imu_精细_single_s0.20",
++      "profile": "imu_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/imu_精细_single_s0.20.npz",
++      "trials": 20,
++      "mean_rmse_m": 4.061546628868688,
++      "sample_std_rmse_m": 4.982119310541989,
++      "minimum_rmse_m": 0.9533839812483491,
++      "maximum_rmse_m": 23.303174198679894
++    },
++    {
++      "name": "imu_精细_single_s0.05",
++      "profile": "imu_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/imu_精细_single_s0.05.npz",
++      "trials": 20,
++      "mean_rmse_m": 3.7571567031186106,
++      "sample_std_rmse_m": 4.683018512541516,
++      "minimum_rmse_m": 0.4882309566868505,
++      "maximum_rmse_m": 21.175727067723823
++    },
++    {
++      "name": "vio_基础_single_s0.20",
++      "profile": "vio_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/vio_基础_single_s0.20.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.29446616425015876,
++      "sample_std_rmse_m": 0.1572544281756302,
++      "minimum_rmse_m": 0.13509773937516462,
++      "maximum_rmse_m": 0.6482063764314484
++    },
++    {
++      "name": "vio_基础_single_s0.05",
++      "profile": "vio_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/vio_基础_single_s0.05.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.2787123833909559,
++      "sample_std_rmse_m": 0.16774618061595642,
++      "minimum_rmse_m": 0.09839396474418344,
++      "maximum_rmse_m": 0.6806257526393309
++    },
++    {
++      "name": "vio_增强_single_s0.20",
++      "profile": "vio_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/vio_增强_single_s0.20.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.18090633724330676,
++      "sample_std_rmse_m": 0.07672554819908513,
++      "minimum_rmse_m": 0.11065196404423631,
++      "maximum_rmse_m": 0.36103857535612754
++    },
++    {
++      "name": "vio_增强_single_s0.05",
++      "profile": "vio_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/vio_增强_single_s0.05.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.15947217480472306,
++      "sample_std_rmse_m": 0.081632500258986,
++      "minimum_rmse_m": 0.07636404971540411,
++      "maximum_rmse_m": 0.3344865838594908
++    },
++    {
++      "name": "vio_精细_single_s0.20",
++      "profile": "vio_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/vio_精细_single_s0.20.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.11070891547128661,
++      "sample_std_rmse_m": 0.030472174763003894,
++      "minimum_rmse_m": 0.07714207112729943,
++      "maximum_rmse_m": 0.1888689468627363
++    },
++    {
++      "name": "vio_精细_single_s0.05",
++      "profile": "vio_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/vio_精细_single_s0.05.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.0932480414104245,
++      "sample_std_rmse_m": 0.03330845316624142,
++      "minimum_rmse_m": 0.05998819568342105,
++      "maximum_rmse_m": 0.1689507896217699
++    },
++    {
++      "name": "lio_基础_single_s0.20",
++      "profile": "lio_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/lio_基础_single_s0.20.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.18090633724330676,
++      "sample_std_rmse_m": 0.07672554819908513,
++      "minimum_rmse_m": 0.11065196404423631,
++      "maximum_rmse_m": 0.36103857535612754
++    },
++    {
++      "name": "lio_基础_single_s0.05",
++      "profile": "lio_基础",
++      "mode": "single",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/lio_基础_single_s0.05.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.15947217480472306,
++      "sample_std_rmse_m": 0.081632500258986,
++      "minimum_rmse_m": 0.07636404971540411,
++      "maximum_rmse_m": 0.3344865838594908
++    },
++    {
++      "name": "lio_增强_single_s0.20",
++      "profile": "lio_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/lio_增强_single_s0.20.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.11070891547128661,
++      "sample_std_rmse_m": 0.030472174763003894,
++      "minimum_rmse_m": 0.07714207112729943,
++      "maximum_rmse_m": 0.1888689468627363
++    },
++    {
++      "name": "lio_增强_single_s0.05",
++      "profile": "lio_增强",
++      "mode": "single",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/lio_增强_single_s0.05.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.0932480414104245,
++      "sample_std_rmse_m": 0.03330845316624142,
++      "minimum_rmse_m": 0.05998819568342105,
++      "maximum_rmse_m": 0.1689507896217699
++    },
++    {
++      "name": "lio_精细_single_s0.20",
++      "profile": "lio_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/lio_精细_single_s0.20.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.08398046827174618,
++      "sample_std_rmse_m": 0.017729407374820268,
++      "minimum_rmse_m": 0.05889595897946809,
++      "maximum_rmse_m": 0.1288602736617832
++    },
++    {
++      "name": "lio_精细_single_s0.05",
++      "profile": "lio_精细",
++      "mode": "single",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/lio_精细_single_s0.05.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.07285245325275298,
++      "sample_std_rmse_m": 0.021208664311178425,
++      "minimum_rmse_m": 0.04515669572943168,
++      "maximum_rmse_m": 0.12785978627528993
++    },
++    {
++      "name": "uwb_s0.20",
++      "profile": "uwb",
++      "mode": "triangle",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/uwb_s0.20.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.38777041245165217,
++      "sample_std_rmse_m": 0.009151613669415838,
++      "minimum_rmse_m": 0.3740204904252144,
++      "maximum_rmse_m": 0.4079358466856068
++    },
++    {
++      "name": "uwb_s0.10",
++      "profile": "uwb",
++      "mode": "triangle",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/uwb_s0.10.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.2001584578959667,
++      "sample_std_rmse_m": 0.010528864753774668,
++      "minimum_rmse_m": 0.18719724696356868,
++      "maximum_rmse_m": 0.2246164260952843
++    },
++    {
++      "name": "uwb_s0.05",
++      "profile": "uwb",
++      "mode": "triangle",
++      "source_directory": "data/single_anchor_outdoor_20261029",
++      "output_file": "data/single_anchor_outdoor_20261029/outputs/uwb_s0.05.npz",
++      "trials": 20,
++      "mean_rmse_m": 0.11173277349970619,
++      "sample_std_rmse_m": 0.015628856863012325,
++      "minimum_rmse_m": 0.09422252872961731,
++      "maximum_rmse_m": 0.14677355899889716
++    }
++  ]
++}
+--- docs/报告/20261028_协同定位V1.4/内部材料/20261029_结果说明与费用依据修订前/V1.4_报告理解核对问题.md
++++ docs/报告/20261028_协同定位V1.4/V1.4_报告理解核对问题.md
+@@ -8,7 +8,9 @@
+ 6. 五个候选点是否同时存在？每种位置的车锚距离是否都满足同样传播条件？
+ 7. 单点为什么不能直接给出地图朝向，采用的局部轴怎么定义？
+ 8. 为什么右侧在这条轨迹下优于中部，现场还需要检查什么？
+-9. 1260与1680次有哪些重叠，20次重复具体改变了什么？
+-10. 硬件概算包括哪些实物配置，是否对应已确定型号或报价？
+-11. VIO/LIO模型试验如何在安装后的实车输入上复测？
+-12. SVG能修改哪些对象，PNG是否能直接变成逐对象可编辑原稿？
++9. 84种条件怎样组成，每种20次实际改变什么？
++10. 一套是几只盒，三车及加单点各多少只，费用依据是什么？
++11. RTE三组曲线为什么从不同时刻出线，灰色区间表示什么？
++12. 实测点云从哪个话题读取，累积和抽样方式是什么？
++13. VIO/LIO模型试验如何在安装后的实车输入上复测？
++14. SVG能修改哪些对象，PNG是否能直接变成逐对象可编辑原稿？
+--- docs/报告/20261028_协同定位V1.4/内部材料/20261029_结果说明与费用依据修订前/复现脚本/build_single_anchor_report.py
++++ tools/build_single_anchor_report.py
+@@ -17,10 +17,8 @@
+ BEFORE=DEST/'内部材料/20261029_布点对比与叙述调整前'/CURRENT.name
+ FIGURE1_SHA='a4b8725191f5958ed51468c702bedf98b80e18912f0ed66d4f02577353e0a4cc'
+ GRADES=('基础','增强','精细')
+-PACKAGES={'uwb':(2.4,3.8),'imu_基础':(3.2,5.5),'imu_增强':(4.2,7.),'imu_精细':(7.,12.),
+-          'vio_基础':(5.5,9.5),'vio_增强':(7.5,13.),'vio_精细':(11.5,19.),
+-          'lio_基础':(7.5,12.),'lio_增强':(9.5,16.5),'lio_精细':(14.5,24.)}
+-ANCHOR_PACKAGE=(.5,1.2)
++IMU_REFERENCE_PRICE_YUAN=47224.54
++IMU_BUDGET_PER_UNIT_WAN=5.
+ 
+ 
+ def label(p):return p.replace('imu','IMU').replace('vio','VIO').replace('lio','LIO').replace('_',' ')
+@@ -61,21 +59,28 @@
+ 
+ 仿真时长300秒，前30秒静止，30～60秒积累起步及转弯数据用于求初始坐标关系，60～300秒统计连续定位结果。三车整体运动范围约85×115米，最高速度2.39米/秒，最大车间距24.56米。位置、测距及运动输入按10赫兹处理，保持连续视距测距，不添加人为中断。平面模型采用同高天线参考点。
+ 
+-位置误差评价202、203车相对201车的位置向量：分别将估计相对向量减去同一坐标定义下的真值向量，取二维长度。每次运行的位置均方根误差（Root Mean Square Error，RMSE）为两车全部评价时刻的误差平方均值再开平方，单位为米；随后统计20次运行RMSE的均值、样本标准差及最小至最大范围。它直接量化相对位置偏差，测距拟合残差另行说明。
++仿真程序保存每辆车的真实位置作为对照，称为真值。位置误差评价202、203车相对201车的位置向量：将估计相对向量减去同一坐标定义下的真值向量，取二维长度。每次运行的位置均方根误差（Root Mean Square Error，RMSE）为两车全部评价时刻的误差平方均值再开平方，单位为米；随后统计20次运行RMSE的均值、样本标准差及最小至最大范围。它直接量化相对位置偏差，测距拟合残差另行说明。
+ 
+ ### 1.2 对比试验的组成
+ 
+ IMU、视觉惯性里程计（Visual-Inertial Odometry，VIO）、激光惯性里程计（LiDAR-Inertial Odometry，LIO）各设三档输入质量。VIO/LIO在本轮用局部位移输出误差模型生成数据，包含尺度、方向漂移和随机位移项。传感器原始图像、点云处理在实车安装后按实际视场接入，仿真数值对应本报告列出的输入条件。
+ 
+-本次新增9档输入的无锚点及单锚点布置对比，共63种条件、1260次运行。无锚点组在初始化及后续处理中均只使用车间距离；单锚点组增加到同一个已知点的距离。各组使用同一轨迹、同编号运动扰动和测距噪声，初始化按各自实际具有的测量求解。另保留此前84种条件、1680次测距精度对照；区域中部单点的9组、180次结果与本次重复核对一致。因此两批合计为2940次执行记录、2760个不重复的条件—重复试验组合。
++试验比较三件事：提高本车运动输入质量能降低多少误差，增加一个已知位置UWB点有多大作用，以及点的位置和测距精度怎样影响结果。三类输入各设三档，共9种运动输入。无锚点组使用车间距离和本车运动，单点组再加入三车到同一个点的距离；各组按实际可用测量求解初始关系，同编号对比使用相同运动与测距噪声样本。
+ 
+ 20次重复用于观察固定轨迹下随机误差带来的离散程度，属于噪声蒙特卡洛分析。所有重复均进入统计，过程图固定采用重复试验1。仿真真值用于生成测量及事后评价，估计器接收带误差的运动和距离输入，输出不做真值配准或事后平滑。
++'''
++    s+=tab('仿真项目与分组',['试验目的','条件设置','条件数','重复次数'],[
++        ['比较运动输入质量','9档输入×仅传播/加入车间测距','18','每条件20次'],
++        ['比较单点位置','9档输入×5个候选位置，每次只有一个点','45','每条件20次'],
++        ['比较测距精度','中部单点下，9档输入×5/20厘米测距；10厘米归入上行','18','每条件20次'],
++        ['检验默认UWB队形','5/10/20厘米三档测距','3','每条件20次']])
++    s+='''以上共84种条件、1680次重复运行。另用三组无误差局部里程计输入检查RTE求解过程，单独说明首次有效时刻及位置跳变。输入质量、测距精度和布点的作用分别用表格及实际误差曲线对照。
+ 
+ ## 2 传感器分级与配置投入
+ 
+ ### 2.1 默认UWB方案
+ 
+-默认方案根据三条车间距离求解三角形，以201车为原点、201至202连线为正X轴，203位于Y轴正侧。该方案直接给出相对队形，适合车间距离、相对布局和编队显示。下表调用已有C++库，在各时刻规范队形坐标内与真值比较。
++默认方案根据三条车间距离求解三角形，以201车为原点、201至202连线为正X轴，203位于Y轴正侧。该方案直接给出相对队形，适合车间距离、相对布局和编队显示。下表调用项目C++库，在各时刻规范队形坐标内与真值比较。
+ 
+ '''
+     s+=tab('默认纯UWB队形仿真',['测距标准差（厘米）','RMSE均值±标准差（米）','RMSE范围（米）'],[
+@@ -84,7 +89,7 @@
+ 
+ ### 2.2 UWB与六轴MEMS
+ 
+-六轴MEMS输入包含加速度、角速度及启动校准后的残余误差。三档参数用于比较残余偏置、短时噪声、倾角误差和随时间变化的偏置影响，未将设备划为导航级或寻北配置。本轮不使用地球自转和磁场方向。
++六轴MEMS输入包含加速度、角速度及启动校准后的残余误差。三档参数用于比较残余偏置、短时噪声、倾角误差和随时间变化的偏置影响，按这些输入进行运动传播和车间测距更新。
+ 
+ '''
+     rows=[]
+@@ -117,17 +122,21 @@
+         s+=tab(title+'局部位移误差',['输入档位','尺度标准差（%）','方向漂移标准差（弧度/秒）','位置随机项（米/√米）'],[
+             [g,f'{PROFILES[kind+"_"+g]["scale_std"]*100:g}',f'{PROFILES[kind+"_"+g]["yaw_drift_std"]:g}',f'{PROFILES[kind+"_"+g]["displacement_noise"]:g}'] for g in GRADES])
+         s+=no_anchor_results(kind)+fig(title+'输入的无锚点对比','layout_'+kind+'_无锚点分级')
++        s+=f'{title}输入由基础改善到增强时，加入车间测距后的相对位置RMSE由{span(cases[kind+"_基础_no_anchor_peer"])}米变为{span(cases[kind+"_增强_no_anchor_peer"])}米；精细输入为{span(cases[kind+"_精细_no_anchor_peer"])}米。这组对比用于明确本车运动输出质量对连续相对定位的影响，为实车前端标定和选配提供参考。\n\n'
+     s+='''在固定轴向目标下，改善本车运动输入能够降低相对位置误差；具体收益同时取决于起步运动和初始坐标求解。仿真中的输出档位用于提出设备与前端要求，硬件配置概算按设备构成列示。
+ 
+-### 2.5 三车硬件配置概算
+-
+-下表按三车整套配置估算，包含UWB、相应运动传感器、计算与通信配套、电源防护及安装件，并计入配套选型和备件余量。金额以人民币万元计，用于配置方案比较；型号和采购价确定后按实际配置调整。各档不以器件价格直接保证相应仿真输出精度。
+-
+-'''
+-    s+=tab('三车硬件配置概算',['配置类别','硬件组成','配置概算（万元）'],[
+-        ['默认UWB','三车UWB及计算、通信与供电配套','2.4～3.8']]+[
+-        [label(p),'UWB＋'+{'imu':'六轴IMU','vio':'相机＋IMU','lio':'雷达＋IMU'}[p[:3]],f'{v[0]:g}～{v[1]:g}'] for p,v in PACKAGES.items() if p!='uwb'])
+-    s+='''相机、雷达及配套计算配置提高了硬件投入，同时为本车运动估计提供更丰富的观测。除提高本车输入质量外，还可增加一个已知位置UWB点，以较小的增量配置为三车共同提供距离参考。单点配套概算为0.5～1.2万元，包含UWB、供电防护及安装件；若装在已落地无人机上，沿用其平台，不另计飞行平台价格。该方案与无锚点方案按同一批运动输入直接对比。
++### 2.5 设备数量与费用比较
++
++本项目采用完整传感器盒，一套指一只完整盒，每车配置一只，三车合计三只。单盒采购价为人民币3万余元，包含已采用的传感器与盒端配套。费用以完整盒的实际成交价为基准，相机、雷达和IMU在盒内复用，按仿真输入档位比较算法结果时不重复购买盒内设备。
++
++'''
++    s+=tab('三车配置及单点增量费用',['方案','明确的设备数量','费用口径'],[
++        ['现有三车配置','3只完整传感器盒','单盒3万余元；总额为单盒成交价×3'],
++        ['三车加一个已知UWB点','3只车载盒＋1只同型完整盒','新增1只盒约3万余元；四只总额为单盒成交价×4'],
++        ['三车分别增加高配IMU','3只现有盒＋3只ADIS16495-2BMLZ','在三盒费用外，三只IMU采购预留共15万元']])
++    s+='''高配器件作为投入比较：ADIS16495-2BMLZ为六轴MEMS惯性器件，[公开含税参考单价](https://www.digikey.cn/zh/products/detail/analog-devices-inc/ADIS16495-2BMLZ/7931993)约4.72万元/只，三只按单只价格计算约14.17万元；按5万元/只留采购余量，三车合计预留15万元。价格来自DigiKey销售页，核对日期为2026年10月29日，具体采用以报价和安装适配为准。该器件用于说明逐车升级的投入规模，前述九档仿真仍按明确的输入误差条件评价。
++
++本方案优先使用已采用的传感器盒完成运动估计，再增加一个同型盒作为已知位置UWB点。这样只增加一只设备，就能为三车同时提供距离参考；相对于每车增加高配器件，设备数量和投入更集中。下一节用相同运动输入比较增加该点前后的误差，判断这项新增配置的实际作用。
+ 
+ ## 3 单锚点辅助与布置对比
+ 
+@@ -159,14 +168,14 @@
+     s+=tab('同输入条件下增加单点的结果',['运动输入','无锚点RMSE范围（米）','中部单点RMSE范围（米）','中部单点均值±标准差（米）'],[
+         [label(p),span(cases[p+'_no_anchor_peer']),span(cases[p+'_anchor_区域中部']),mean(cases[p+'_anchor_区域中部'])] for p in PROFILES])
+     options=[('vio_增强',False),('vio_精细',False),('vio_增强',True),('lio_增强',True)]
+-    s+=tab('输入条件、精度与配置投入',['配置方案','相对位置RMSE（米）','硬件概算（万元）'],[
++    s+=tab('输入条件、精度与设备数量',['仿真输入与方案','相对位置RMSE（米）','完整盒数量'],[
+         [label(p)+('＋中部单点' if use_point else '，无锚点'),span(cases[p+('_anchor_区域中部' if use_point else '_no_anchor_peer')]),
+-         f'{PACKAGES[p][0]+(ANCHOR_PACKAGE[0] if use_point else 0):g}～{PACKAGES[p][1]+(ANCHOR_PACKAGE[1] if use_point else 0):g}'] for p,use_point in options])
+-    s+='VIO增强加单点与VIO精细无锚点在本轮得到接近的误差范围，前者可采用较低一档本车运动输入，并增加共同距离参考。配置表给出两种实现路线的投入比较，实车以安装后的运动输入和测距结果确定选型。\n\n'
++         '三只车载盒＋一只单点盒' if use_point else '三只车载盒'] for p,use_point in options])
++    s+='VIO增强加单点与VIO精细无锚点得到接近的误差范围，说明增加共同距离参考能够降低对本车运动输入质量的要求。两种无点输入均复用三只现有盒，单点方案增加一只同型盒；输入档位的变化通过实车标定和前端输出质量核对。\n\n'
+     s+=fig('VIO输入的定位误差过程','layout_vio_逐时定位误差')+fig('LIO输入的定位误差过程','layout_lio_逐时定位误差')
+     s+='''过程图分别给出基础和增强输入下的定位误差，纵轴为202、203两车位置误差平方均值的平方根，保留每次距离更新后的波动。相对运动改变测量方向，本车运动漂移与测距更新在各时刻共同作用；图中的修正直接来自估计器计算，没有人工加入跳变。
+ 
+-单锚点提供了相对于固定点的距离约束，较低误差的运动输入可进一步改善相对位置。默认纯UWB以较少设备满足本轮相对形状目标；连续固定轴向位置可按本节结果选择运动输入及是否增加单点，不要求为相对形状目标配置高价惯导。
++单锚点提供了相对于固定点的距离约束，较低误差的运动输入可进一步改善相对位置。默认纯UWB使用现有盒内设备完成相对形状输出；连续固定轴向位置按本节结果选择运动输入及单点配置，结合设备数量和费用安排实车验证。
+ 
+ ### 3.4 同一个点放在哪里
+ 
+@@ -184,19 +193,21 @@
+     s+=fig('不同布点的20次误差分布','layout_布点误差分布')+fig('单点辅助估计与真值轨迹','layout_单点估计轨迹')
+     s+='''在本轮轨迹及等测距误差条件下，区域右侧的VIO/LIO增强结果优于区域中部；IMU输入下各位置的结果仍受惯性传播误差显著影响。起点侧方的轨迹最近处仅约0.24米，实车布设需按安全距离和天线安装位置调整。选点时结合行驶路线检查车锚距离、遮挡和起步几何，再按同一位置误差口径复测，仿真位置排序不替代现场测距结果。
+ 
+-### 3.5 测距精度变化与既有RTE对照
+-
+-此前单点对照进一步改变逐时测距标准差，固定链路偏差仍为3厘米。下表均为区域中部单点，保留全部20次结果。5厘米表示改善后的输入条件，10厘米为主对照，20厘米为较大误差条件。
++### 3.5 测距精度与RTE求解结果
++
++测距精度对比保持中部单点和运动输入不变，改变逐时测距标准差，固定链路偏差仍为3厘米。下表保留每个条件的全部20次结果，直接观察改善测距后位置误差的变化。
+ 
+ '''
+     s+=tab('单点方案的测距精度对照',['运动输入','20厘米测距RMSE（米）','10厘米测距RMSE（米）','5厘米测距RMSE（米）'],[
+         [label(p)]+[span(previous_cases[f'{p}_single_s{x:.2f}']) for x in SIGMAS] for p in PROFILES])
+     s+=fig('测距与运动输入质量的影响','single_20_传感器与测距精度')
+-    s+='''原RTE库保留既有300秒无误差局部里程计对照，以下为C++库实际输出，按2、5、10厘米测距噪声分别绘制，与本轮带误差运动模型区分。
+-
+-'''
+-    s+=fig('既有RTE逐车定位误差','16_RTE逐车定位误差')
+-    s+='''294.48秒时，原RTE窗口更新使203车位置变化约2.76米，位置误差由0.646米变为2.117米，而测距拟合残差约1.7厘米。代码重建表明，新窗口对相对变换约束较弱时直接更新变换，造成位置跳变。这里的厘米级残差描述距离拟合，位置误差仍由独立真值评价；本轮保留原输出和默认程序。
++    s+='''RTE求解测试采用300秒运动轨迹及仿真无误差局部里程计，分别加入2、5、10厘米测距噪声，用于观察测距误差对初次建系和后续位置修正的影响。下图直接读取C++算法输出，横轴均从仿真0秒开始，纵轴为逐车相对位置误差。
++
++'''
++    s+=fig('RTE逐车相对位置误差','replay_RTE逐车定位误差')
++    s+='''三组首次有效输出分别为127.20、215.52、216.24秒。出线前的灰色区间表示算法正在建立初始坐标关系：程序积累运动与测距，检查求解是否收敛，以及初始位置、方向是否得到足够约束。测距噪声改变了这些检查通过的时刻，因此三条曲线的出线位置不同。图中保留真实时刻，统一横轴便于直接比较建系所需时间和后续误差。
++
++2厘米组在294.48秒时，窗口更新使203车位置变化约2.76米，位置误差由0.646米变为2.117米，而测距拟合残差约1.7厘米。代码重建表明，新窗口对相对变换约束较弱时直接更新变换，造成位置跳变。厘米级残差描述距离拟合，位置误差由仿真真值直接计算。这组测试帮助确定初始关系检查及后续变换更新对位置输出的影响。
+ 
+ ## 4 实测数据与接口应用
+ 
+@@ -211,9 +222,11 @@
+ 
+ '''
+     s+=fig('主盒三目视觉采集画面','03_三路相机实拍')
++    s+=fig('主盒实测雷达点云','replay_主盒实测点云')
++    s+='点云图直接读取主盒/livox/lidar消息，累积225条消息，去除全零和非有限点后固定抽样绘制12万个点，分别给出俯视及侧视投影，颜色辅助区分点高。它展示采集场景的空间结构，与三目图像一起为后续实车视场检查、特征提取和安装标定提供数据。图中使用本盒雷达局部坐标。\n\n'
+     s+='''### 4.2 对外位置接口
+ 
+-默认UWB输出话题为/cooperative_localization/poses_2d，坐标系为coop_ref_1_relative，继续使用瞬时三角形定义。原RTE使用/cooperative_localization/rte/poses_2d，固定轴向相对坐标由已有转换程序输出。下表保留定位输入及输出，接收方按车辆编号、坐标系、测量时间与有效性使用位置。
++默认UWB输出话题为/cooperative_localization/poses_2d，坐标系为coop_ref_1_relative，采用瞬时三角形定义。RTE使用/cooperative_localization/rte/poses_2d，固定轴向相对坐标由坐标转换程序输出。下表给出定位输入及输出，接收方按车辆编号、坐标系、测量时间与有效性使用位置。
+ 
+ '''
+     h,rows=old_table(14);s+=tab('定位输入与输出',h,rows)
+@@ -231,7 +244,7 @@
+ 
+ ### 6.1 仿真与图表重算
+ 
+-前一批测距精度数据位于data/single_anchor_outdoor_20261029，本次无锚点和布点结果位于data/single_anchor_layout_20261029。各目录summary.json给出逐条件统计，蒙特卡洛分组统计.csv便于查表，outputs保存全部重复的逐时位置。新数据独立结果核对.json记录1260次RMSE复算及输入重放结果。
++测距精度数据位于data/single_anchor_outdoor_20261029，无锚点和布点数据位于data/single_anchor_layout_20261029。各目录summary.json给出逐条件统计，蒙特卡洛分组统计.csv便于查表，outputs保存全部重复的逐时位置。本版实验条件清单.json逐项列出报告采用的84个条件及输出文件；按对应输出能够复算全部1680次统计。
+ 
+ ```bash
+ PYTHONPATH=tools OPENBLAS_NUM_THREADS=1 python3 tools/evaluate_single_anchor.py --trials 20
+@@ -239,6 +252,9 @@
+ PYTHONPATH=tools python3 tools/check_anchor_layout.py
+ PYTHONPATH=tools python3 tools/plot_single_anchor.py
+ PYTHONPATH=tools python3 tools/plot_anchor_layout.py
++source /opt/ros/humble/setup.bash
++python3 tools/plot_report_replay.py --replay-rte
++python3 tools/check_report_results.py
+ ```
+ 
+ 手工修改本报告Markdown后，用以下命令更新其他格式；它们保留手工源稿：
+@@ -248,7 +264,7 @@
+ python3 tools/export_formal_pdf.py
+ ```
+ 
+-图1直接使用提供的原图；新结果图由保存的位置与真值通过绘图脚本生成，提供PNG、SVG及矢量PDF。SVG保留文字和图形对象，可用Inkscape修改，操作及原图保留说明见配套文件。
++图1直接使用提供的原图。误差图及统计表读取保存的算法输出与真值，点云读取原始消息，三目图像使用实际采集画面。图中文字由绘图程序按明确文字与字体排版；结果图提供PNG、SVG及矢量PDF。逐图数据和重算命令见配套复现说明，SVG可用Inkscape修改。
+ 
+ ### 6.2 阶段结论
+ 
+@@ -259,8 +275,20 @@
+     s+='''配置上可保留默认UWB满足相对队形使用，再根据连续运动与共同位置参考的需要选用相机/雷达与IMU组合，以及一个已知位置UWB点。三车硬件概算及单点增量配置已列示。后续按低速编队和同一评价口径采集实车动态数据，完成位置输出与通信、规划和控制的联调。
+ '''
+     (DEST/'报告图表顺序.json').write_text(json.dumps({'figures':figures,'table_titles':tables},ensure_ascii=False,indent=2)+'\n')
+-    budget=dict(unit='人民币万元',scope='三车硬件配置，含必要配套、防护安装件及余量；不列人力开发成本',basis='配置级概算，非厂商报价；输入档位不等同于器件采购等级',packages=PACKAGES,single_point_increment_wan=ANCHOR_PACKAGE)
++    budget=dict(unit='人民币元',scope='一套=一只完整传感器盒；三车=三只；增加单点按另配一只同型完整盒；不列人力开发成本',
++        complete_box_unit_price=dict(value=None,known_description='3万余元/只',basis='用户2026-10-29确认：一套是一只完整传感器盒',exact_transaction_price_pending=True),
++        configurations=[dict(name='三车现有配置',complete_box_count=3,total='实际单盒成交价×3'),dict(name='三车加一个已知UWB点',complete_box_count=4,increment='1只同型完整盒，3万余元',total='实际单盒成交价×4'),dict(name='三车增加高配IMU',complete_box_count=3,imu_model='ADIS16495-2BMLZ',imu_count=3,reference_unit_price_including_vat_yuan=IMU_REFERENCE_PRICE_YUAN,reference_extended_price_yuan=round(IMU_REFERENCE_PRICE_YUAN*3,2),reserved_unit_price_yuan=IMU_BUDGET_PER_UNIT_WAN*10000,reserved_extended_price_yuan=IMU_BUDGET_PER_UNIT_WAN*30000)],
++        reference_date='2026-10-29',public_price_source='https://www.digikey.cn/zh/products/detail/analog-devices-inc/ADIS16495-2BMLZ/7931993',manufacturer_model_source='https://www.analog.com/en/products/adis16495.html',sensor_model_scope='九档输入是误差模型条件，不声称该IMU已参与仿真或与某档逐项等同')
+     (DEST/'硬件配置概算.json').write_text(json.dumps(budget,ensure_ascii=False,indent=2)+'\n')
++    chosen=[dict(case,source_directory=str(OUT.relative_to(ROOT))) for case in summary['conditions']]
++    chosen.extend(dict(c,source_directory=str(INPUTS.relative_to(ROOT))) for c in previous['conditions']
++                  if c['profile']=='uwb' or (c['mode']=='single' and abs(c['range_sigma_m']-.1)>1e-8))
++    assert len(chosen)==84 and sum(len(c['trials']) for c in chosen)==1680
++    index=[]
++    for c in chosen:
++        a=arr(c);index.append(dict(name=c['name'],profile=c['profile'],mode=c['mode'],source_directory=c['source_directory'],
++            output_file=c['source_directory']+'/outputs/'+c['name']+'.npz',trials=len(a),mean_rmse_m=float(a.mean()),sample_std_rmse_m=float(a.std(ddof=1)),minimum_rmse_m=float(a.min()),maximum_rmse_m=float(a.max())))
++    (DEST/'本版实验条件清单.json').write_text(json.dumps(dict(conditions=84,trials=1680,rte_diagnostic_runs=3,conditions_index=index),ensure_ascii=False,indent=2)+'\n')
+     return s
+ 
+ 
+@@ -271,10 +299,10 @@
+ 
+ ## 数据与运行
+ 
+-- data/single_anchor_outdoor_20261029：84种条件×20次，原有测距精度对照。
+-- data/single_anchor_layout_20261029：63种条件×20次，新无锚点与5种单点布置对照；每次最多一个点。中部单点180次与前一批一致，不重复算作新增独立样本。
+-- 新批次首轮三转角初值结果保留在同目录子文件夹，当前正式统计采用扩大初值覆盖后的结果；输入测量保持相同。旧结果不作为新增独立噪声样本。
+-- summary.json、蒙特卡洛分组统计.csv及outputs分别用于查统计、查表和复核逐时位置；独立结果核对.json记录全部1260次复算和无点/单点输入重放。
++- 本版实验条件清单.json给出正文所用的84个条件、1680次输出文件和分组统计，不要求读者先了解历史版本。试验目的及条件构成见正文表1。
++- data/single_anchor_layout_20261029提供无锚点及五种单点位置的63个条件；data/single_anchor_outdoor_20261029提供另外18个5/20厘米测距条件及3个默认UWB条件。全部位置结果都保留在outputs中。
++- data/report_replay_20261029保存三组C++重新回放输出、首次有效时刻、点云绘图点及复现核对.json。C++输出逐字段比较时只排除随电脑负载变化的计算耗时列，位置、状态、时间及修正计数都核对。
++- 本次费用与图线说明修订不改变传感器仿真输出。图12的灰色区间为建系阶段，首次有效时刻127.20、215.52、216.24秒，横轴只在整图底部标注一次；没有补零或移动出线时刻。
+ 
+ ```bash
+ PYTHONPATH=tools OPENBLAS_NUM_THREADS=1 python3 tools/evaluate_single_anchor.py --trials 20
+@@ -283,6 +311,9 @@
+ PYTHONPATH=tools python3 -m unittest tools/test_single_anchor.py tools/test_anchor_layout.py
+ PYTHONPATH=tools python3 tools/plot_single_anchor.py
+ PYTHONPATH=tools python3 tools/plot_anchor_layout.py
++source /opt/ros/humble/setup.bash
++python3 tools/plot_report_replay.py --replay-rte
++python3 tools/check_report_results.py
+ PYTHONPATH=/tmp/cooperative_report_deps python3 tools/render_formal_report.py
+ python3 tools/export_formal_pdf.py
+ ```
+@@ -297,14 +328,28 @@
+ 
+ 参数来源核对与参考实现保留在参数来源_可观性_初始化核对.md、锚点布置参考与比较说明.md及data/single_anchor_outdoor_20261029/参数与可观性核对，不在客户正式正文列出外部项目。VIO/LIO采用显式位移输出模型；没有把模型结果写成已运行原始图像/点云前端的精度。
+ 
+-硬件配置概算.json仅保留三车配置概算和单点增量，包含配套、防护安装件和余量，不再列人日、算法研发或联调人工费用。它是配置级估计，不冒充已有型号的厂商报价。
++费用按用户确认的一套等于一只完整盒、单盒3万余元计。三车三只，单点再增加一只同型完整盒；总价分别为单盒成交价×3或×4。高配IMU比较使用ADIS16495-2BMLZ，公开含税单价47224.54元，采购预留5万元/只、三只15万元。数值与产品、来源、数量详见硬件配置概算.json和硬件费用依据核对.md。九档输入质量不逐档绑定采购价格；旧的无逐型号依据区间撤回。
++
++## 图线与数据对应
++
++| 图线或表格 | 输入与输出 | 重算命令（工程根目录） |
++|---|---|---|
++| 传感器分级、单点及布点统计 | 本版实验条件清单.json列出的84个输出；对应summary.json和outputs | python3 tools/check_report_results.py |
++| 无锚点、布点及定位误差图 | data/single_anchor_layout_20261029/outputs | python3 tools/plot_anchor_layout.py |
++| 测距精度影响图 | data/single_anchor_outdoor_20261029/outputs | python3 tools/plot_single_anchor.py |
++| RTE逐车误差图 | data/rte_expanded_20261025/exp_odometry_*_seed0.csv及.truth.csv，C++回放输出另存report_replay目录 | source /opt/ros/humble/setup.bash 后 python3 tools/plot_report_replay.py --replay-rte |
++| 主盒实测点云 | data/three_boxes_20260811_012046中201盒/livox/lidar原始消息 | 同上；225条消息，过滤全零/非有限点后按固定编号抽样绘制 |
++| 实测测距、位置及相对队形 | data/rte_accuracy_20261023/uwb_baseline_20261017的uwb_records.csv、pose_records.csv | python3 -c 'import tools.plot_sensor_anchor_v14 as p; p.measured_plots()'；使用PYTHONPATH=tools |
++| 三目采集画面 | data/camera_samples_analysis/video33_preview.png、video42_preview.png、video51_preview.png | 原始采集画面，未以仿真或生成图替代 |
++
++RTE的三组轨迹和带噪运动输入的融合仿真均由程序输出计算误差；VIO/LIO使用位移输出误差模型，不声称已经运行原始相机/雷达前端。点云图表示本机采集结构，不将它写成共同地图或定位融合结果。图中文字是代码中写明的文字，由字体排版，非生成式图片。
+ 
+ 每次修改前后对照、意见与版本记录分别保存在docs/报告改动前后对照记录.md、docs/报告编制与对外表述要求_持续记录.md和docs/报告内部版本记录.md。默认UWB、原RTE库和V1.3均按既有哈希核对保留。
+ '''
+     (DEST/'阅读与复现说明.md').write_text(text)
+-    questions=['三类输入的误差参数分别是什么，哪部分来自假设、哪部分对应实际采集？','默认UWB的瞬时队形轴和固定轴向运动定位有何用途区别？','无锚点初始化是否使用了任何车锚距离？','相同输入下加一个点，误差分别从多少变成多少？','为什么改善初始化初值覆盖，不能说成传感器精度提高？','五个候选点是否同时存在？每种位置的车锚距离是否都满足同样传播条件？','单点为什么不能直接给出地图朝向，采用的局部轴怎么定义？','为什么右侧在这条轨迹下优于中部，现场还需要检查什么？','1260与1680次有哪些重叠，20次重复具体改变了什么？','硬件概算包括哪些实物配置，是否对应已确定型号或报价？','VIO/LIO模型试验如何在安装后的实车输入上复测？','SVG能修改哪些对象，PNG是否能直接变成逐对象可编辑原稿？']
++    questions=['三类输入的误差参数分别是什么，哪部分来自假设、哪部分对应实际采集？','默认UWB的瞬时队形轴和固定轴向运动定位有何用途区别？','无锚点初始化是否使用了任何车锚距离？','相同输入下加一个点，误差分别从多少变成多少？','为什么改善初始化初值覆盖，不能说成传感器精度提高？','五个候选点是否同时存在？每种位置的车锚距离是否都满足同样传播条件？','单点为什么不能直接给出地图朝向，采用的局部轴怎么定义？','为什么右侧在这条轨迹下优于中部，现场还需要检查什么？','84种条件怎样组成，每种20次实际改变什么？','一套是几只盒，三车及加单点各多少只，费用依据是什么？','RTE三组曲线为什么从不同时刻出线，灰色区间表示什么？','实测点云从哪个话题读取，累积和抽样方式是什么？','VIO/LIO模型试验如何在安装后的实车输入上复测？','SVG能修改哪些对象，PNG是否能直接变成逐对象可编辑原稿？']
+     (DEST/'V1.4_报告理解核对问题.md').write_text('# 报告理解核对问题\n\n'+'\n'.join(f'{i+1}. {q}' for i,q in enumerate(questions))+'\n')
+-    for name in ['build_single_anchor_report.py','build_v14_report.py','evaluate_single_anchor.py','evaluate_anchor_layout.py','plot_anchor_layout.py','check_anchor_layout.py','test_anchor_layout.py','plot_single_anchor.py','plot_sensor_anchor_v14.py','check_single_anchor.py','test_single_anchor.py','audit_outdoor_assumptions.py','build_stage_report.py','render_formal_report.py','export_formal_pdf.py','report_plot_fonts.py']:
++    for name in ['build_single_anchor_report.py','build_v14_report.py','evaluate_single_anchor.py','evaluate_anchor_layout.py','plot_anchor_layout.py','plot_report_replay.py','check_report_results.py','check_anchor_layout.py','test_anchor_layout.py','plot_single_anchor.py','plot_sensor_anchor_v14.py','check_single_anchor.py','test_single_anchor.py','audit_outdoor_assumptions.py','build_stage_report.py','render_formal_report.py','export_formal_pdf.py','report_plot_fonts.py']:
+         shutil.copy2(ROOT/'tools'/name,DEST/'复现脚本'/name)
+ 
+ 
+--- docs/报告/20261028_协同定位V1.4/内部材料/20261029_结果说明与费用依据修订前/复现脚本/build_stage_report.py
++++ tools/build_stage_report.py
+@@ -430,7 +430,7 @@
+             m=re.match(r'!\[(.*?)\]\((.*?)\)',line)
+             picture=Path(path).parent/m.group(2)
+             im=Image.open(picture)
+-            scientific=picture.name.startswith(('05_','06_','07_','08_','09_','11_','12_','13_','14_','15_','16_','v14_'))
++            scientific=picture.name.startswith(('05_','06_','07_','08_','09_','11_','12_','13_','14_','15_','16_','v14_','replay_'))
+             width=min(15.6,(16.0 if scientific else 9.3)*im.width/im.height)
+             if picture.name=='04_三盒实测点云.png':
+                 doc.add_page_break(); width=15.7
+--- docs/报告/20261028_协同定位V1.4/内部材料/20261029_结果说明与费用依据修订前/复现脚本/plot_sensor_anchor_v14.py
++++ tools/plot_sensor_anchor_v14.py
+@@ -22,22 +22,23 @@
+ LABELS={}
+ 
+ 
+-def save(fig,name):
++def save(fig,name,shared_xlabel=None):
+     DEST.mkdir(parents=True,exist_ok=True)
+     for ax in fig.axes:
+         if not ax.axison:
+             continue
+-        if not ax.get_xlabel():ax.set_xlabel('仿真时间（秒）')
++        if not ax.get_xlabel() and not shared_xlabel:ax.set_xlabel('仿真时间（秒）')
+         if not ax.get_ylabel():
+             shared={other.get_ylabel() for other in fig.axes if other.get_ylabel()}
+             if len(shared)==1:ax.set_ylabel(next(iter(shared)))
+-        assert ax.get_xlabel() and ax.get_ylabel(),f'{name}存在未标注坐标轴'
++        assert (ax.get_xlabel() or shared_xlabel) and ax.get_ylabel(),f'{name}存在未标注坐标轴'
+         ax.xaxis.label.set_size(14);ax.yaxis.label.set_size(14);ax.title.set_fontsize(14)
+         ax.tick_params(labelsize=12)
+         if ax.get_legend():
+             for item in ax.get_legend().get_texts():item.set_fontsize(11)
+         ax.grid(alpha=.2)
+-    LABELS[name]=[{'横轴':ax.get_xlabel(),'纵轴':ax.get_ylabel(),'标题':ax.get_title()} for ax in fig.axes]
++    LABELS[name]=[{'横轴':ax.get_xlabel() or shared_xlabel,'纵轴':ax.get_ylabel(),'标题':ax.get_title()} for ax in fig.axes]
++    if shared_xlabel:fig.supxlabel(shared_xlabel,fontsize=14)
+     numeric_ticks(fig)
+     fig.tight_layout()
+     fig.savefig(DEST/(name+'.png'),dpi=360,bbox_inches='tight')
+--- docs/报告/20261028_协同定位V1.4/内部材料/20261029_结果说明与费用依据修订前/复现脚本/plot_report_replay.py
++++ tools/plot_report_replay.py
+@@ -0,0 +1,67 @@
++#!/usr/bin/env python3
++"""重放真实C++输出、标出首次有效时刻，并从原始雷达包绘图。"""
++import argparse
++import hashlib
++import json
++import subprocess
++from pathlib import Path
++
++import numpy as np
++import matplotlib
++matplotlib.use('Agg')
++import matplotlib.pyplot as plt
++from evaluate_rte import ROOT
++import plot_sensor_anchor_v14 as drawing
++
++OUT=ROOT/'data/report_replay_20261029'
++DEST=ROOT/'docs/报告/20261028_协同定位V1.4/figures'
++DATA=ROOT/'data/rte_expanded_20261025'
++
++
++def main():
++    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--replay-rte',action='store_true');args=parser.parse_args()
++    OUT.mkdir(exist_ok=True);drawing.DEST=DEST;records={};hashes={};starts=[]
++    fig,axes=plt.subplots(3,1,figsize=(11,9),sharex=True)
++    for ax,sigma in zip(axes,(.02,.05,.1)):
++        name=f'exp_odometry_{sigma:.2f}_seed0';source=DATA/f'{name}.csv';old=DATA/f'{name}_output.csv';output=OUT/f'{name}_output.csv'
++        if args.replay_rte:
++            subprocess.run([str(ROOT/'build_rte_verify/evaluate_rte'),str(source),str(output)],check=True)
++        used_replay=output.exists()
++        if used_replay:
++            a=np.genfromtxt(output,delimiter=',',names=True);previous=np.genfromtxt(old,delimiter=',',names=True)
++            assert a.shape==previous.shape
++            for field in a.dtype.names:
++                if field!='solve_ms':np.testing.assert_allclose(a[field],previous[field],rtol=1e-11,atol=1e-10,equal_nan=True,err_msg=field)
++        else:a=np.genfromtxt(old,delimiter=',',names=True)
++        a=a[a['elapsed_s']<=300];truth=np.genfromtxt(DATA/f'{name}.truth.csv',delimiter=',',names=True)
++        valid=a['status']==1;first=float(a['elapsed_s'][valid][0]);starts.append(first);errors=[]
++        for n,color in zip((2,3),drawing.C):
++            error=np.hypot(a[f'x_{n}']-np.interp(a['state_timestamp_ns'],truth['timestamp_ns'],truth[f'x_{n}']),a[f'y_{n}']-np.interp(a['state_timestamp_ns'],truth['timestamp_ns'],truth[f'y_{n}']))
++            ax.plot(a['elapsed_s'],np.where(valid,error,np.nan),color=color,lw=.9,label=f'{200+n}车相对位置误差');errors.append(error[valid])
++        ax.axhline(1,color='#a3483c',ls='--',lw=.8,label='1米参考线');ax.axvspan(0,first,color='#ddd',alpha=.35)
++        ax.axvline(first,color='#777',ls=':',lw=.8);ax.text(.015,.71,f'灰色：建立初始坐标关系\n首次有效输出：{first:.2f}秒',transform=ax.transAxes,fontsize=11)
++        ax.set(ylabel='位置误差（米）',title=f'测距误差标准差{sigma*100:g}厘米',xlim=(0,300));ax.legend(ncol=3,loc='upper right')
++        records[name]=dict(first_valid_s=first,position_rmse_m=float(np.sqrt(np.mean(np.square(errors)))),source=str(source.relative_to(ROOT)),saved_output=str(old.relative_to(ROOT)),replayed_output=str(output.relative_to(ROOT)) if args.replay_rte else None,
++            replay_all_fields_except_elapsed_compute_time_identical=used_replay,blank_interval='算法尚未给出有效位置，未补零、插值或平移时间轴')
++        for f in (source,old,DATA/f'{name}.truth.csv'):
++            hashes[str(f.relative_to(ROOT))]=hashlib.sha256(f.read_bytes()).hexdigest()
++    np.testing.assert_allclose(starts,[127.2,215.52,216.24],atol=1e-9)
++    fig.suptitle('RTE逐车相对位置误差：仿真无误差局部里程计，重复试验1',fontsize=14)
++    drawing.save(fig,'replay_RTE逐车定位误差',shared_xlabel='仿真时间（秒，三组均从0秒开始）')
++    # 复用现有只读CDR解码与窗口选择，直接读取原始/livox/lidar消息。
++    from visualize_livox_bags import load_box
++    cloud_root=ROOT/'data/three_boxes_20260811_012046';cloud=load_box(cloud_root,'201',True);points=cloud['points']
++    np.savez_compressed(OUT/'主盒雷达绘图点.npz',xyz_intensity=points)
++    fig,axes=plt.subplots(1,2,figsize=(11,5))
++    for ax,column,title in zip(axes,(1,2),('俯视图','侧视图')):
++        ax.scatter(points[:,0],points[:,column],s=.2,c=points[:,2],cmap='viridis',rasterized=True)
++        ax.set(xlabel='雷达局部X（米）',ylabel='雷达局部'+('Y' if column==1 else 'Z')+'（米）',title=title,aspect='equal')
++    drawing.save(fig,'replay_主盒实测点云')
++    bag=next(cloud_root.glob('uwb_imu_livox_v201_*/livox/livox_0.db3'));hashes[str(bag.relative_to(ROOT))]=hashlib.sha256(bag.read_bytes()).hexdigest()
++    result=dict(date='2026-10-29',rte=records,lidar=dict(topic='/livox/lidar',coordinate='201盒本机雷达坐标，未做跨盒配准或地图重建',input=str(bag.relative_to(ROOT)),message_window=[cloud['lo'],cloud['hi']-1],selected_messages=cloud['selected_frames'],plotted_points=len(points),filter='仅去除非有限及全零点，超过120000点时按固定编号抽样',point_array_sha256=hashlib.sha256(points.tobytes()).hexdigest()),input_hashes=hashes)
++    (OUT/'复现核对.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
++    (OUT/'图线坐标说明.json').write_text(json.dumps(drawing.LABELS,ensure_ascii=False,indent=2)+'\n')
++    print(json.dumps(result,ensure_ascii=False,indent=2))
++
++
++if __name__=='__main__':main()
+--- docs/报告/20261028_协同定位V1.4/内部材料/20261029_结果说明与费用依据修订前/复现脚本/check_report_results.py
++++ tools/check_report_results.py
+@@ -0,0 +1,50 @@
++#!/usr/bin/env python3
++"""按本版条件清单复算正文全部1680次位置RMSE与分组统计。"""
++import json
++import csv
++from pathlib import Path
++import numpy as np
++from evaluate_rte import ROOT
++
++REPORT=ROOT/'docs/报告/20261028_协同定位V1.4'
++OUT=ROOT/'data/report_replay_20261029'
++
++
++def main():
++    index=json.loads((REPORT/'本版实验条件清单.json').read_text());count=0;rows=[];seen=set()
++    assert len(index['conditions_index'])==84
++    for case in index['conditions_index']:
++        assert case['output_file'] not in seen;seen.add(case['output_file'])
++        output=np.load(ROOT/case['output_file']);p=output['position'][:,600:]
++        if 'truth' in output:q=output['truth']
++        else:q=np.load(ROOT/case['source_directory']/'truth_and_range_inputs.npz')['truth']
++        if case['profile']=='uwb':
++            q2=q[:,1]-q[:,0];q3=q[:,2]-q[:,0];length=np.linalg.norm(q2,axis=-1);canonical=np.zeros_like(q)
++            canonical[:,1,0]=length;canonical[:,2,0]=np.sum(q2*q3,axis=-1)/length
++            canonical[:,2,1]=np.abs(q2[:,0]*q3[:,1]-q2[:,1]*q3[:,0])/length;q=canonical
++        e=(p[:,:,1:]-p[:,:,:1])-(q[None,600:,1:]-q[None,600:,:1]);value=np.sqrt(np.mean(np.sum(e**2,axis=-1),axis=(1,2)))
++        assert len(value)==20
++        got=(value.mean(),value.std(ddof=1),value.min(),value.max());want=tuple(case[k] for k in ('mean_rmse_m','sample_std_rmse_m','minimum_rmse_m','maximum_rmse_m'))
++        np.testing.assert_allclose(got,want,atol=1e-10,rtol=1e-10)
++        source=json.loads((ROOT/case['source_directory']/'summary.json').read_text())
++        original=next(c for c in source['conditions'] if c['name']==case['name'])
++        np.testing.assert_allclose(value,[r['position_rmse_m'] for r in original['trials']],atol=1e-10,rtol=1e-10)
++        for n,v in enumerate(value,1):rows.append([case['name'],n,float(v),case['output_file']])
++        count+=len(value)
++    assert count==index['trials']==1680
++    replay=json.loads((OUT/'复现核对.json').read_text())
++    assert all(c['replay_all_fields_except_elapsed_compute_time_identical'] for c in replay['rte'].values())
++    np.testing.assert_allclose([c['first_valid_s'] for c in replay['rte'].values()],[127.2,215.52,216.24],atol=1e-9)
++    assert replay['lidar']['selected_messages']==225 and replay['lidar']['plotted_points']==120000
++    budget=json.loads((REPORT/'硬件配置概算.json').read_text());a,b,c=budget['configurations']
++    assert a['complete_box_count']==3 and b['complete_box_count']==4 and c['imu_count']==3
++    assert round(c['reference_unit_price_including_vat_yuan']*3,2)==c['reference_extended_price_yuan']
++    with (OUT/'本版1680次误差复算.csv').open('w',newline='') as stream:
++        writer=csv.writer(stream);writer.writerow(['条件','重复试验序号','复算RMSE_米','逐时输出文件']);writer.writerows(rows)
++    result=dict(conditions_recomputed=84,trials_recomputed=count,trials_per_condition=20,all_reported_group_statistics_match_saved_outputs=True,
++        actual_cpp_replays=3,cpp_all_fields_except_computation_duration_match=True,rte_first_valid_seconds=[127.2,215.52,216.24],
++        lidar_messages=225,lidar_points_drawn=120000,budget_counts_and_reference_arithmetic_verified=True,simulation_outputs_modified=False)
++    (OUT/'本版结果复算.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n');print(json.dumps(result,ensure_ascii=False,indent=2))
++
++
++if __name__=='__main__':main()
+--- docs/报告/20261028_协同定位V1.4/内部材料/20261029_结果说明与费用依据修订前/复现脚本/plot_single_anchor.py
++++ tools/plot_single_anchor.py
+@@ -133,14 +133,6 @@
+     axes[0].scatter(*anchor,marker='*',s=120,color='#222');axes[0].set(xlabel='外部场地X（米）',ylabel='外部场地Y（米）',title='不同整体方位，共用同一个点',aspect='equal');axes[0].legend(ncol=2,fontsize=9)
+     axes[1].plot(proof['time_s'],np.max(np.abs(proof['range_difference']),axis=1),color=C[0]);axes[1].set(xlabel='仿真时间（秒）',ylabel='六条距离最大差值（米）',title='整体旋转前后的测距相同')
+     finish(fig,'outdoor_整体旋转不变性',['参数与可观性核对/整体旋转不变性.npz'])
+-    budget=json.loads((OUT/'成本预算.json').read_text());fig,ax=plt.subplots(figsize=(11,6.5))
+-    for row in budget['combinations']:
+-        if row['profile']=='uwb':continue
+-        values=[r['position_rmse_m'] for r in cases[f'{row["profile"]}_single_s0.10']['trials']];cost=np.array(row['total_wan']);median=np.median(values);color=C[('imu','vio','lio').index(PROFILES[row['profile']]['kind'])]
+-        ax.errorbar(cost.mean(),median,xerr=[[cost.mean()-cost[0]],[cost[1]-cost.mean()]],yerr=[[median-min(values)],[max(values)-median]],fmt='o',color=color,capsize=3)
+-        ax.annotate(row['profile'].replace('_',' '),(cost.mean(),median),xytext=(5,5),textcoords='offset points',fontsize=10)
+-    ax.set(xlabel='三车硬件、算法与联调总预算（万元）',ylabel='相对位置RMSE（米）',title='预算对应的假设输入条件：10厘米测距、单锚点');ax.set_yscale('log')
+-    finish(fig,'single_26_预算与仿真精度',['成本预算.json','summary.json'])
+     (DEST.parent/'单锚点图线来源.json').write_text(json.dumps(TRACES,ensure_ascii=False,indent=2)+'\n')
+     axis_file=DEST.parent/'图线坐标轴清单.json'
+     previous=json.loads(axis_file.read_text()) if axis_file.exists() else {}
+--- docs/报告/20261028_协同定位V1.4/内部材料/20261029_结果说明与费用依据修订前/报告编制与对外表述要求_持续记录.md
++++ docs/报告编制与对外表述要求_持续记录.md
+@@ -247,3 +247,17 @@
+ 8. 比较前检查算法求解是否公平。初始化候选不足产生的大误差应修正并以相同输入复跑，不能用来夸大加点或提高硬件档位的效果；同样本重跑和跨批次重叠结果分别计数。
+ 
+ 这些意见要求报告沿真实工程问题展开：先说明现有设备能做到什么，提高输入质量需要怎样配置，再分析一个已知点带来的额外信息及投入。布局、篇幅和术语应帮助读者理解配置与结果，不以引用名称、费用拆分或预设结论代替实际工作。
++
++## 2026-10-29　当前试验说明、产品费用依据与图线起点
++
++1. 正式报告直接说明现在采用的设备、试验条件、方法和结果，不要求读者了解历次修改。新增多少、保留多少、跨批重复和去重计算放到内部记录；正文按当前采用的条件统一列示，本版用84个条件、每条件20次的清单直接核对1680次统计。
++2. 所有结果曲线、表格及实测图都给出输入文件、实际程序和复现命令。误差曲线由实际估计输出与真值计算；VIO/LIO位移输出模型、原始前端运行、实测采集和坐标示意分别准确称呼，不用“都是真实图”代替说明。
++3. 用户已确认一套指一只完整传感器盒，单盒3万余元。三车使用三只；按同型完整盒增加单点时再增加一只，共四只。单个UWB模块、裸惯性器件、完整盒和三车系统不可混为同一计价单位。
++4. 撤回未按产品型号、数量及价格来源核对的概算区间。费用从已采用产品的实际价格出发；可对比有公开产品与报价依据的高配方案，留明确采购余量，不将仿真输入档位强行对应器件价位，不虚构换硬件就能达到某个误差。
++5. 可以从成本及配置数量分析为何优先现有设备加一个已知点。高配传感器作为可选采购比较时，说明具体型号、单只参考价、数量和合计，是否参与本轮试验准确区分。当前高配IMU示例为ADIS16495-2BMLZ，公开单只含税价约4.72万元，三只约14.17万元，采购预留5万元/只、三只15万元。
++6. 多子图采用相同横轴定义时，可在整图底部统一标注一次。文字以绘图代码中明确写入的文字和真实字体排版，保留SVG文本，不使用生成式图像补字。共同横轴按同一时间起点绘制，不能为了好看平移曲线。
++7. 对曲线起点不一致直接给出原因及实际时刻。当前RTE三组从同一0秒开始仿真，127.20、215.52、216.24秒分别出现有效输出，之前为积累运动和检查初始坐标关系的阶段；图内标出灰色区间，正文就近解释，不补零、插值或隐藏时段。
++8. 图像与点云可一同展示传感器采集成果。点云来自原始/livox/lidar消息，说明本机坐标、累积窗口及抽样；用途是查看空间结构并为实车视场、特征提取和标定提供输入，按已完成的数据处理准确表述。
++9. 每一组试验围绕具体问题讲清楚：为什么比较这些条件，用了什么输入和方法，结果从多少变为多少，说明什么，能为后续哪项具体工作提供依据。说明紧接统计与图，不用抽象名词、版本流水账或笼统评价代替结果。
++
++这些意见要求读者不看开发历史、不读代码也能理解报告，同时每个数字又能沿具体文件和命令核查。采购成本与算法条件各自有依据，不能借一组缺少价格依据的区间制造方案优势；图线的出线时刻和波动是实际结果的一部分，应清楚解释。
+--- docs/报告/20261028_协同定位V1.4/内部材料/20261029_结果说明与费用依据修订前/00_文档索引与使用顺序.md
++++ docs/00_文档索引与使用顺序.md
+@@ -17,8 +17,8 @@
+ 
+ ## 当前状态、接口和待办
+ 
+-- [V1.4设备分级与单锚点仿真报告](报告/20261028_协同定位V1.4/多平台协同定位硬件仿真测试报告与联调方案_V1.4_设备分级与锚点仿真版.md)：先列无锚点传感器分级与硬件概算，再列一个已知位置UWB点及5种候选布置；新增63种条件1260次，附Word/PDF、[SVG修改说明](报告/20261028_协同定位V1.4/SVG修改说明.md)及[理解核对问题](报告/20261028_协同定位V1.4/V1.4_报告理解核对问题.md)。[V1.3](报告/20261023_协同定位阶段报告/多平台协同定位硬件仿真测试报告与联调方案_V1.3_正式报告版.md)保留；版本历史见[内部版本记录](报告内部版本记录.md)。
+-- 仿真数据：`data/single_anchor_layout_20261029/`为最新无锚点及五种单点位置对照，1260次完整输出与逐次CSV；`data/single_anchor_outdoor_20261029/`为此前1680次测距精度对照及参数核对。两批中部单点180次重叠，2760个不重复的条件—重复试验组合。旧简化模型和多基站结果留存历史，不作为当前单点配置。坐标说明入口为[坐标说明页面](visualization/rte_coordinates.html)，单点仿真采用独立固定局部坐标。
++- [V1.4设备分级与单锚点仿真报告](报告/20261028_协同定位V1.4/多平台协同定位硬件仿真测试报告与联调方案_V1.4_设备分级与锚点仿真版.md)：按当前84个条件1680次统计说明传感器输入、单点及五种位置比较，RTE图标明首次有效时刻；费用明确一套一只完整盒，三车三只、加单点共四只，附产品费用依据、点云和Word/PDF。[复现步骤](报告/20261028_协同定位V1.4/阅读与复现说明.md)及[理解核对问题](报告/20261028_协同定位V1.4/V1.4_报告理解核对问题.md)。[V1.3](报告/20261023_协同定位阶段报告/多平台协同定位硬件仿真测试报告与联调方案_V1.3_正式报告版.md)保留；版本历史见[内部版本记录](报告内部版本记录.md)。
++- 仿真数据：本版实验条件清单.json逐项对应`data/single_anchor_layout_20261029/`中的63个条件和`data/single_anchor_outdoor_20261029/`中的21个条件；每个20次，共1680次。`data/report_replay_20261029/`保存本版统计复算、三组C++重新回放和原始点云绘图记录。历史批次仍保留内部对照。坐标说明入口为[坐标说明页面](visualization/rte_coordinates.html)。
+ - [报告编制与对外表述要求_持续记录.md](报告编制与对外表述要求_持续记录.md)：报告写作、术语首次定义、实测/仿真区分、图表证据和后续意见记录。
+ - [报告改动前后对照记录.md](报告改动前后对照记录.md)：逐次记录报告及生成脚本的具体位置、改动前内容、改动后内容、修改原因和生成验证结果。
+ - [40_上交盒端与浙大算法当前进度及已有能力.md](40_上交盒端与浙大算法当前进度及已有能力.md)：两边当前能力边界、问题和待办。

@@ -1,0 +1,632 @@
+[
+  {
+    "file": "data/joint_time_20261016_125027/joint_time_20261016_125027_imu_rec_v1/joint_time_20261016_125027_imu_rec_v1_0.db3",
+    "bytes": 70500352,
+    "sha256": "6a5682b6dc49a753a355df5c307f525f84ba37870bfe30528f7bdc38a5dec62f"
+  },
+  {
+    "file": "data/joint_time_20261016_125027/joint_time_20261016_125027_imu_rec_v2/joint_time_20261016_125027_imu_rec_v2_0.db3",
+    "bytes": 70516736,
+    "sha256": "c8b157d6f6e99b93b11975ed7a988d8dbd66d52d4063aafc8328c1fa02cd3220"
+  },
+  {
+    "file": "data/joint_time_20261016_125027/joint_time_20261016_125027_imu_rec_v3/joint_time_20261016_125027_imu_rec_v3_0.db3",
+    "bytes": 70500352,
+    "sha256": "c848b7f6e6b1d692db5778af4735a4524f834a5b5da7a5f796c487c3aa84916d"
+  },
+  {
+    "file": "data/joint_time_20261016_125027/joint_time_20261016_125027_uwb_rec_v1/joint_time_20261016_125027_uwb_rec_v1_0.db3",
+    "bytes": 610304,
+    "sha256": "d5f97b7412c824961315fa2a0e5d13e1f997f13122767f7bfc9df73321122241"
+  },
+  {
+    "file": "data/joint_time_20261016_134950/joint_time_20261016_134950_imu_rec_v1/joint_time_20261016_134950_imu_rec_v1_0.db3",
+    "bytes": 70541312,
+    "sha256": "79bf0c20c12ed207c305f1197f573b963286006b0a93ed991735e9423b1e6fe7"
+  },
+  {
+    "file": "data/joint_time_20261016_134950/joint_time_20261016_134950_imu_rec_v2/joint_time_20261016_134950_imu_rec_v2_0.db3",
+    "bytes": 70459392,
+    "sha256": "783e97060fdd4faf44cbd44f4fa72b78307453c6fb64d3e4ac1730681227edff"
+  },
+  {
+    "file": "data/joint_time_20261016_134950/joint_time_20261016_134950_imu_rec_v3/joint_time_20261016_134950_imu_rec_v3_0.db3",
+    "bytes": 70541312,
+    "sha256": "47417f3909e6b88b9c4ec1bf66c2c406dd89bf590648dabc2d29edc76bf3c547"
+  },
+  {
+    "file": "data/joint_time_20261016_134950/joint_time_20261016_134950_uwb_rec_v1/joint_time_20261016_134950_uwb_rec_v1_0.db3",
+    "bytes": 610304,
+    "sha256": "2297bdf64f8024f2c63f1e564d1edddc5c9c71598d025b04e0dc56c000ab622e"
+  },
+  {
+    "file": "data/joint_time_20261016_150956/joint_time_20261016_150956_imu_rec_v1/joint_time_20261016_150956_imu_rec_v1_0.db3",
+    "bytes": 70537216,
+    "sha256": "afe1f50edc0837f2fe084f27eed670fdb25edf7a2d66da040ca080bb33d3bb46"
+  },
+  {
+    "file": "data/joint_time_20261016_150956/joint_time_20261016_150956_imu_rec_v2/joint_time_20261016_150956_imu_rec_v2_0.db3",
+    "bytes": 70459392,
+    "sha256": "5100fbe63b4b1cf05f14e700c6f7b4c0b66eec572d40c4ba045432e669bc4ffe"
+  },
+  {
+    "file": "data/joint_time_20261016_150956/joint_time_20261016_150956_imu_rec_v3/joint_time_20261016_150956_imu_rec_v3_0.db3",
+    "bytes": 70467584,
+    "sha256": "ea586ac2b810ab7999bcf516a83d3ec665adc57a41022fdf74f1987bb502f826"
+  },
+  {
+    "file": "data/joint_time_20261016_150956/joint_time_20261016_150956_uwb_rec_v1/joint_time_20261016_150956_uwb_rec_v1_0.db3",
+    "bytes": 925696,
+    "sha256": "e74676cafd168377dea8c5a9bf14029718bee11a49fe0d37e560697d6c64ef31"
+  },
+  {
+    "file": "data/joint_time_20261017_151037/joint_time_20261017_151037_imu_rec_v1/joint_time_20261017_151037_imu_rec_v1_0.db3",
+    "bytes": 70537216,
+    "sha256": "4e8e5130efc1609f0450d7c08881bbf08db4665b835b11584f685cca7d26d715"
+  },
+  {
+    "file": "data/joint_time_20261017_151037/joint_time_20261017_151037_imu_rec_v2/joint_time_20261017_151037_imu_rec_v2_0.db3",
+    "bytes": 70389760,
+    "sha256": "9e3a464b743f8ef7a7db032447b3e7dff7baafd47f6a8531d50f98e960016e50"
+  },
+  {
+    "file": "data/joint_time_20261017_151037/joint_time_20261017_151037_imu_rec_v3/joint_time_20261017_151037_imu_rec_v3_0.db3",
+    "bytes": 70488064,
+    "sha256": "0673b8384d8e741c2d73f0a856cff459f64081ce5239efa2402b307cb563f891"
+  },
+  {
+    "file": "data/joint_time_20261017_151037/joint_time_20261017_151037_uwb_rec_v1/joint_time_20261017_151037_uwb_rec_v1_0.db3",
+    "bytes": 1204224,
+    "sha256": "8912965cf3dd7d9a6df9a64dd47587a8cf283e02eefe7711f1c6d229ffe2fd4c"
+  },
+  {
+    "file": "data/three_boxes_20260811_054640/uwb_imu_livox_v201_20260811_054640/imu/imu_0.db3",
+    "bytes": 70709248,
+    "sha256": "b17d3282a542c6621576934b87bd6f99eb13895339414479d578384b2ecac146"
+  },
+  {
+    "file": "data/three_boxes_20260811_054640/uwb_imu_livox_v201_20260811_054640/uwb/uwb_0.db3",
+    "bytes": 811008,
+    "sha256": "dd13ad579c5435c067b6121337d27750f3be636f7a6c197b6747d55ee57e3954"
+  },
+  {
+    "file": "data/three_boxes_20260811_054640/uwb_imu_livox_v202_20260811_054640/imu/imu_0.db3",
+    "bytes": 70537216,
+    "sha256": "ce1e2c507415ec28d425e12f6fca148a54c87af7a79b9ea756affb7e3da99f99"
+  },
+  {
+    "file": "data/three_boxes_20260811_054640/uwb_imu_livox_v203_20260811_054640/imu/imu_0.db3",
+    "bytes": 70537216,
+    "sha256": "a8b5139d39e21a7d334bebf1361ff09cef1ee7dd246cfa50341d289538706694"
+  },
+  {
+    "file": "data/three_boxes_20260811_060745/uwb_imu_livox_v201_20260811_060745/imu/imu_0.db3",
+    "bytes": 70463488,
+    "sha256": "e4bfaad3c725f922f28f5bec5d77241f934025311906a4924fa64ceff33d6eb1"
+  },
+  {
+    "file": "data/three_boxes_20260811_060745/uwb_imu_livox_v201_20260811_060745/uwb/uwb_0.db3",
+    "bytes": 692224,
+    "sha256": "606a9cbcf855e5c9d6efaa216de2ded97d56c5aa35675a84c85b6609e79aa536"
+  },
+  {
+    "file": "data/three_boxes_20260811_060745/uwb_imu_livox_v202_20260811_060745/imu/imu_0.db3",
+    "bytes": 69574656,
+    "sha256": "1a85817d95ea1ba482f2110369b9d5b6fd19b38f729a82a8702af8796cad68c7"
+  },
+  {
+    "file": "data/three_boxes_20260811_060745/uwb_imu_livox_v203_20260811_060745/imu/imu_0.db3",
+    "bytes": 70483968,
+    "sha256": "9ebe51670e30f2377037ca564dac1d99e4787d028edb58daff6ff4c6a2071fde"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_基础_no_anchor_start.npz",
+    "bytes": 2343077,
+    "sha256": "e9fa34eb7c8baaca7d607e590e9f086b55478c0a9daea18bb9eaef04ba23abe5",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_基础_no_anchor_peer.npz",
+    "bytes": 3712094,
+    "sha256": "77a0e0053e675fba4b336ddf1247001ccd5df3f805be4872ee7eb9d6f710af26",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_基础_anchor_区域中部.npz",
+    "bytes": 3717268,
+    "sha256": "6a071c3cd6fd67bca9ba7a928b760935e71b622991ed450ee429dfa13e36d1dc",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_基础_anchor_起点侧方.npz",
+    "bytes": 3735865,
+    "sha256": "be98fc0b53d28bf533070c2ef40342f8256a520c2e9461af384bd2b1c3424578",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_基础_anchor_区域左侧.npz",
+    "bytes": 3717026,
+    "sha256": "34ab197d8d7eaff1f13803730f44ae0647b303a5690a2ae879654dfc406663c7",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_基础_anchor_区域右侧.npz",
+    "bytes": 3713512,
+    "sha256": "327ebf14de2ad8b740b410ba15c84c46a502af1133f93eefbf1b3404475c697c",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_基础_anchor_区域角部.npz",
+    "bytes": 3737863,
+    "sha256": "c841d03d030d1e64da11818f9c2f762c9a57f4acdf60377af80f080276a242a3",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_增强_no_anchor_start.npz",
+    "bytes": 2347631,
+    "sha256": "0c06cea237f9d1bdb7d4403e56361bb312883c0dee74430e4dc8097b4e96ef1b",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_增强_no_anchor_peer.npz",
+    "bytes": 3717745,
+    "sha256": "9815ea3a1c0836253cc1a6eaefa4c505f7956c21fd54d817b8c55497320a10d8",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_增强_anchor_区域中部.npz",
+    "bytes": 3698405,
+    "sha256": "f468618a1bff8269dd566df91bfddde6fe424fe23ec85fb43ab312761a457a27",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_增强_anchor_起点侧方.npz",
+    "bytes": 3745652,
+    "sha256": "f51c66c6f89eb76814e7895ca1fafcb1598cf464fad8690c904763b174efafe3",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_增强_anchor_区域左侧.npz",
+    "bytes": 3674711,
+    "sha256": "22235c51e6ba8c66482e324b35aed751f4f3c76be95b4f3cbf1b06be29fa456f",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_增强_anchor_区域右侧.npz",
+    "bytes": 3690055,
+    "sha256": "428f09d8e8b4535a99b631aa045285893804b091cf0d7ebdde14162d1ff3e896",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_增强_anchor_区域角部.npz",
+    "bytes": 3750887,
+    "sha256": "90663243655b4b02c893188f93202db93204984dff169ea533d6197b4b434421",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_精细_no_anchor_start.npz",
+    "bytes": 2329822,
+    "sha256": "8add4e12370449b76c6c129595f8b116540c7142df0148b1997f75d23f38732a",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_精细_no_anchor_peer.npz",
+    "bytes": 3690548,
+    "sha256": "222c4bd99d8ebfdf38a4884d1c4b2bbacc64ba90d187e5c8045eb4c57934a19a",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_精细_anchor_区域中部.npz",
+    "bytes": 3663979,
+    "sha256": "d1bf1f6c408b97bc5550f9f3369e1fa8eebdb79bedf78ae74605e1eceba60740",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_精细_anchor_起点侧方.npz",
+    "bytes": 3746167,
+    "sha256": "a090c6f9e0aaa3b02eed7b7460d8fd6d126b30b0ee825155015dce41cc464be4",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_精细_anchor_区域左侧.npz",
+    "bytes": 3633427,
+    "sha256": "19a62ac4260f7d9b7960bb193d0a279eb06f014cb732c4670795197f851ec562",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_精细_anchor_区域右侧.npz",
+    "bytes": 3647502,
+    "sha256": "fedbee3a214d8c91836d3c99732e625aa53557206f1748970bbe4cf1e8f5076e",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/imu_精细_anchor_区域角部.npz",
+    "bytes": 3741512,
+    "sha256": "c13ed3057b9cf76189240ec6b1f62b4f4605f85cc1b79421b78fb6c235e20dbe",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_基础_no_anchor_start.npz",
+    "bytes": 2308810,
+    "sha256": "688e565c65cc9dd1e94f075ed1054031bbef837c55d64997c75577d3d62e53c4",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_基础_no_anchor_peer.npz",
+    "bytes": 3638156,
+    "sha256": "8d849159661b29db3a80d94326bea7fe8bdafa7c35009519de0e7069a6c131de",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_基础_anchor_区域中部.npz",
+    "bytes": 3612341,
+    "sha256": "94aea6dc195eb7d0ceec88c8b1ff6b412a17159c5a723dc677139507a9bf60ba",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_基础_anchor_起点侧方.npz",
+    "bytes": 3694365,
+    "sha256": "46469af8f0f6ecf96bbfa47b7f12c430b2e4e44b245961b5839a3125919e4b7e",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_基础_anchor_区域左侧.npz",
+    "bytes": 3613417,
+    "sha256": "31fc1d668ff21a798f6d9408aa44a03594405c5f8635c3638764fd5b929b867b",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_基础_anchor_区域右侧.npz",
+    "bytes": 3619468,
+    "sha256": "8d3142a786d83cdf1463410b9821f0fe1c003585d25b83041d8d56f374ff85d2",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_基础_anchor_区域角部.npz",
+    "bytes": 3727783,
+    "sha256": "9268354897eb6031bfbaee0ff85dba439f92c3808688f53cb2884d959702f2ba",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_增强_no_anchor_start.npz",
+    "bytes": 2309365,
+    "sha256": "840636ed1a1bdbc765ee700b8032f37ab37dcb2e782464aa9b15c3ff91b04b70",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_增强_no_anchor_peer.npz",
+    "bytes": 3628322,
+    "sha256": "1f4e64e147365724ce708dcb7ae3df7131943d679ade237bb4aea9756b75e308",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_增强_anchor_区域中部.npz",
+    "bytes": 3604256,
+    "sha256": "1fdf1ae73bb1fee1b60f04b6ba26256460a0e7d7baffe25946466a4734d92b78",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_增强_anchor_起点侧方.npz",
+    "bytes": 3678651,
+    "sha256": "07854b6601deffbe578224d0473dd1153e614467effd7b1e2ed22f54c20b88f7",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_增强_anchor_区域左侧.npz",
+    "bytes": 3605362,
+    "sha256": "04f1ffe3a175ea1b90e8cca86a2e24ad6839743ff656e8586c11e9c34bafdc35",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_增强_anchor_区域右侧.npz",
+    "bytes": 3610459,
+    "sha256": "e009ff6c96e49b3bc6a8a11cf58dc048463b0d8f2d5545987b9f7290e353f2a7",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_增强_anchor_区域角部.npz",
+    "bytes": 3726561,
+    "sha256": "bddf76d7c5ce40c080f9a7d80e9d300fb6d544904041e8f127c0d4d0b7e01384",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_精细_no_anchor_start.npz",
+    "bytes": 2309544,
+    "sha256": "e56c1e224fb59b813889a982a8e318694df411a9afeb22260bf8c09109168ff9",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_精细_no_anchor_peer.npz",
+    "bytes": 3616440,
+    "sha256": "995a523df353e4cb1e296e0a9f9091a612dff9e8a01095af2ea44412780b6f97",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_精细_anchor_区域中部.npz",
+    "bytes": 3593365,
+    "sha256": "0440531777b36dd9090c37a30fbf3a39b068c56a0c64385cba4fd543b5a964c7",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_精细_anchor_起点侧方.npz",
+    "bytes": 3656705,
+    "sha256": "af622c9945929fc59806abf9cb57763a42d8cdca68aba8a37163708260345391",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_精细_anchor_区域左侧.npz",
+    "bytes": 3595326,
+    "sha256": "f51b412e17fb9de34b62255d253e9d1d58bfa3305bca45efb25a48be5ab34b64",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_精细_anchor_区域右侧.npz",
+    "bytes": 3601039,
+    "sha256": "066b5164da45daf6730e122c39c67a3ab58133031b6fe200f2b6b58b2e834226",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/vio_精细_anchor_区域角部.npz",
+    "bytes": 3721431,
+    "sha256": "ce2548325698bc49b0b75d32aa9f1d4ea8094b7f09afad28e9cd7a0650778372",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_基础_no_anchor_start.npz",
+    "bytes": 2309365,
+    "sha256": "840636ed1a1bdbc765ee700b8032f37ab37dcb2e782464aa9b15c3ff91b04b70",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_基础_no_anchor_peer.npz",
+    "bytes": 3628322,
+    "sha256": "1f4e64e147365724ce708dcb7ae3df7131943d679ade237bb4aea9756b75e308",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_基础_anchor_区域中部.npz",
+    "bytes": 3604256,
+    "sha256": "1fdf1ae73bb1fee1b60f04b6ba26256460a0e7d7baffe25946466a4734d92b78",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_基础_anchor_起点侧方.npz",
+    "bytes": 3678651,
+    "sha256": "07854b6601deffbe578224d0473dd1153e614467effd7b1e2ed22f54c20b88f7",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_基础_anchor_区域左侧.npz",
+    "bytes": 3605362,
+    "sha256": "04f1ffe3a175ea1b90e8cca86a2e24ad6839743ff656e8586c11e9c34bafdc35",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_基础_anchor_区域右侧.npz",
+    "bytes": 3610459,
+    "sha256": "e009ff6c96e49b3bc6a8a11cf58dc048463b0d8f2d5545987b9f7290e353f2a7",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_基础_anchor_区域角部.npz",
+    "bytes": 3726561,
+    "sha256": "bddf76d7c5ce40c080f9a7d80e9d300fb6d544904041e8f127c0d4d0b7e01384",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_增强_no_anchor_start.npz",
+    "bytes": 2309544,
+    "sha256": "e56c1e224fb59b813889a982a8e318694df411a9afeb22260bf8c09109168ff9",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_增强_no_anchor_peer.npz",
+    "bytes": 3616440,
+    "sha256": "995a523df353e4cb1e296e0a9f9091a612dff9e8a01095af2ea44412780b6f97",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_增强_anchor_区域中部.npz",
+    "bytes": 3593365,
+    "sha256": "0440531777b36dd9090c37a30fbf3a39b068c56a0c64385cba4fd543b5a964c7",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_增强_anchor_起点侧方.npz",
+    "bytes": 3656705,
+    "sha256": "af622c9945929fc59806abf9cb57763a42d8cdca68aba8a37163708260345391",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_增强_anchor_区域左侧.npz",
+    "bytes": 3595326,
+    "sha256": "f51b412e17fb9de34b62255d253e9d1d58bfa3305bca45efb25a48be5ab34b64",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_增强_anchor_区域右侧.npz",
+    "bytes": 3601039,
+    "sha256": "066b5164da45daf6730e122c39c67a3ab58133031b6fe200f2b6b58b2e834226",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_增强_anchor_区域角部.npz",
+    "bytes": 3721431,
+    "sha256": "ce2548325698bc49b0b75d32aa9f1d4ea8094b7f09afad28e9cd7a0650778372",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_精细_no_anchor_start.npz",
+    "bytes": 2309490,
+    "sha256": "a77fd05884d92a32afa7911662ae229a6347f1727dc81fa06618d8edf58bb0f8",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_精细_no_anchor_peer.npz",
+    "bytes": 3609841,
+    "sha256": "f8f4c9714cc37b444ceb42b91a615b9467f349c4df2a41a2b835db68e9bd4cf3",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_精细_anchor_区域中部.npz",
+    "bytes": 3582086,
+    "sha256": "72fddbffb9fad099cf18f0bb7e3d2cb42b90ed78807bad1e75098ea3f143d8ac",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_精细_anchor_起点侧方.npz",
+    "bytes": 3640593,
+    "sha256": "6647724e50fe2f5a4e937b9153a86e3fd61379ac357f641bfcf9223c3648ce4c",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_精细_anchor_区域左侧.npz",
+    "bytes": 3584610,
+    "sha256": "d58041df4008c89f3b9fb0c79e8fe548e4f521f4cb55a5dfbf35162ba9d8ff6c",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_精细_anchor_区域右侧.npz",
+    "bytes": 3590866,
+    "sha256": "264426d88e4f458721c49789b4550f3fa85c11a160c5a5cfab8dac1acef3437d",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_layout_20261029/outputs/lio_精细_anchor_区域角部.npz",
+    "bytes": 3712176,
+    "sha256": "e5c2bcb8cd8afd4a5f7fb5f06cae06aa06687550596f1eb3847f6706855cebad",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/imu_基础_single_s0.20.npz",
+    "bytes": 3594726,
+    "sha256": "c40d656398e1ef2a31a2767de4a0a4df2ea27a4155eec9678fb2a61cc093577c",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/imu_基础_single_s0.05.npz",
+    "bytes": 3598428,
+    "sha256": "e7c771f57114950f77764d4c8357e569f5de9c9cceb74a5b10e18d5fba4bba5a",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/imu_增强_single_s0.20.npz",
+    "bytes": 3574776,
+    "sha256": "366ee6ed8721187ca7fbe3ec98fddb1680f058c5d55b7f97bd368be7965356f1",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/imu_增强_single_s0.05.npz",
+    "bytes": 3574785,
+    "sha256": "8d864eba8a7dce8de6a47d1e669c50c977b8d6934ea2d8eb05c5c422da01ca03",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/imu_精细_single_s0.20.npz",
+    "bytes": 3543040,
+    "sha256": "1062b29f3c379ece32f25b9710af18a8d915684544be7c9a23339fc2f7f7b07a",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/imu_精细_single_s0.05.npz",
+    "bytes": 3539551,
+    "sha256": "f961cb0bc46e8412a8ad3f2a7bc9a18cf2ac1ef5a4a6b8db0fed3ce775fdcbc9",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/vio_基础_single_s0.20.npz",
+    "bytes": 3489082,
+    "sha256": "6e7563fb74bddbec5bcaf7b2ed59de1be18bb6a7767ecbe39baa4a1ef9c62070",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/vio_基础_single_s0.05.npz",
+    "bytes": 3489938,
+    "sha256": "85912f2935c98068f4651841d46c703c36add01150b89d5889f856af15588350",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/vio_增强_single_s0.20.npz",
+    "bytes": 3482224,
+    "sha256": "346fbe7dcaf1c780e317c873358cd238c6083f04a09b6f424c1438362f0f150e",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/vio_增强_single_s0.05.npz",
+    "bytes": 3481454,
+    "sha256": "b97f0b47e5e00482c1e58e2e29332348137a2bcba20b574a723e38613f5a0519",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/vio_精细_single_s0.20.npz",
+    "bytes": 3472285,
+    "sha256": "93a8d3fcade26794d5b5a9476a812c583a3fb7e48a9d0e6f71045491a2d25800",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/vio_精细_single_s0.05.npz",
+    "bytes": 3470395,
+    "sha256": "ee2e5e0fe7182e1404adb2ecd28488274fa35748f85a8238220808d735ea92c8",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/lio_基础_single_s0.20.npz",
+    "bytes": 3482224,
+    "sha256": "346fbe7dcaf1c780e317c873358cd238c6083f04a09b6f424c1438362f0f150e",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/lio_基础_single_s0.05.npz",
+    "bytes": 3481454,
+    "sha256": "b97f0b47e5e00482c1e58e2e29332348137a2bcba20b574a723e38613f5a0519",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/lio_增强_single_s0.20.npz",
+    "bytes": 3472285,
+    "sha256": "93a8d3fcade26794d5b5a9476a812c583a3fb7e48a9d0e6f71045491a2d25800",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/lio_增强_single_s0.05.npz",
+    "bytes": 3470395,
+    "sha256": "ee2e5e0fe7182e1404adb2ecd28488274fa35748f85a8238220808d735ea92c8",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/lio_精细_single_s0.20.npz",
+    "bytes": 3460920,
+    "sha256": "5ec50dfd592b01724a83b1c052c15ffdf539fe286adff4c0169b022248381511",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/lio_精细_single_s0.05.npz",
+    "bytes": 3459095,
+    "sha256": "3d3e1cd8c3940ec570e1db8f409fdc544804021ac3ab6efefb4d95e6a3433a92",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/uwb_s0.20.npz",
+    "bytes": 1427721,
+    "sha256": "a16a5c70e6e1784592b92d7055270cbadb6b1764a21791ce80f3566f1fb95e0b",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/uwb_s0.10.npz",
+    "bytes": 1418017,
+    "sha256": "38874d2e47ff0cff6fcd03883a39c0fc9d1ddb2bb0948cb811d1e26006f595ef",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/outputs/uwb_s0.05.npz",
+    "bytes": 1411103,
+    "sha256": "4235d3421bb204ce012c9de5a7e1c46136789ff804ddce636a0463973c4bb3be",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  },
+  {
+    "file": "data/single_anchor_outdoor_20261029/truth_and_range_inputs.npz",
+    "bytes": 3324204,
+    "sha256": "ea346c12c9b70d9caf2028d3b6b1e3d67976d5eff860a93b78de656ecedfe67c",
+    "role": "统一201坐标的原始输入，原文件未修改"
+  }
+]

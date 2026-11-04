@@ -18,5 +18,6 @@
     max_range_innovation_m: 1.0
     max_translation_std_m: 0.25
     max_yaw_std_rad: 0.1
+    minimum_initialization_motion_span_m: 10.0
     condition_limit: 10000000000.0
     publish_rate_hz: 20.0

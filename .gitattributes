@@ -9,3 +9,12 @@ CMakeLists.txt text eol=lf
 *.ini text eol=lf
 *.md text eol=lf
 *.py text eol=lf
+docs/报告/20261023_协同定位阶段报告_完整材料.zip filter=lfs diff=lfs merge=lfs -text
+
+# 已归档的仿真结果CSV按原始字节保存，避免换行转换影响文件校验。
+/data/common_reference_20261030/*.csv -text
+/data/rte_accuracy_20261023/*.csv -text
+/data/single_anchor_outdoor_20261029/*.csv -text
+/data/single_anchor_layout_20261029/*.csv -text
+/data/rte_startup_diagnostics_20261030/*.csv -text
+/data/maneuver_observability_20261101/*.csv -text

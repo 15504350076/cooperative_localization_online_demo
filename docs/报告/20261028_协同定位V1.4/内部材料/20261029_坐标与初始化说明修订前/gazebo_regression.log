@@ -1,0 +1,118 @@
+Internal ctest changing into directory: /home/pdq/Code/cooperative_localization_online_demo/cooperative_localization_online_demo/build/ros2-sim-check-current/zju_coop_gazebo
+Test project /home/pdq/Code/cooperative_localization_online_demo/cooperative_localization_online_demo/build/ros2-sim-check-current/zju_coop_gazebo
+    Start 1: test_gazebo_assets
+1/2 Test #1: test_gazebo_assets .........................   Passed    0.68 sec
+    Start 2: test_test_three_vehicle_gazebo.launch.py
+2/2 Test #2: test_test_three_vehicle_gazebo.launch.py ...***Timeout  60.28 sec
+-- run_test.py: invoking following command in '/home/pdq/Code/cooperative_localization_online_demo/cooperative_localization_online_demo/build/ros2-sim-check-current/zju_coop_gazebo':
+ - /usr/bin/python3 -m launch_testing.launch_test /home/pdq/Code/cooperative_localization_online_demo/cooperative_localization_online_demo/ros2/zju_coop_gazebo/test/test_three_vehicle_gazebo.launch.py --junit-xml=/home/pdq/Code/cooperative_localization_online_demo/cooperative_localization_online_demo/build/ros2-sim-check-current/zju_coop_gazebo/test_results/zju_coop_gazebo/test_test_three_vehicle_gazebo.launch.py.xunit.xml --package-name=zju_coop_gazebo
+[INFO] [launch]: All log files can be found below /home/pdq/.ros/log/2026-10-23-01-57-45-854497-pdq-pc-117065
+[INFO] [launch]: Default logging verbosity is set to INFO
+test_physics_imu_uwb_and_gcs_pipeline (zju_coop_gazebo.TestGazeboPipeline) ... [INFO] [ign gazebo-1]: process started with pid [117079]
+[INFO] [parameter_bridge-2]: process started with pid [117084]
+[INFO] [zju_local_inertial_node-3]: process started with pid [117086]
+[INFO] [zju_local_inertial_node-4]: process started with pid [117088]
+[INFO] [zju_local_inertial_node-5]: process started with pid [117090]
+[INFO] [zju_cooperative_fusion_node-6]: process started with pid [117092]
+[INFO] [zju_gazebo_scenario-7]: process started with pid [117102]
+[INFO] [ros2-8]: process started with pid [117118]
+[zju_local_inertial_node-3] [INFO] [1792691876.674106960] [zju_gazebo_local_inertial_node_1]: local INS node ready: node_id=1, imu frame=imu_link, gyro_scale=1, accel_scale=1, static_init=disabled, point_cloud=disabled, camera=disabled
+[zju_cooperative_fusion_node-6] [INFO] [1792691876.955215679] [zju_gazebo_cooperative_fusion_node]: cooperative output ready: mode=imu_uwb, 3 nodes, reference=1, time_source=ROS simulation clock; timestamp guards future=100 ms, receive-delay=500 ms, uwb-span=10 ms (data rejection, not sync accuracy)
+[zju_local_inertial_node-4] [INFO] [1792691877.611225819] [zju_gazebo_local_inertial_node_2]: local INS node ready: node_id=2, imu frame=imu_link, gyro_scale=1, accel_scale=1, static_init=disabled, point_cloud=disabled, camera=disabled
+[zju_local_inertial_node-5] [INFO] [1792691877.638337268] [zju_gazebo_local_inertial_node_3]: local INS node ready: node_id=3, imu frame=imu_link, gyro_scale=1, accel_scale=1, static_init=disabled, point_cloud=disabled, camera=disabled
+[INFO] [ign-9]: process started with pid [117168]
+[parameter_bridge-2] [INFO] [1792691882.322510456] [zju_gazebo_bridge]: Creating GZ->ROS Bridge: [/clock (ignition.msgs.Clock) -> /clock (rosgraph_msgs/msg/Clock)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1792691882.574360525] [zju_gazebo_bridge]: Creating GZ->ROS Bridge: [/model/vehicle_1/pose (ignition.msgs.Pose_V) -> /simulation/gazebo/vehicle_1/pose (tf2_msgs/msg/TFMessage)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1792691882.771314816] [zju_gazebo_bridge]: Creating GZ->ROS Bridge: [/model/vehicle_2/pose (ignition.msgs.Pose_V) -> /simulation/gazebo/vehicle_2/pose (tf2_msgs/msg/TFMessage)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1792691882.809437284] [zju_gazebo_bridge]: Creating GZ->ROS Bridge: [/model/vehicle_3/pose (ignition.msgs.Pose_V) -> /simulation/gazebo/vehicle_3/pose (tf2_msgs/msg/TFMessage)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1792691882.949281922] [zju_gazebo_bridge]: Creating GZ->ROS Bridge: [/world/zju_coop_gazebo/model/vehicle_1/link/base_link/sensor/imu_sensor/imu (ignition.msgs.IMU) -> /vehicle_1/imu/data (sensor_msgs/msg/Imu)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1792691882.992518242] [zju_gazebo_bridge]: Creating GZ->ROS Bridge: [/world/zju_coop_gazebo/model/vehicle_2/link/base_link/sensor/imu_sensor/imu (ignition.msgs.IMU) -> /vehicle_2/imu/data (sensor_msgs/msg/Imu)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1792691883.013831393] [zju_gazebo_bridge]: Creating GZ->ROS Bridge: [/world/zju_coop_gazebo/model/vehicle_3/link/base_link/sensor/imu_sensor/imu (ignition.msgs.IMU) -> /vehicle_3/imu/data (sensor_msgs/msg/Imu)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1792691883.030918324] [zju_gazebo_bridge]: Creating ROS->GZ Bridge: [/vehicle_1/cmd_vel (geometry_msgs/msg/Twist) -> /model/vehicle_1/cmd_vel (ignition.msgs.Twist)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1792691883.348064731] [zju_gazebo_bridge]: Creating ROS->GZ Bridge: [/vehicle_2/cmd_vel (geometry_msgs/msg/Twist) -> /model/vehicle_2/cmd_vel (ignition.msgs.Twist)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1792691883.474323468] [zju_gazebo_bridge]: Creating ROS->GZ Bridge: [/vehicle_3/cmd_vel (geometry_msgs/msg/Twist) -> /model/vehicle_3/cmd_vel (ignition.msgs.Twist)] (Lazy 0)
+[parameter_bridge-2] [INFO] [1792691889.548584092] [zju_gazebo_bridge]: Passing message from ROS geometry_msgs/msg/Twist to Gazebo gz.msgs.Twist (showing msg only once per type)
+[ros2-8] stdin is not a terminal device. Keyboard handling disabled.[INFO] [1792691890.645709946] [rosbag2_recorder]: Press SPACE for pausing/resuming
+[ros2-8] [INFO] [1792691890.773969137] [rosbag2_storage]: Opened database '/tmp/zju_coop_gazebo_bag_test_aew07co2/recording/recording_0.db3' for READ_WRITE.
+[ros2-8] [INFO] [1792691890.871529217] [rosbag2_recorder]: Event publisher thread: Starting
+[ros2-8] [INFO] [1792691890.873511560] [rosbag2_recorder]: Listening for topics...
+[ros2-8] [INFO] [1792691890.874142895] [rosbag2_recorder]: Recording...
+[ros2-8] [INFO] [1792691890.893000874] [rosbag2_recorder]: use_sim_time set, waiting for /clock before starting recording...
+[ign-9] Service call timed out
+[INFO] [ign-9]: process has finished cleanly [pid 117168]
+[ign gazebo-1] libEGL warning: Not allowed to force software rendering when API explicitly selects a hardware device.
+FAIL
+
+======================================================================
+FAIL: test_physics_imu_uwb_and_gcs_pipeline (zju_coop_gazebo.TestGazeboPipeline)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/pdq/Code/cooperative_localization_online_demo/cooperative_localization_online_demo/ros2/zju_coop_gazebo/test/test_three_vehicle_gazebo.launch.py", line 241, in test_physics_imu_uwb_and_gcs_pipeline
+    self.assertGreaterEqual(len(complete_poses), 60)
+AssertionError: 0 not greater than or equal to 60
+
+----------------------------------------------------------------------
+Ran 1 test in 40.632s
+
+FAILED (failures=1)
+[INFO] [ros2-8]: sending signal 'SIGINT' to process[ros2-8]
+[INFO] [zju_gazebo_scenario-7]: sending signal 'SIGINT' to process[zju_gazebo_scenario-7]
+[INFO] [zju_cooperative_fusion_node-6]: sending signal 'SIGINT' to process[zju_cooperative_fusion_node-6]
+[INFO] [zju_local_inertial_node-5]: sending signal 'SIGINT' to process[zju_local_inertial_node-5]
+[INFO] [zju_local_inertial_node-4]: sending signal 'SIGINT' to process[zju_local_inertial_node-4]
+[INFO] [zju_local_inertial_node-3]: sending signal 'SIGINT' to process[zju_local_inertial_node-3]
+[INFO] [parameter_bridge-2]: sending signal 'SIGINT' to process[parameter_bridge-2]
+[INFO] [ign gazebo-1]: sending signal 'SIGINT' to process[ign gazebo-1]
+[ros2-8] [INFO] [1792691915.395949782] [rosbag2_cpp]: Writing remaining messages from cache to the bag. It may take a while
+[ros2-8] [INFO] [1792691915.420184835] [rosbag2_recorder]: Event publisher thread: Exiting
+[ros2-8] [INFO] [1792691915.425185410] [rosbag2_recorder]: Recording stopped
+[zju_cooperative_fusion_node-6] [INFO] [1792691915.436601075] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[zju_local_inertial_node-5] [INFO] [1792691915.495488484] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[zju_local_inertial_node-4] [INFO] [1792691915.574260623] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[zju_local_inertial_node-3] [INFO] [1792691915.589253843] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[parameter_bridge-2] [INFO] [1792691915.612867490] [rclcpp]: signal_handler(SIGINT/SIGTERM)
+[INFO] [zju_cooperative_fusion_node-6]: process has finished cleanly [pid 117092]
+[INFO] [parameter_bridge-2]: process has finished cleanly [pid 117084]
+[INFO] [zju_local_inertial_node-3]: process has finished cleanly [pid 117086]
+[INFO] [zju_local_inertial_node-5]: process has finished cleanly [pid 117090]
+[INFO] [zju_local_inertial_node-4]: process has finished cleanly [pid 117088]
+[INFO] [zju_gazebo_scenario-7]: process has finished cleanly [pid 117102]
+[INFO] [ros2-8]: process has finished cleanly [pid 117118]
+[ERROR] [ign gazebo-1]: process[ign gazebo-1] failed to terminate '5' seconds after receiving 'SIGINT', escalating to 'SIGTERM'
+[INFO] [ign gazebo-1]: sending signal 'SIGTERM' to process[ign gazebo-1]
+[ERROR] [ign gazebo-1]: process has died [pid 117079, exit code -15, cmd 'ruby /usr/bin/ign gazebo -s --render-engine-server ogre2 /home/pdq/Code/cooperative_localization_online_demo/cooperative_localization_online_demo/install/ros2-sim-check-current/zju_coop_gazebo/share/zju_coop_gazebo/worlds/three_vehicle.sdf --force-version 6'].
+[INFO] [launch]: process[ign gazebo-1] was required: shutting down launched system
+test_recording_contains_all_pipeline_topics (zju_coop_gazebo.TestRosbagWasSaved) ... FAIL
+
+======================================================================
+FAIL: test_recording_contains_all_pipeline_topics (zju_coop_gazebo.TestRosbagWasSaved)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/pdq/Code/cooperative_localization_online_demo/cooperative_localization_online_demo/ros2/zju_coop_gazebo/test/test_three_vehicle_gazebo.launch.py", line 509, in test_recording_contains_all_pipeline_topics
+    self.assertEqual(RECORDED_TOPICS - set(topic_counts), set())
+AssertionError: Items in the first set but not the second:
+'/cooperative_localization/node_state'
+'/simulation/ground_truth/poses_2d'
+'/vehicle_1/imu/data'
+'/clock'
+'/vehicle_2/imu/data'
+'/uwb/range'
+'/cooperative_localization/poses_2d'
+'/vehicle_3/imu/data'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.038s
+
+FAILED (failures=1)
+
+
+50% tests passed, 1 tests failed out of 2
+
+Label Time Summary:
+launch_test    =  60.28 sec*proc (1 test)
+
+Total Test time (real) =  61.00 sec
+
+The following tests FAILED:
+	  2 - test_test_three_vehicle_gazebo.launch.py (Timeout)
+Errors while running CTest

@@ -75,6 +75,7 @@ class ThreeVehicleRteNode : public rclcpp::Node {
     config_.max_range_innovation_m=declare_parameter<double>("max_range_innovation_m",1.0);
     config_.max_translation_std_m=declare_parameter<double>("max_translation_std_m",.25);
     config_.max_yaw_std_rad=declare_parameter<double>("max_yaw_std_rad",.1);
+    config_.minimum_initialization_motion_span_m=declare_parameter<double>("minimum_initialization_motion_span_m",0.0);
     const auto heights=declare_parameter<std::vector<double>>("local_origin_heights_m",{0,0,0});
     const auto levers=declare_parameter<std::vector<double>>("antenna_lever_arms_body_m",std::vector<double>(9,0.0));
     if(heights.size()!=3 || levers.size()!=9) throw std::invalid_argument("invalid heights/lever arms array length");
@@ -84,7 +85,9 @@ class ThreeVehicleRteNode : public rclcpp::Node {
     frame_prefix_=declare_parameter<std::string>("local_frame_prefix","rte_odom_");
     const double rate=declare_parameter<double>("publish_rate_hz",20.0);
     if(!std::isfinite(range_std_) || range_std_<1e-6 || range_std_>1000 ||
-       !std::isfinite(rate) || rate<=0 || rate>200 || frame_prefix_.empty()) throw std::invalid_argument("invalid rate, range standard deviation or local frame prefix");
+       !std::isfinite(rate) || rate<=0 || rate>200 || frame_prefix_.empty() ||
+       !std::isfinite(config_.minimum_initialization_motion_span_m) ||
+       config_.minimum_initialization_motion_span_m<0) throw std::invalid_argument("invalid rate, range standard deviation, motion span or local frame prefix");
     zju_coop_three_handle_rte_t* raw=nullptr;
     require(zju_coop_three_create_rte(&config_,&raw),"three_create_rte");
     handle_.reset(raw);

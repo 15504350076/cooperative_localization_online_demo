@@ -1,0 +1,16 @@
+{
+  "conditions": 84,
+  "trials": 1680,
+  "anchor_count": 1,
+  "range_edges": 6,
+  "all_saved_output_rmse_recomputed": true,
+  "replay_profiles": [
+    "imu_精细",
+    "vio_增强",
+    "lio_增强"
+  ],
+  "estimator_parameters_exclude_truth": true,
+  "post_trajectory_alignment": false,
+  "original_algorithms_and_V13_unchanged": true,
+  "output_rows": 7203
+}

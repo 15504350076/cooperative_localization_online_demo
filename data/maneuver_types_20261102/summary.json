@@ -1,0 +1,87 @@
+{
+  "date": "2026-11-02",
+  "trials": 20,
+  "profile": "vio_增强",
+  "anchor": [
+    55.0,
+    75.0
+  ],
+  "range_std_m": 0.1,
+  "range_bias_std_m": 0.03,
+  "evaluation_interval_s": [
+    60,
+    300
+  ],
+  "common_initialization_s": [
+    0,
+    60
+  ],
+  "scenario_transition_s": [
+    60,
+    80
+  ],
+  "active_maneuver_from_s": 80,
+  "conditions": [
+    {
+      "name": "同向平行",
+      "max_speed_mps": 2.376019686052822,
+      "max_peer_distance_m": 24.56263138325359,
+      "max_anchor_distance_m": 66.15717256302457,
+      "rmse_mean": 0.3006173106029367,
+      "rmse_std": 0.1476291177287324,
+      "rmse_min": 0.11628171881003958,
+      "rmse_max": 0.589275158804611,
+      "peak_mean": 0.7768639131485935,
+      "max_relative_speed": 0.00441452217025337,
+      "max_relative_acceleration": 0.08781076485474684,
+      "max_velocity_angle_deg": 0.03368646910764418,
+      "init_converged": 20
+    },
+    {
+      "name": "相对加减速",
+      "max_speed_mps": 2.4953868961043497,
+      "max_peer_distance_m": 26.760530016195535,
+      "max_anchor_distance_m": 66.15717256302457,
+      "rmse_mean": 0.3076035505321979,
+      "rmse_std": 0.15059135488740108,
+      "rmse_min": 0.11866127008958147,
+      "rmse_max": 0.6096253736953404,
+      "peak_mean": 0.7822730182815375,
+      "max_relative_speed": 0.7261068373951218,
+      "max_relative_acceleration": 0.22645182317653223,
+      "max_velocity_angle_deg": 34.78643346810852,
+      "init_converged": 20
+    },
+    {
+      "name": "转弯变队形",
+      "max_speed_mps": 2.376019702346899,
+      "max_peer_distance_m": 24.56263138325359,
+      "max_anchor_distance_m": 67.87809555664097,
+      "rmse_mean": 0.30244738810637156,
+      "rmse_std": 0.14761974918441328,
+      "rmse_min": 0.11699649199085846,
+      "rmse_max": 0.5915484620136336,
+      "peak_mean": 0.7753717794722969,
+      "max_relative_speed": 0.32807249738327365,
+      "max_relative_acceleration": 0.08959940328915245,
+      "max_velocity_angle_deg": 6.830860483567363,
+      "init_converged": 20
+    },
+    {
+      "name": "非平行运动",
+      "max_speed_mps": 2.519867911579387,
+      "max_peer_distance_m": 27.721102962623057,
+      "max_anchor_distance_m": 66.15717256302457,
+      "rmse_mean": 0.30173145109566685,
+      "rmse_std": 0.14901276845726935,
+      "rmse_min": 0.11535961934446992,
+      "rmse_max": 0.5949918710229831,
+      "peak_mean": 0.807546578087841,
+      "max_relative_speed": 0.7261068373951218,
+      "max_relative_acceleration": 0.22645182317759804,
+      "max_velocity_angle_deg": 38.16824757857051,
+      "init_converged": 20
+    }
+  ],
+  "scope": "中部单锚点、VIO增强输出模型、配对测距及运动随机样本；起步和初始化输入一致。"
+}

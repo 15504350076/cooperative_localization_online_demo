@@ -1,0 +1,163 @@
+{
+  "version": "1.4",
+  "revision_date": "2026-10-29",
+  "revision": "当前试验与结果直述、完整盒数量和有产品依据的费用、RTE起点与统一横轴、原始点云",
+  "maximum_anchor_count": 1,
+  "reported_conditions": 84,
+  "reported_trial_results": 1680,
+  "rte_diagnostic_runs": 3,
+  "reported_condition_index": "本版实验条件清单.json",
+  "figures": 16,
+  "numbered_tables": 18,
+  "physical_pages": 26,
+  "body_pages": 24,
+  "sensor_model_scope": "MEMS测量级；VIO/LIO局部运动输出误差模型。高配参考器件不与某档仿真输出强制对应。",
+  "truth_used_by_estimator": false,
+  "post_alignment": false,
+  "validation": {
+    "conditions_recomputed": 84,
+    "trials_recomputed": 1680,
+    "trials_per_condition": 20,
+    "all_reported_group_statistics_match_saved_outputs": true,
+    "actual_cpp_replays": 3,
+    "cpp_all_fields_except_computation_duration_match": true,
+    "rte_first_valid_seconds": [
+      127.2,
+      215.52,
+      216.24
+    ],
+    "lidar_messages": 225,
+    "lidar_points_drawn": 120000,
+    "budget_counts_and_reference_arithmetic_verified": true,
+    "simulation_outputs_modified": false
+  },
+  "cpp_and_lidar_replay": "data/report_replay_20261029/复现核对.json",
+  "unit_tests_passed": 10,
+  "format_validation": {
+    "Word分节和页码": "前置节无页码，正文独立节从1开始，页脚仅PAGE字段，10.5磅",
+    "图表标题": {
+      "图": 16,
+      "表": 18,
+      "字号_磅": 10.5,
+      "图名段后_磅": 12
+    },
+    "表格": {
+      "含未编号前置表": 19,
+      "单元格": 388,
+      "全部垂直居中": true,
+      "内容字号_磅": 10.5
+    },
+    "代码": {
+      "代码块": 2,
+      "字号_磅": 10.5,
+      "内容完整": true
+    },
+    "普通叙述段落": {
+      "检查段落": 53,
+      "首行缩进_字符": 2,
+      "水平对齐": "两端对齐"
+    },
+    "结构": "6章、6.1仿真与图表重算、16图、18个连续编号表格、2个命令块",
+    "PDF页码": {
+      "物理页数": 26,
+      "正文前无页码页数": 2,
+      "正文页码": "1～24",
+      "全部页脚字号_磅": 10.5,
+      "无空白页": true
+    },
+    "PDF目录": {
+      "可点击链接": 6,
+      "目标正文页码": [
+        "1",
+        "3",
+        "9",
+        "18",
+        "22",
+        "23"
+      ]
+    },
+    "PDF文字范围": "所有页文字包围框均在纸面内",
+    "封面": {
+      "标题": "多平台协同定位／硬件仿真测试报告与联调方案",
+      "两行标题位于页面靠上位置": true,
+      "浙江大学位于页面下方": true
+    },
+    "视觉抽查": [
+      "封面",
+      "设备与参数表",
+      "分组统计表",
+      "图14",
+      "新锚点图线",
+      "阶段结论"
+    ]
+  },
+  "hardware_budget": "硬件配置概算.json、硬件费用依据核对.md；完整盒实际成交价和公开器件价分别计量，单点按增配同型盒，不列人力费用",
+  "algorithm_input_output_manifests": [
+    "data/single_anchor_outdoor_20261029/运行清单.json",
+    "data/single_anchor_layout_20261029/运行清单.json"
+  ],
+  "hashes": {
+    "tools/build_single_anchor_report.py": "85159f146071d5eaa402d72438683013a9c34e0d091ae444ad3a77e17b9c0b5f",
+    "tools/build_stage_report.py": "086f43061f905502d39a605bb0015a60da827f60d12da8ebd88704dd133b1239",
+    "tools/plot_sensor_anchor_v14.py": "3b6fdb150bb6db93f69e40c139cea95c843303f301f0651d98bbe0737f369fef",
+    "tools/plot_report_replay.py": "53658e6d23963e17ed4f79b22d174d7eaafe8ee1e6a488bb86476ba805414671",
+    "tools/check_report_results.py": "fb4b3652b991d7fbe6e5670595f18c13150d3f7710dbb555e6b74d057c3b591b",
+    "tools/plot_single_anchor.py": "38f066252792d58f2832fdb3a8ab6bf72be7eeda289db2255f58efb6ac9b0f63",
+    "tools/evaluate_anchor_layout.py": "5f64145fad4ab99d32a50aa284acf979012af711bf987e134a2dc0e84162e67e",
+    "tools/evaluate_single_anchor.py": "dd908ebc0a3379accc0765363b982c78558980d088bb5e489e20403032b3c681",
+    "tools/check_anchor_layout.py": "d8eca501a159be5eb204ffca0b2d91730b1148da14e4ca8d6c977aafa37877b7",
+    "tools/check_single_anchor.py": "8d9739fa193979c8bc7cb815007ce98ef5959f8c034719fec527894efa7df33d",
+    "tools/report_plot_fonts.py": "822f01b6286485f98b90460e872540c101b0c0cf40adf906fe39e005c34ad47a",
+    "tools/visualize_livox_bags.py": "63b1afe9560677cc7ccdbf94d4e98763403ab30934f4f58938ddc2283d5515cc",
+    "tools/render_formal_report.py": "44073b3ebe6d68d138c68815cf3d7e9e8e7b1be1e3c2833fd57c32a610d2d400",
+    "tools/export_formal_pdf.py": "0a25f932c91c11519b69c7dd60ede8f5921155619237e85dfda5d41e268ed47c",
+    "docs/报告/20261028_协同定位V1.4/阅读与复现说明.md": "283a3f86d4570524ac16436b951094c0a8a0b68df2ff37b20fb0e3a4098c8937",
+    "docs/报告/20261028_协同定位V1.4/参数来源_可观性_初始化核对.md": "61bd09a6b5dd18804d86d98c67e5ba6c41a6896c1589f2a584950293996c9e08",
+    "docs/报告/20261028_协同定位V1.4/硬件费用依据核对.md": "305f88f9fc8cff224e18ac4a1395cc8617c53c7f65fc7de61b74b02ff7b744b9",
+    "docs/报告/20261028_协同定位V1.4/多平台协同定位硬件仿真测试报告与联调方案_V1.4_设备分级与锚点仿真版.md": "ec2e8997f18130c56aa55ed6b9e1a20844ab85aa1983af2a6552233084d4fc9e",
+    "docs/报告/20261028_协同定位V1.4/V1.4_报告理解核对问题.md": "d2adbfbf8a122fa6b9cdcdbd4ed2e0788cc9e837f0fa3cc614a22c861b20b731",
+    "docs/报告/20261028_协同定位V1.4/锚点布置参考与比较说明.md": "e5515215f5e1718715b5bceb8214abb791266b92daffc7731c3cb0a5d51b9194",
+    "docs/报告/20261028_协同定位V1.4/SVG修改说明.md": "d9e2a7edc7f0e20181b50c14e1d5547100b05999be294d0c2889b734457c3d66",
+    "docs/报告/20261028_协同定位V1.4/多平台协同定位硬件仿真测试报告与联调方案_V1.4_设备分级与锚点仿真版.docx": "0c592a159aed4d0bc1feafa78aee5402062619c23a9c5ec0cfc6d8521a69df9a",
+    "docs/报告/20261028_协同定位V1.4/多平台协同定位硬件仿真测试报告与联调方案_V1.4_设备分级与锚点仿真版.pdf": "fb76b62c1dd5e89476c47fe2328f7090390df05795d77c7179c83165cb8267e8",
+    "docs/报告/20261028_协同定位V1.4/硬件配置概算.json": "bf1a3d0e31992b4182a651c69cf565b969f0b257e6b463dd3a1cc5fed4067e2a",
+    "docs/报告/20261028_协同定位V1.4/报告图表顺序.json": "f22e42b0eccb20145540f7a95680134e7daeecad2c1222c20a7312b4a3f89a63",
+    "docs/报告/20261028_协同定位V1.4/本版图线来源.json": "d0cdb7103d69cf3379f85bb7b820c7952738e42b5f9bdb2d96cae58a48fb5da2",
+    "docs/报告/20261028_协同定位V1.4/本版实验条件清单.json": "ce56bf08c3dfa3ad50be6449136c8afb2b37d8cacf0eb866c476afcddd576261",
+    "docs/报告/20261028_协同定位V1.4/评估结果汇总.json": "6a559b676c246ef18a68ae09f1a3158d22533813124dbb0e2b67ac028e1ef1b8",
+    "data/report_replay_20261029/复现核对.json": "12ccbf27af05b4a0e2695bb5e81652e4c7b86c232446e6da03808831f49f095e",
+    "data/report_replay_20261029/exp_odometry_0.02_seed0_output.csv": "53dcec022fc85f350d0d47dcce4cf706c7565f494c379307c55a3fa56da0122e",
+    "data/report_replay_20261029/本版结果复算.json": "0c65014d93e30928550175048286fbba15aaf5064bdb1e3d8440128be15dcd83",
+    "data/report_replay_20261029/本版1680次误差复算.csv": "bb5113ea19ea1b75859ef68c34f32240d812f9676ce9deaca0d912a70c82ccde",
+    "data/report_replay_20261029/图线坐标说明.json": "6e947f2677dbaaa69ad35a753b00bb01bd3dfe884d7bebf28e90374f59300522",
+    "data/report_replay_20261029/exp_odometry_0.10_seed0_output.csv": "47ca6f0c8bb92815f18230e16733a428e85419a4bc717e8eacb1e7ada5c36f9e",
+    "data/report_replay_20261029/exp_odometry_0.05_seed0_output.csv": "28dff5e85697bd6ed06f9606b011fe5cc8c0d7d985d773e3a5e22857f6e38a2c",
+    "data/report_replay_20261029/主盒雷达绘图点.npz": "2e5aa31584eb0c37239f41eaaa7da96364c18ffe3504d5bf241e587f59938f7c",
+    "data/report_replay_20261029/排版检查/第1页.png": "6e2bf419d403deb0736417ab31e9ffb83d2618e959280d1ac9672cf36423f458",
+    "data/report_replay_20261029/排版检查/第10页.png": "9ccaa4cb5afad60f4e1ad0c698917701bd050160883eb09fe7c62e76888956dd",
+    "data/report_replay_20261029/排版检查/排版检查结果.json": "e33505dce4f28ee2565d68ce49d81f2df318d5c99f3f9a2332e1d8d2afafa89d",
+    "data/report_replay_20261029/排版检查/第19页.png": "2353c9328c4449fe6370c190990ea5d8f5efb25210ac4722e3ae3550c4f60908",
+    "data/report_replay_20261029/排版检查/第23页.png": "c33c1a7c7a15c4808c4414a2bf48eac5ab7f79d46004a3ea21710802e9af5883",
+    "docs/报告/20261028_协同定位V1.4/内部材料/V1.4_结果说明与费用依据_完整改动对照.diff": "d24d7654b6346a90ad9d78b3561430300ec71e842d3f323b06c0a46a77390a98",
+    "docs/报告/20261028_协同定位V1.4/figures/图1_协同定位系统组成.png": "a4b8725191f5958ed51468c702bedf98b80e18912f0ed66d4f02577353e0a4cc",
+    "docs/报告/20261028_协同定位V1.4/figures/layout_imu_无锚点分级.png": "0bf521adfceb0e5f82d1ae936ea6a1be92e516fb1e5a72fc93514cf2e5249ee2",
+    "docs/报告/20261028_协同定位V1.4/figures/layout_vio_无锚点分级.png": "51a091825669322f8fc5ea5bc72293ba1563ba7f5db39b707aaa244531a17a9e",
+    "docs/报告/20261028_协同定位V1.4/figures/layout_lio_无锚点分级.png": "e81aeabd38df4302e368a787b22c47b5a251bfda28e11bfe54419ca26ceb2da0",
+    "docs/报告/20261028_协同定位V1.4/figures/outdoor_整体旋转不变性.png": "0fa47729a994289c785027755b71367286e9ec1ad0faffc3b9783f030086239a",
+    "docs/报告/20261028_协同定位V1.4/figures/layout_vio_逐时定位误差.png": "733ac59307490438bf6ae52645d0b3560914bb974efde0885ed1f10b365f73b2",
+    "docs/报告/20261028_协同定位V1.4/figures/layout_lio_逐时定位误差.png": "9277559f3be3a5b8480e7175b31a1074924f7cbd77c49d9d87fdbbd62a8f8f9d",
+    "docs/报告/20261028_协同定位V1.4/figures/layout_候选布点.png": "6df3e4eb4e441a915bbf42ab419f81cef6eb3f379d29eccc0eac4a7e86d4b584",
+    "docs/报告/20261028_协同定位V1.4/figures/layout_布点误差分布.png": "f9ac208b796d6b95cf936ee34414d20583f51dbbbdab942f53e670997250bd55",
+    "docs/报告/20261028_协同定位V1.4/figures/layout_单点估计轨迹.png": "234b5d198c0ec1eab2d36f2155c85c08228718a9995deb0fe940ae548bbe6d16",
+    "docs/报告/20261028_协同定位V1.4/figures/single_20_传感器与测距精度.png": "87b3e6f7e74f0431e4bd2f0e5e3219b734ac81b6e43f6763f11a39c6d88d7794",
+    "docs/报告/20261028_协同定位V1.4/figures/replay_RTE逐车定位误差.png": "4f536f279010c0adb916644382395cd1d1ccda217ecaa8dd59bf0dbe186b3ded",
+    "docs/报告/20261028_协同定位V1.4/figures/05_实测在线输入输出.png": "91595ff95f56fdbe7d3e4e78e2e481bc44db50abeb9e1ee4a427a15f891a2e07",
+    "docs/报告/20261028_协同定位V1.4/figures/06_实测三车相对三角形.png": "b5949a208f0b28a96fa6c5cd534a24cad6902e35f817404299a2e9be2de281fc",
+    "docs/报告/20261028_协同定位V1.4/figures/03_三路相机实拍.png": "9aa1c3a34f663f012424ec9c8246e7fe14ac171f26b6f36866befb8ad2723146",
+    "docs/报告/20261028_协同定位V1.4/figures/replay_主盒实测点云.png": "52e2a49205cc646c58a537b0f0e66a2ca049aae3dd9b45fbcf44d0de014f1364",
+    "docs/报告/20261028_协同定位V1.4/figures/图1原图保留清单.json": "96366976af29993cce5bf0deed5c117740921315f98062320381d5d4c4ebbfec",
+    "docs/报告编制与对外表述要求_持续记录.md": "db0916853fdd2dd5427f5344be71bffc59884beeaa440432e2922365c9626b62",
+    "docs/报告改动前后对照记录.md": "5c44a99c343c86bd3b06893f2733842ab4ec9f86407f3d7831251903cca881ec",
+    "docs/报告内部版本记录.md": "7f59dc6cb6e2e2b99e3c59235b2bd2500b6d86822ea53aaa82ba39561cb91173"
+  }
+}

@@ -1,0 +1,224 @@
+{
+  "date": "2026-10-29",
+  "currency": "人民币万元",
+  "scope": "三车整套新建配置，一次性算法开发和联调；项目预算估算，非厂家报价、非已发生费用",
+  "single_uwb_point_count": 1,
+  "single_point_budget_wan": [
+    0.3,
+    0.8
+  ],
+  "aircraft_platform_included": false,
+  "assumptions": "硬件按3套车载设备及1个UWB点、防护供电和安装附件测算；算法费包含定位融合、初始化、前端接入、消息适配和复现工具；部署费包含标定、数据处理与实车联调。现有设备复用后按新增部分核算。软件按约1500～2000元/人日综合研发成本计，费用按三车项目计一次，不逐车重复收取。档位是性能条件和预算组合，不代表价格自动保证某种定位精度。",
+  "sources": [
+    {
+      "title": "Stereolabs ZED 2i官方商店",
+      "url": "https://www.stereolabs.com/store/products/zed-2i",
+      "public_price": "499美元起",
+      "usage": "仅核对相机量级，非整套报价"
+    },
+    {
+      "title": "Livox MID-360官方产品资料",
+      "url": "https://www.livoxtech.com/mid-360",
+      "public_price": null,
+      "usage": "核对雷达类别，采购价格另询"
+    },
+    {
+      "title": "WitMotion HWT901B官方商城",
+      "url": "https://witmotion-sensor.com/collections/inclinometer/products/military-grade-accelerometer-inclinometer-hwt901b-mpu9250-9-axis-gyroscope-anglexy-0-05-accuracy-digital-compass-air-pressure-altitude-rm3100-magnetometer-compensation-and-kalman-filtering",
+      "public_price": "62～75美元",
+      "usage": "仅核对基础IMU量级，不对应仿真噪声参数"
+    }
+  ],
+  "combinations": [
+    {
+      "profile": "uwb",
+      "hardware_wan": [
+        1.5,
+        2.4
+      ],
+      "algorithm_wan": [
+        6,
+        8
+      ],
+      "integration_wan": [
+        2,
+        3
+      ],
+      "total_wan": [
+        9.5,
+        13.4
+      ]
+    },
+    {
+      "profile": "imu_基础",
+      "hardware_wan": [
+        2.1,
+        3.6
+      ],
+      "algorithm_wan": [
+        8,
+        12
+      ],
+      "integration_wan": [
+        3,
+        5
+      ],
+      "total_wan": [
+        13.1,
+        20.6
+      ]
+    },
+    {
+      "profile": "imu_增强",
+      "hardware_wan": [
+        2.7,
+        4.5
+      ],
+      "algorithm_wan": [
+        10,
+        15
+      ],
+      "integration_wan": [
+        4,
+        6
+      ],
+      "total_wan": [
+        16.7,
+        25.5
+      ]
+    },
+    {
+      "profile": "imu_精细",
+      "hardware_wan": [
+        4.5,
+        7.5
+      ],
+      "algorithm_wan": [
+        12,
+        18
+      ],
+      "integration_wan": [
+        5,
+        8
+      ],
+      "total_wan": [
+        21.5,
+        33.5
+      ]
+    },
+    {
+      "profile": "vio_基础",
+      "hardware_wan": [
+        3.6,
+        6
+      ],
+      "algorithm_wan": [
+        14,
+        20
+      ],
+      "integration_wan": [
+        5,
+        8
+      ],
+      "total_wan": [
+        22.6,
+        34
+      ]
+    },
+    {
+      "profile": "vio_增强",
+      "hardware_wan": [
+        4.8,
+        8.4
+      ],
+      "algorithm_wan": [
+        18,
+        26
+      ],
+      "integration_wan": [
+        6,
+        10
+      ],
+      "total_wan": [
+        28.8,
+        44.4
+      ]
+    },
+    {
+      "profile": "vio_精细",
+      "hardware_wan": [
+        7.2,
+        12
+      ],
+      "algorithm_wan": [
+        24,
+        34
+      ],
+      "integration_wan": [
+        8,
+        12
+      ],
+      "total_wan": [
+        39.2,
+        58
+      ]
+    },
+    {
+      "profile": "lio_基础",
+      "hardware_wan": [
+        4.8,
+        7.5
+      ],
+      "algorithm_wan": [
+        16,
+        24
+      ],
+      "integration_wan": [
+        6,
+        9
+      ],
+      "total_wan": [
+        26.8,
+        40.5
+      ]
+    },
+    {
+      "profile": "lio_增强",
+      "hardware_wan": [
+        6,
+        10.5
+      ],
+      "algorithm_wan": [
+        20,
+        30
+      ],
+      "integration_wan": [
+        8,
+        12
+      ],
+      "total_wan": [
+        34,
+        52.5
+      ]
+    },
+    {
+      "profile": "lio_精细",
+      "hardware_wan": [
+        9,
+        15
+      ],
+      "algorithm_wan": [
+        28,
+        40
+      ],
+      "integration_wan": [
+        10,
+        16
+      ],
+      "total_wan": [
+        47,
+        71
+      ]
+    }
+  ]
+}

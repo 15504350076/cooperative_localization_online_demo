@@ -2,6 +2,10 @@
 
 本链路是独立的可选算法路径，用于把三辆车各自的本地 IMU 航位推算与车间 UWB 测距组合起来。原有 `uwb_only` 三边测距恢复相对三角形的程序和默认参数没有改动；只有显式启用 RTE 构建和节点时才会使用本文功能。
 
+坐标约定与独立网页入口见[46_RTE坐标系与独立可视化](46_RTE坐标系与独立可视化.md)：保留本链路原始`coop_rte_1_local`输出，另行启动适配器即可增加固定轴向相对坐标与固定任务原点视图，不更换默认UWB配置。
+
+**2026-10-23精度复核：功能自检通过不等于动态精度已达标。** 新增的多随机种子试验发现，当前默认RTE实现存在错误分支收敛风险，内部状态为READY、测距残差较小也可能对应米级位置误差。现有实盒数据均为静止采集，且没有独立位置/航向真值，不能据此验收动态RTE精度。全量结果、适用边界和复现命令见[本轮RTE精度验证报告](../../data/rte_accuracy_20261023/RTE精度验证报告.md)；阶段材料见[V1.3正式报告](../reports/20261023_协同定位阶段报告/多平台协同定位硬件仿真测试报告与联调方案_V1.3_正式报告版.md)。下面的启动方法用于独立实验与接口验证。
+
 ## 当前实现的含义
 
 每辆车仍由现有 `zju_local_inertial_node` 运行本地 15 维 ESKF，发布带时间戳的 `NodeState`。新的 `zju_three_vehicle_rte_node` 收集三辆车的本地位置、速度和车体姿态，同时收集三条 UWB 边：1-2、1-3、2-3。
@@ -52,7 +56,7 @@ ros2 launch zju_coop_bringup rte_three_vehicle_demo.launch.py
 /rte_demo/status       std_msgs/String
 ```
 
-状态 JSON 中的 `initialized`、`active_edges`、`sample_counts`、`rms_residual_m`、`translation_std_m` 和 `yaw_std_rad` 用于判断是否已经完成三车初始化及当前质量。停止测距或冻结某辆车后，状态会进入 stale；恢复输入并重新满足窗口条件后会自动恢复。
+状态 JSON 中的 `initialized`、`active_edges`、`sample_counts`、`rms_m`、`translation_std_m` 和 `yaw_std_rad` 用于检查初始化与内部质量；实际残差键名是`rms_m`。`initialized`仅表示曾经初始化，使用时还必须检查当前`status`、位姿有效位及Header是否推进；内部READY也不等于已通过精度验收。停止测距或冻结某辆车后，状态会进入 stale；恢复输入并重新满足窗口条件后会自动恢复。
 
 ## 接入真实三盒数据
 

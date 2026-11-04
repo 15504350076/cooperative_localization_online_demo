@@ -1,0 +1,31 @@
+{
+  "conditions_checked": 84,
+  "trials_per_condition": 20,
+  "internal_gauge_invariance": true,
+  "common_reference_201_at_origin": true,
+  "default_uwb_outputs_identical": true,
+  "original_source_hashes_verified": true,
+  "original_libraries_and_V13_hashes_verified": 6,
+  "user_figure1_embedded_byte_identical": true,
+  "new_figures_with_verified_sources": 21,
+  "all_figures": 27,
+  "real_ekf_replay_variants": 20,
+  "rte_cpp_conditions": 12,
+  "baseline_rte_positions_status_counts_times_match": true,
+  "rte_position_uncertainty_rejections": [
+    38,
+    175,
+    178
+  ],
+  "static_jacobian_rank": 6,
+  "static_unknowns": 9,
+  "maneuver_conditions": 3,
+  "maneuver_trials": 20,
+  "maneuver_outputs_verified": true,
+  "maneuver_type_conditions": 4,
+  "maneuver_type_trials": 20,
+  "straight_conditions": 6,
+  "straight_trials": 20,
+  "csv_201_reference_exports": 6,
+  "no_valid_output_not_reported_as_zero": true
+}

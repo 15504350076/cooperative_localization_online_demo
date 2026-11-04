@@ -1,0 +1,104 @@
+[1;32m[Msg] [0m[1;32mIgnition Gazebo Server v[0m[1;32m6.18.0[0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mLoading SDF world file[[0m[1;32m/home/pdq/Code/cooperative_localization_online_demo/cooperative_localization_online_demo/ros2/zju_coop_gazebo/worlds/three_vehicle.sdf[0m[1;32m].[0m
+[1;32m[Msg] [0m[1;32mServing entity system service on [[0m[1;32m/[0m[1;32mentity/system/add[0m[1;32m][0m[1;32m[0m
+[1;36m[Dbg] [Physics.cc:804] [0m[1;36mLoaded [[0m[1;36mignition::physics::dartsim::Plugin[0m[1;36m] from library [[0m[1;36m/usr/lib/x86_64-linux-gnu/ign-physics-5/engine-plugins/libignition-physics-dartsim-plugin.so[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [SystemManager.cc:73] [0m[1;36mLoaded system [[0m[1;36mignition::gazebo::systems::Physics[0m[1;36m] for entity [[0m[1;36m1[0m[1;36m][0m[1;36m[0m
+[1;32m[Msg] [0m[1;32mCreate service on [[0m[1;32m/world/zju_coop_gazebo/create[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mRemove service on [[0m[1;32m/world/zju_coop_gazebo/remove[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mPose service on [[0m[1;32m/world/zju_coop_gazebo/set_pose[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mPose service on [[0m[1;32m/world/zju_coop_gazebo/set_pose_vector[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mLight configuration service on [[0m[1;32m/world/zju_coop_gazebo/light_config[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mPhysics service on [[0m[1;32m/world/zju_coop_gazebo/set_physics[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mSphericalCoordinates service on [[0m[1;32m/world/zju_coop_gazebo/set_spherical_coordinates[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mEnable collision service on [[0m[1;32m/world/zju_coop_gazebo/enable_collision[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mDisable collision service on [[0m[1;32m/world/zju_coop_gazebo/disable_collision[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mMaterial service on [[0m[1;32m/world/zju_coop_gazebo/visual_config[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mMaterial service on [[0m[1;32m/world/zju_coop_gazebo/wheel_slip[0m[1;32m][0m[1;32m[0m
+[1;36m[Dbg] [SystemManager.cc:73] [0m[1;36mLoaded system [[0m[1;36mignition::gazebo::systems::UserCommands[0m[1;36m] for entity [[0m[1;36m1[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [SystemManager.cc:73] [0m[1;36mLoaded system [[0m[1;36mignition::gazebo::systems::Imu[0m[1;36m] for entity [[0m[1;36m1[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [Sensors.cc:506] [0m[1;36mConfiguring Sensors system[0m[1;36m[0m
+[1;36m[Dbg] [Sensors.cc:431] [0m[1;36mSensorsPrivate::Run[0m[1;36m[0m
+[1;36m[Dbg] [SystemManager.cc:73] [0m[1;36mLoaded system [[0m[1;36mignition::gazebo::systems::Sensors[0m[1;36m] for entity [[0m[1;36m1[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [Sensors.cc:411] [0m[1;36mSensorsPrivate::RenderThread started[0m[1;36m[0m
+[1;36m[Dbg] [Sensors.cc:258] [0m[1;36mWaiting for init[0m[1;36m[0m
+[1;36m[Dbg] [SystemManager.cc:73] [0m[1;36mLoaded system [[0m[1;36mignition::gazebo::systems::SceneBroadcaster[0m[1;36m] for entity [[0m[1;36m1[0m[1;36m][0m[1;36m[0m
+[1;32m[Msg] [0m[1;32mDiffDrive subscribing to twist messages on [[0m[1;32m/model/vehicle_1/cmd_vel[0m[1;32m][0m[1;32m[0m
+[1;36m[Dbg] [SystemManager.cc:73] [0m[1;36mLoaded system [[0m[1;36mignition::gazebo::systems::DiffDrive[0m[1;36m] for entity [[0m[1;36m298[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [SystemManager.cc:73] [0m[1;36mLoaded system [[0m[1;36mignition::gazebo::systems::PosePublisher[0m[1;36m] for entity [[0m[1;36m298[0m[1;36m][0m[1;36m[0m
+[1;32m[Msg] [0m[1;32mDiffDrive subscribing to twist messages on [[0m[1;32m/model/vehicle_2/cmd_vel[0m[1;32m][0m[1;32m[0m
+[1;36m[Dbg] [SystemManager.cc:73] [0m[1;36mLoaded system [[0m[1;36mignition::gazebo::systems::DiffDrive[0m[1;36m] for entity [[0m[1;36m331[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [SystemManager.cc:73] [0m[1;36mLoaded system [[0m[1;36mignition::gazebo::systems::PosePublisher[0m[1;36m] for entity [[0m[1;36m331[0m[1;36m][0m[1;36m[0m
+[1;32m[Msg] [0m[1;32mDiffDrive subscribing to twist messages on [[0m[1;32m/model/vehicle_3/cmd_vel[0m[1;32m][0m[1;32m[0m
+[1;36m[Dbg] [SystemManager.cc:73] [0m[1;36mLoaded system [[0m[1;36mignition::gazebo::systems::DiffDrive[0m[1;36m] for entity [[0m[1;36m364[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [SystemManager.cc:73] [0m[1;36mLoaded system [[0m[1;36mignition::gazebo::systems::PosePublisher[0m[1;36m] for entity [[0m[1;36m364[0m[1;36m][0m[1;36m[0m
+[1;32m[Msg] [0m[1;32mLoaded level [[0m[1;32m3[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mServing world controls on [[0m[1;32m/world/zju_coop_gazebo[0m[1;32m/control], [[0m[1;32m/world/zju_coop_gazebo[0m[1;32m/control/state] and [[0m[1;32m/world/zju_coop_gazebo[0m[1;32m/playback/control][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mServing GUI information on [[0m[1;32m/world/zju_coop_gazebo[0m[1;32m/[0m[1;32mgui/info[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mWorld [[0m[1;32mzju_coop_gazebo[0m[1;32m] initialized with [[0m[1;32mone_khz[0m[1;32m] physics profile.[0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mServing world SDF generation service on [[0m[1;32m/world/zju_coop_gazebo[0m[1;32m/[0m[1;32mgenerate_world_sdf[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mServing world names on [[0m[1;32m/gazebo/worlds[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mResource path add service on [[0m[1;32m/gazebo/resource_paths/add[0m[1;32m].[0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mResource path get service on [[0m[1;32m/gazebo/resource_paths/get[0m[1;32m].[0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mResource path resolve service on [[0m[1;32m/gazebo/resource_paths/resolve[0m[1;32m].[0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mResource paths published on [[0m[1;32m/gazebo/resource_paths[0m[1;32m].[0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mServer control service on [[0m[1;32m/server_control[0m[1;32m].[0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mFound no publishers on /stats, adding root stats topic[0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mFound no publishers on /clock, adding root clock topic[0m[1;32m[0m
+[1;36m[Dbg] [SimulationRunner.cc:501] [0m[1;36mCreating PostUpdate worker threads: [0m[1;36m10[0m[1;36m[0m
+[1;36m[Dbg] [SimulationRunner.cc:512] [0m[1;36mCreating postupdate worker thread ([0m[1;36m0[0m[1;36m)[0m[1;36m[0m
+[1;36m[Dbg] [SimulationRunner.cc:512] [0m[1;36mCreating postupdate worker thread ([0m[1;36m1[0m[1;36m)[0m[1;36m[0m
+[1;36m[Dbg] [SimulationRunner.cc:512] [0m[1;36mCreating postupdate worker thread ([0m[1;36m2[0m[1;36m)[0m[1;36m[0m
+[1;36m[Dbg] [SimulationRunner.cc:512] [0m[1;36mCreating postupdate worker thread ([0m[1;36m3[0m[1;36m)[0m[1;36m[0m
+[1;36m[Dbg] [SimulationRunner.cc:512] [0m[1;36mCreating postupdate worker thread ([0m[1;36m4[0m[1;36m)[0m[1;36m[0m
+[1;36m[Dbg] [SimulationRunner.cc:512] [0m[1;36mCreating postupdate worker thread ([0m[1;36m5[0m[1;36m)[0m[1;36m[0m
+[1;36m[Dbg] [SimulationRunner.cc:512] [0m[1;36mCreating postupdate worker thread ([0m[1;36m6[0m[1;36m)[0m[1;36m[0m
+[1;36m[Dbg] [SimulationRunner.cc:512] [0m[1;36mCreating postupdate worker thread ([0m[1;36m7[0m[1;36m)[0m[1;36m[0m
+[1;36m[Dbg] [SimulationRunner.cc:512] [0m[1;36mCreating postupdate worker thread ([0m[1;36m8[0m[1;36m)[0m[1;36m[0m
+[1;36m[Dbg] [Sensors.cc:610] [0m[1;36mInitialization needed[0m[1;36m[0m
+[1;36m[Dbg] [Sensors.cc:270] [0m[1;36mInitializing render context[0m[1;36m[0m
+[1;32m[Msg] [0m[1;32mLoading plugin [[0m[1;32mignition-rendering-ogre2[0m[1;32m][0m[1;32m[0m
+[1;36m[Dbg] [ImuSensor.cc:148] [0m[1;36mIMU data for [[0m[1;36mvehicle_1::base_link::imu_sensor[0m[1;36m] advertised on [[0m[1;36mworld/zju_coop_gazebo/model/vehicle_1/link/base_link/sensor/imu_sensor/imu[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [ImuSensor.cc:148] [0m[1;36mIMU data for [[0m[1;36mvehicle_2::base_link::imu_sensor[0m[1;36m] advertislibEGL warning: Not allowed to force software rendering when API explicitly selects a hardware device.
+[1;33m[Wrn] [Ogre2Camera.cc:390] [0m[1;33mOgre2Camera::SetVisibilityMask: Mask bits [0m[1;33mc0000000[0m[1;33m are set but will be ignored as they conflict with the [0m[1;33mreserved bits used internally by the ogre2 backend.[0m[1;33m[0m
+[1;33m[Wrn] [Ogre2Camera.cc:390] [0m[1;33mOgre2Camera::SetVisibilityMask: Mask bits [0m[1;33mc0000000[0m[1;33m are set but will be ignored as they conflict with the [0m[1;33mreserved bits used internally by the ogre2 backend.[0m[1;33m[0m
+[1;33m[Wrn] [Ogre2Camera.cc:390] [0m[1;33mOgre2Camera::SetVisibilityMask: Mask bits [0m[1;33mc0000000[0m[1;33m are set but will be ignored as they conflict with the [0m[1;33mreserved bits used internally by the ogre2 backend.[0m[1;33m[0m
+ed on [[0m[1;36mworld/zju_coop_gazebo/model/vehicle_2/link/base_link/sensor/imu_sensor/imu[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [ImuSensor.cc:148] [0m[1;36mIMU data for [[0m[1;36mvehicle_3::base_link::imu_sensor[0m[1;36m] advertised on [[0m[1;36mworld/zju_coop_gazebo/model/vehicle_3/link/base_link/sensor/imu_sensor/imu[0m[1;36m][0m[1;36m[0m
+[1;32m[Msg] [0m[1;32mServing scene information on [[0m[1;32m/world/zju_coop_gazebo[0m[1;32m/[0m[1;32mscene/info[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mServing graph information on [[0m[1;32m/world/zju_coop_gazebo[0m[1;32m/[0m[1;32mscene/graph[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mServing full state on [[0m[1;32m/world/zju_coop_gazebo[0m[1;32m/[0m[1;32mstate[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mServing full state (async) on [[0m[1;32m/world/zju_coop_gazebo[0m[1;32m/[0m[1;32mstate_async[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mPublishing scene information on [[0m[1;32m/world/zju_coop_gazebo/scene/info[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mPublishing entity deletions on [[0m[1;32m/world/zju_coop_gazebo/scene/deletion[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mPublishing state changes on [[0m[1;32m/world/zju_coop_gazebo/state[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mPublishing pose messages on [[0m[1;32m/world/zju_coop_gazebo[0m[1;32m/[0m[1;32mpose/info[0m[1;32m][0m[1;32m[0m
+[1;32m[Msg] [0m[1;32mPublishing dynamic pose messages on [[0m[1;32m/world/zju_coop_gazebo[0m[1;32m/[0m[1;32mdynamic_pose/info[0m[1;32m][0m[1;32m[0m
+[1;36m[Dbg] [RenderUtil.cc:2591] [0m[1;36mCreate scene [[0m[1;36mscene[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [Sensors.cc:284] [0m[1;36mRendering Thread initialized[0m[1;36m[0m
+[1;36m[Dbg] [Sensors.cc:610] [0m[1;36mInitialization needed[0m[1;36m[0m
+[1;36m[Dbg] [gz.cc:410] [0m[1;36mShutting down ign-gazebo-server[0m[1;36m[0m
+[1;36m[Dbg] [Sensors.cc:439] [0m[1;36mSensorsPrivate::Stop[0m[1;36m[0m
+[1;36m[Dbg] [CameraSensor.cc:394] [0m[1;36mCamera images for [[0m[1;36mvehicle_1::base_link::front_camera[0m[1;36m] advertised on [[0m[1;36mworld/zju_coop_gazebo/model/vehicle_1/link/base_link/sensor/front_camera/image[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [CameraSensor.cc:705] [0m[1;36mCamera info for [[0m[1;36mvehicle_1::base_link::front_camera[0m[1;36m] advertised on [[0m[1;36m/world/zju_coop_gazebo/model/vehicle_1/link/base_link/sensor/front_camera/camera_info[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [CameraSensor.cc:394] [0m[1;36mCamera images for [[0m[1;36mvehicle_2::base_link::front_camera[0m[1;36m] advertised on [[0m[1;36mworld/zju_coop_gazebo/model/vehicle_2/link/base_link/sensor/front_camera/image[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [CameraSensor.cc:705] [0m[1;36mCamera info for [[0m[1;36mvehicle_2::base_link::front_camera[0m[1;36m] advertised on [[0m[1;36m/world/zju_coop_gazebo/model/vehicle_2/link/base_link/sensor/front_camera/camera_info[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [CameraSensor.cc:394] [0m[1;36mCamera images for [[0m[1;36mvehicle_3::base_link::front_camera[0m[1;36m] advertised on [[0m[1;36mworld/zju_coop_gazebo/model/vehicle_3/link/base_link/sensor/front_camera/image[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [CameraSensor.cc:705] [0m[1;36mCamera info for [[0m[1;36mvehicle_3::base_link::front_camera[0m[1;36m] advertised on [[0m[1;36m/world/zju_coop_gazebo/model/vehicle_3/link/base_link/sensor/front_camera/camera_info[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [Lidar.cc:138] [0m[1;36mLaser scans for [[0m[1;36mvehicle_1::base_link::front_lidar[0m[1;36m] advertised on [[0m[1;36mworld/zju_coop_gazebo/model/vehicle_1/link/base_link/sensor/front_lidar/scan[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [GpuLidarSensor.cc:163] [0m[1;36mLidar points for [[0m[1;36mvehicle_1::base_link::front_lidar[0m[1;36m] advertised on [[0m[1;36mworld/zju_coop_gazebo/model/vehicle_1/link/base_link/sensor/front_lidar/scan/points[0m[1;36m][0m[1;33m[Wrn] [Ogre2RenderTarget.cc:574] [0m[1;33mAnti-aliasing level of '[0m[1;33m2[0m[1;33m' [0m[1;33mis not supported; valid FSAA levels are: [0m[1;33m[ 0 4 ][0m[1;33m. Setting to 0[0m[1;33m[0m
+[1;36m[0m
+[1;36m[Dbg] [Lidar.cc:138] [0m[1;36mLaser scans for [[0m[1;36mvehicle_2::base_link::front_lidar[0m[1;36m] advertised on [[0m[1;36mworld/zju_coop_gazebo/model/vehicle_2/link/base_link/sensor/front_lidar/scan[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [GpuLidarSensor.cc:163] [0m[1;36mLidar points for [[0m[1;36mvehicle_2::base_link::front_lidar[0m[1;36m] advertised on [[0m[1;36mworld/zju_coop_gazebo/model/vehicle_2/link/base_link/sensor/front_lidar/scan/points[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [Lidar.cc:138] [0m[1;36mLaser scans for [[0m[1;36mvehicle_3::base_link::front_lidar[0m[1;36m] advertised on [[0m[1;36mworld/zju_coop_gazebo/model/vehicle_3/link/base_link/sensor/front_lidar/scan[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [GpuLidarSensor.cc:163] [0m[1;36mLidar points for [[0m[1;36mvehicle_3::base_link::front_lidar[0m[1;36m] advertised on [[0m[1;36mworld/zju_coop_gazebo/model/vehicle_3/link/base_link/sensor/front_lidar/scan/points[0m[1;36m][0m[1;36m[0m
+[1;36m[Dbg] [Sensors.cc:425] [0m[1;36mSensorsPrivate::RenderThread stopped[0m[1;36m[0m
+[1;36m[Dbg] [SimulationRunner.cc:528] [0m[1;36mExiting postupdate worker thread ([0m[1;36m0[0m[1;36m)[0m[1;36m[0m
+[1;36m[Dbg] [SimulationRunner.cc:528] [0m[1;36mExiting postupdate worker thread ([0m[1;36m4[0m[1;36m)[0m[1;36m[0m
+[1;36m[Dbg] [SimulationRunner.cc:528] [0m[1;36mExiting postupdate worker thread ([0m[1;36m6[0m[1;36m)[0m[1;36m[0m
+[1;36m[Dbg] [SimulationRunner.cc:528] [0m[1;36mExiting postupdate worker thread ([0m[1;36m5[0m[1;36m)[0m[1;36m[0m
+[1;36m[Dbg] [SimulationRunner.cc:528] [0m[1;36mExiting postupdate worker thread ([0m[1;36m1[0m[1;36m)[0m[1;36m[0m
+[1;36m[Dbg] [SimulationRunner.cc:528] [0m[1;36mExiting postupdate worker thread ([0m[1;36m7[0m[1;36m)[0m[1;36m[0m
+[1;36m[Dbg] [SimulationRunner.cc:528] [0m[1;36mExiting postupdate worker thread ([0m[1;36m2[0m[1;36m)[0m[1;36m[0m
+[1;36m[Dbg] [SimulationRunner.cc:528] [0m[1;36mExiting postupdate worker thread ([0m[1;36m3[0m[1;36m)[0m[1;36m[0m
+[1;36m[Dbg] [SimulationRunner.cc:528] [0m[1;36mExiting postupdate worker thread ([0m[1;36m8[0m[1;36m)[0m[1;36m[0m
+[1;36m[Dbg] [Sensors.cc:439] [0m[1;36mSensorsPrivate::Stop[0m[1;36m[0m

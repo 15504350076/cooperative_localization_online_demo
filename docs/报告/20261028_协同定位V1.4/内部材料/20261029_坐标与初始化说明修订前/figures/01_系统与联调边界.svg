@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+<rect width="1600" height="900" fill="white"/>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#59636c"/></marker></defs>
+<g id="box_1"><rect x="36" y="74" width="386" height="160" fill="#eef2f5" stroke="#59636c" stroke-width="3"/>
+<text x="229.0" y="121.4" text-anchor="middle" font-family="Times New Roman,SimHei,Noto Sans CJK SC,sans-serif" font-size="26">单车传感器与计算盒 × 3</text>
+<text x="229.0" y="163.0" text-anchor="middle" font-family="Times New Roman,SimHei,Noto Sans CJK SC,sans-serif" font-size="26">UWB／车载IMU</text>
+<text x="229.0" y="204.6" text-anchor="middle" font-family="Times New Roman,SimHei,Noto Sans CJK SC,sans-serif" font-size="26">雷达／相机</text>
+</g>
+<g id="box_2"><rect x="534" y="74" width="372" height="160" fill="#eef2f5" stroke="#59636c" stroke-width="3"/>
+<text x="720.0" y="121.4" text-anchor="middle" font-family="Times New Roman,SimHei,Noto Sans CJK SC,sans-serif" font-size="26">本车运动估计</text>
+<text x="720.0" y="163.0" text-anchor="middle" font-family="Times New Roman,SimHei,Noto Sans CJK SC,sans-serif" font-size="26">IMU航位推算</text>
+<text x="720.0" y="204.6" text-anchor="middle" font-family="Times New Roman,SimHei,Noto Sans CJK SC,sans-serif" font-size="26">本车位姿与速度</text>
+</g>
+<g id="box_3"><rect x="1030" y="74" width="534" height="160" fill="#eef2f5" stroke="#59636c" stroke-width="3"/>
+<text x="1297.0" y="142.2" text-anchor="middle" font-family="Times New Roman,SimHei,Noto Sans CJK SC,sans-serif" font-size="26">自组网通信</text>
+<text x="1297.0" y="183.8" text-anchor="middle" font-family="Times New Roman,SimHei,Noto Sans CJK SC,sans-serif" font-size="26">传输车间测距和本车位姿</text>
+</g>
+<g id="box_4"><rect x="36" y="360" width="386" height="170" fill="#eef2f5" stroke="#59636c" stroke-width="3"/>
+<text x="229.0" y="412.4" text-anchor="middle" font-family="Times New Roman,SimHei,Noto Sans CJK SC,sans-serif" font-size="26">仿真与实测数据</text>
+<text x="229.0" y="454.0" text-anchor="middle" font-family="Times New Roman,SimHei,Noto Sans CJK SC,sans-serif" font-size="26">轨迹、测距、IMU和里程计</text>
+<text x="229.0" y="495.6" text-anchor="middle" font-family="Times New Roman,SimHei,Noto Sans CJK SC,sans-serif" font-size="26">算法计算与误差分析</text>
+</g>
+<g id="box_5"><rect x="534" y="360" width="372" height="170" fill="#eef2f5" stroke="#59636c" stroke-width="3"/>
+<text x="720.0" y="412.4" text-anchor="middle" font-family="Times New Roman,SimHei,Noto Sans CJK SC,sans-serif" font-size="26">协同定位计算</text>
+<text x="720.0" y="454.0" text-anchor="middle" font-family="Times New Roman,SimHei,Noto Sans CJK SC,sans-serif" font-size="26">默认：UWB相对队形</text>
+<text x="720.0" y="495.6" text-anchor="middle" font-family="Times New Roman,SimHei,Noto Sans CJK SC,sans-serif" font-size="26">扩展：RTE＋局部里程计</text>
+</g>
+<g id="box_6"><rect x="1030" y="627" width="534" height="146" fill="#eef2f5" stroke="#59636c" stroke-width="3"/>
+<text x="1297.0" y="688.2" text-anchor="middle" font-family="Times New Roman,SimHei,Noto Sans CJK SC,sans-serif" font-size="26">决策／规划／控制／显示</text>
+<text x="1297.0" y="729.8" text-anchor="middle" font-family="Times New Roman,SimHei,Noto Sans CJK SC,sans-serif" font-size="26">三车位置、坐标系和结果时间</text>
+</g>
+<path id="connection_1" d="M422 154 H534" stroke="#59636c" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+<path id="connection_2" d="M906 154 H1030" stroke="#59636c" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+<path id="connection_3" d="M1297 234 V360 H906" stroke="#59636c" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+<path id="connection_4" d="M422 445 H534" stroke="#59636c" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+<path id="connection_5" d="M906 445 L1110 627" stroke="#59636c" stroke-width="3" fill="none" marker-end="url(#arrow)"/>
+</svg>

@@ -1,0 +1,37 @@
+{
+  "unit": "人民币元",
+  "scope": "一套=一只完整传感器盒；三车=三只；增加单点按另配一只同型完整盒；不列人力开发成本",
+  "complete_box_unit_price": {
+    "value": null,
+    "known_description": "3万余元/只",
+    "basis": "用户2026-10-29确认：一套是一只完整传感器盒",
+    "exact_transaction_price_pending": true
+  },
+  "configurations": [
+    {
+      "name": "三车现有配置",
+      "complete_box_count": 3,
+      "total": "实际单盒成交价×3"
+    },
+    {
+      "name": "三车加一个已知UWB点",
+      "complete_box_count": 4,
+      "increment": "1只同型完整盒，3万余元",
+      "total": "实际单盒成交价×4"
+    },
+    {
+      "name": "三车增加高配IMU",
+      "complete_box_count": 3,
+      "imu_model": "ADIS16495-2BMLZ",
+      "imu_count": 3,
+      "reference_unit_price_including_vat_yuan": 47224.54,
+      "reference_extended_price_yuan": 141673.62,
+      "reserved_unit_price_yuan": 50000.0,
+      "reserved_extended_price_yuan": 150000.0
+    }
+  ],
+  "reference_date": "2026-10-29",
+  "public_price_source": "https://www.digikey.cn/zh/products/detail/analog-devices-inc/ADIS16495-2BMLZ/7931993",
+  "manufacturer_model_source": "https://www.analog.com/en/products/adis16495.html",
+  "sensor_model_scope": "九档输入是误差模型条件，不声称该IMU已参与仿真或与某档逐项等同"
+}

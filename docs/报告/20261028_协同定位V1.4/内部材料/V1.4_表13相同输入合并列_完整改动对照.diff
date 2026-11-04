@@ -1,0 +1,38 @@
+--- 修改前/报告.md
++++ 修改后/报告.md
+@@ -215,17 +215,19 @@
+ 
+ ### 2.5 VIO与LIO对照及传感器配置
+ 
+-本次设置中，VIO增强与LIO基础、VIO精细与LIO增强采用相同的位移误差参数和同编号扰动，因此对应结果一致。针对前述VIO和LIO无锚点结果，选择第1次重复试验，进一步保持60秒初始化、相同随机样本及其余参数不变，分别将60秒后的运动输入方向漂移设为零、将测距随机项设为零（固定偏差保留）、将滤波方向过程方差扩大100倍。另用0～90秒测量重新建系，各对照均由测量输入求解。下表统一在90～300秒比较，避免不同起始时刻影响统计。
++本次仿真中，VIO增强与LIO基础、VIO精细与LIO增强分别采用相同的位移误差参数和同编号扰动，表13按相同输入条件合并列示。表中数值为相对位置均方根误差；两类传感器的实际运动输出质量由具体设备和环境决定。针对前述VIO和LIO无锚点结果，选择第1次重复试验，进一步保持60秒初始化、相同随机样本及其余参数不变，分别将60秒后的运动输入方向漂移设为零、将测距随机项设为零（固定偏差保留）、将滤波方向过程方差扩大100倍。另用0～90秒测量重新建系，各对照均由测量输入求解。下表统一在90～300秒比较，避免不同起始时刻影响统计。
+ 
+ 表13 VIO与LIO误差对照
+ 
+-| 对照条件 | VIO基础RMSE（米） | VIO增强RMSE（米） | LIO增强RMSE（米） |
+-|---|---|---|---|
+-| 原始EKF重放 | 1.295 | 0.819 | 0.472 |
+-| 后续方向漂移设为零 | 1.208 | 0.774 | 0.454 |
+-| 后续测距随机项设为零 | 1.595 | 0.924 | 0.445 |
+-| 方向过程方差扩大100倍 | 1.367 | 0.838 | 0.481 |
+-| 90秒测量建系 | 1.852 | 1.225 | 0.716 |
++| 对照条件 | VIO基础（米） | VIO增强／LIO基础（米） | VIO精细／LIO增强（米） |
++|---|---|---|---|
++| 原始条件 | 1.295 | 0.819 | 0.472 |
++| 无后续方向漂移 | 1.208 | 0.774 | 0.454 |
++| 无后续测距随机项 | 1.595 | 0.924 | 0.445 |
++| 方向方差扩大100倍 | 1.367 | 0.838 | 0.481 |
++| 90秒数据建系 | 1.852 | 1.225 | 0.716 |
++
++图8分别展示VIO增强和LIO增强的误差过程；相同输入条件下，结果也分别对应LIO基础和VIO精细。
+ 
+ ![图8 VIO与LIO峰值对照](figures/review_同输入峰值对照.png)
+ 
+@@ -477,6 +479,7 @@
+ python3 tools/plot_report_replay.py --replay-rte
+ PYTHONPATH=tools python3 tools/evaluate_common_reference.py
+ PYTHONPATH=tools python3 tools/analyze_fusion_peaks.py
++PYTHONPATH=tools python3 tools/analyze_fusion_peaks.py --profiles vio_精细 --output data/fusion_peak_vio_precise_20261102
+ PYTHONPATH=tools python3 tools/evaluate_rte_startup_diagnostics.py
+ PYTHONPATH=tools python3 tools/plot_fusion_review.py
+ PYTHONPATH=tools python3 tools/analyze_maneuver_observability.py --plot-only

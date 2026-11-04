@@ -1,0 +1,12 @@
+Internal ctest changing into directory: /home/pdq/Code/cooperative_localization_online_demo/cooperative_localization_online_demo/build_rte_verify
+Test project /home/pdq/Code/cooperative_localization_online_demo/cooperative_localization_online_demo/build_rte_verify
+    Start  8: zju_coop_rte_self_check
+1/3 Test  #8: zju_coop_rte_self_check ..........   Passed    0.06 sec
+    Start  9: c_header_smoke_rte
+2/3 Test  #9: c_header_smoke_rte ...............   Passed    0.03 sec
+    Start 10: zju_coop_three_rte_self_check
+3/3 Test #10: zju_coop_three_rte_self_check ....   Passed   15.82 sec
+
+100% tests passed, 0 tests failed out of 3
+
+Total Test time (real) =  15.95 sec

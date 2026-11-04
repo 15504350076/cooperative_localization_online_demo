@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#fff}body{font-family:"Times New Roman","SimHei","Noto Sans CJK SC","Microsoft YaHei",sans-serif}
+.canvas{position:relative;width:1600px;height:900px;background:#fff}
+.box{position:absolute;box-sizing:border-box;border:3px solid #59636c;background:#eef2f5;color:#111;text-align:center;display:flex;align-items:center;justify-content:center;line-height:1.6;font-size:26px;padding:12px}
+.small{font-size:24px}.b1{left:36px;top:74px;width:386px;height:160px}.b2{left:534px;top:74px;width:372px;height:160px}.b3{left:1030px;top:74px;width:534px;height:160px}
+.b4{left:36px;top:360px;width:386px;height:170px}.b5{left:534px;top:360px;width:372px;height:170px}.b6{left:1030px;top:627px;width:534px;height:146px}
+svg{position:absolute;inset:0;pointer-events:none}.line{stroke:#59636c;stroke-width:3;fill:none;marker-end:url(#arrow)}
+</style></head><body><div class="canvas">
+<div class="box b1">单车传感器与计算盒 × 3<br>UWB／车载IMU<br>雷达／相机</div>
+<div class="box b2">本车运动估计<br>IMU航位推算<br>本车位姿与速度</div>
+<div class="box b3">自组网通信<br>传输车间测距和本车位姿</div>
+<div class="box b4">仿真与实测数据<br>轨迹、测距、IMU和里程计<br>算法计算与误差分析</div>
+<div class="box b5">协同定位计算<br>默认：UWB相对队形<br>扩展：RTE＋局部里程计</div>
+<div class="box b6">决策／规划／控制／显示<br>三车位置、坐标系和结果时间</div>
+<svg viewBox="0 0 1600 900"><defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#59636c"/></marker></defs>
+<path class="line" d="M422 154 H534"/><path class="line" d="M906 154 H1030"/>
+<path class="line" d="M1297 234 V360 H906"/><path class="line" d="M422 445 H534"/><path class="line" d="M906 445 L1110 627"/>
+</svg></div></body></html>

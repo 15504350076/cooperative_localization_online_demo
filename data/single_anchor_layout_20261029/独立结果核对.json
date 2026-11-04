@@ -1,0 +1,13 @@
+{
+  "conditions": 63,
+  "trials_recomputed": 1260,
+  "maximum_anchor_count": 1,
+  "no_anchor_initialization_uses_only_three_peer_ranges": true,
+  "replay": [
+    "lio_增强_no_anchor_peer",
+    "lio_增强_anchor_区域右侧"
+  ],
+  "center_placement_matches_previous_outputs_max_error_m": 0.0,
+  "default_algorithms_and_V13_unchanged": true,
+  "user_figure1_sha256_verified": true
+}

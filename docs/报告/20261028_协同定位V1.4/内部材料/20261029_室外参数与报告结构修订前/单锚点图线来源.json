@@ -1,0 +1,110 @@
+{
+  "single_16_三车与唯一锚点": {
+    "input_files": [
+      "truth_and_range_inputs.npz"
+    ],
+    "line_data_sha256": "d9f53c45ca93fc0d50ecca262e8657d27438ad8da578e6b877d979926aa1de43",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合"
+  },
+  "single_17_IMU逐级对比": {
+    "input_files": [
+      "summary.json:imu_基础_start_s0.05",
+      "summary.json:imu_基础_peer_s0.05",
+      "summary.json:imu_基础_single_s0.05",
+      "summary.json:imu_增强_start_s0.05",
+      "summary.json:imu_增强_peer_s0.05",
+      "summary.json:imu_增强_single_s0.05",
+      "summary.json:imu_精细_start_s0.05",
+      "summary.json:imu_精细_peer_s0.05",
+      "summary.json:imu_精细_single_s0.05"
+    ],
+    "line_data_sha256": "a74ddb2af190739538665b0cdd4933b3499e1e86b89a5420d722dc5bf17a8be1",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合"
+  },
+  "single_18_VIO逐级对比": {
+    "input_files": [
+      "summary.json:vio_基础_start_s0.05",
+      "summary.json:vio_基础_peer_s0.05",
+      "summary.json:vio_基础_single_s0.05",
+      "summary.json:vio_增强_start_s0.05",
+      "summary.json:vio_增强_peer_s0.05",
+      "summary.json:vio_增强_single_s0.05",
+      "summary.json:vio_精细_start_s0.05",
+      "summary.json:vio_精细_peer_s0.05",
+      "summary.json:vio_精细_single_s0.05"
+    ],
+    "line_data_sha256": "580581a63f4c84918ac04c0f1373eded3a24d873362699c2176020a66cefe82c",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合"
+  },
+  "single_19_LIO逐级对比": {
+    "input_files": [
+      "summary.json:lio_基础_start_s0.05",
+      "summary.json:lio_基础_peer_s0.05",
+      "summary.json:lio_基础_single_s0.05",
+      "summary.json:lio_增强_start_s0.05",
+      "summary.json:lio_增强_peer_s0.05",
+      "summary.json:lio_增强_single_s0.05",
+      "summary.json:lio_精细_start_s0.05",
+      "summary.json:lio_精细_peer_s0.05",
+      "summary.json:lio_精细_single_s0.05"
+    ],
+    "line_data_sha256": "28113fd0bc679867443c7db7dd3ba07e0199868cae085e897d776a05ffdbae87",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合"
+  },
+  "single_20_传感器与测距精度": {
+    "input_files": [
+      "summary.json"
+    ],
+    "line_data_sha256": "fd1a6f5a543d01f27ad02b2f74f737b32e781adf9572ce89a1f9f2cd91c69fb4",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合"
+  },
+  "single_21_逐时定位误差": {
+    "input_files": [
+      "outputs/*_增强_*_s0.05.npz",
+      "truth_and_range_inputs.npz"
+    ],
+    "line_data_sha256": "a4581f3281246fbe3a886a79daa72357fcd974ebf2eb86c8126fba6d276cc76e",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合"
+  },
+  "single_22_单锚点逐车误差": {
+    "input_files": [
+      "outputs/*_增强_single_s0.05.npz",
+      "truth_and_range_inputs.npz"
+    ],
+    "line_data_sha256": "9f029274eefe53326ae8dcef6758c9203f4eb4a1e8f4147a8eccec5a530fb3e9",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合"
+  },
+  "single_23_算法输出与真值轨迹": {
+    "input_files": [
+      "outputs/vio_增强_single_s0.05.npz",
+      "outputs/lio_增强_single_s0.05.npz",
+      "truth_and_range_inputs.npz"
+    ],
+    "line_data_sha256": "3e567bc9bf2b555d9f2f5765237c9278aa1976e2d63308a8784ba4dae59f76e1",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合"
+  },
+  "single_24_位置误差累计分布": {
+    "input_files": [
+      "outputs/*_增强_single_s0.05.npz",
+      "truth_and_range_inputs.npz"
+    ],
+    "line_data_sha256": "f2c6e668bcd7b8c79dfd3fefe36676a0e9033d1ca0be2aee3f36dfd860877049",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合"
+  },
+  "single_25_位置与测量更新": {
+    "input_files": [
+      "outputs/lio_增强_single_s0.05.npz",
+      "truth_and_range_inputs.npz"
+    ],
+    "line_data_sha256": "a33823e49dca196eedbc5775d0407c66cec2ccdbd5f0a8855c195effcb6493cd",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合"
+  },
+  "single_26_预算与仿真精度": {
+    "input_files": [
+      "成本预算.json",
+      "summary.json"
+    ],
+    "line_data_sha256": "c9dcfa8a52139496976132c0336ecc6748dbd35cffb51b3f7eeeb0e07e99f28a",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合"
+  }
+}

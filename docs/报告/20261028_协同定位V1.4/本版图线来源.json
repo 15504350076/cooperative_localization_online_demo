@@ -1,0 +1,316 @@
+{
+  "图1_协同定位系统组成": {
+    "png_sha256": "a4b8725191f5958ed51468c702bedf98b80e18912f0ed66d4f02577353e0a4cc",
+    "source": "用户提供原图，字节不变，Word内嵌哈希核对一致",
+    "archived_copy": "figures/原始素材/图1_协同定位系统组成.png"
+  },
+  "review_layout_imu_无锚点分级": {
+    "input_files": [
+      "data/common_reference_20261030/summary.json"
+    ],
+    "line_data_sha256": "82530b70509405b1e5809f4363e760c4c836196f39cda237b8ffe7ae0b71b73c",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/common_reference_20261030/summary.json": "543e24b271fe1c11955b94c91709e64ec8902a0f7f72ef2cb9fb61e69e861b9e"
+    },
+    "png_sha256": "5c412ab103fc3bcbafac8af0e2802fb62425e931c4f9ba72c8cd2ac753313152"
+  },
+  "review_imu纯传播与测距": {
+    "input_files": [
+      "data/common_reference_20261030/outputs/imu_基础_no_anchor_start.npz",
+      "data/common_reference_20261030/outputs/imu_基础_no_anchor_peer.npz",
+      "data/common_reference_20261030/outputs/imu_增强_no_anchor_start.npz",
+      "data/common_reference_20261030/outputs/imu_增强_no_anchor_peer.npz",
+      "data/common_reference_20261030/outputs/imu_精细_no_anchor_start.npz",
+      "data/common_reference_20261030/outputs/imu_精细_no_anchor_peer.npz"
+    ],
+    "line_data_sha256": "ca610e5983e7be64f99aafbd1fdf2953ac2eb7c70dcfd37d18008ab222c1f909",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/common_reference_20261030/outputs/imu_基础_no_anchor_start.npz": "fd5eca5dccd3ec4f3163b7c28979683be561a5be3c5a245034d518b849ac2afd",
+      "data/common_reference_20261030/outputs/imu_基础_no_anchor_peer.npz": "010c9ede6bf68e34f7cac909205ccfac65ea1e2e9ce05ea59563101191fd727d",
+      "data/common_reference_20261030/outputs/imu_增强_no_anchor_start.npz": "983520d9728ea2dd0052dbb97e333113d84eaec2c7b1e309196bc051da8920b1",
+      "data/common_reference_20261030/outputs/imu_增强_no_anchor_peer.npz": "31c32edbcf205b50845593af983cb6a98b7c4bd5dcee76917913de0e396dd064",
+      "data/common_reference_20261030/outputs/imu_精细_no_anchor_start.npz": "c3a0e2fac39e6a6d92a6cc31809fc12bfdf0b801fadc3f651ff5c28496799b15",
+      "data/common_reference_20261030/outputs/imu_精细_no_anchor_peer.npz": "0546d6583b30528009abc2cb213a8d416ea52f4dca1341eb986d10305e18b018"
+    },
+    "png_sha256": "fb190f92a079c18391f3073c7572d5e0744d40037e8cdf1ca9b762def5bce21c"
+  },
+  "review_layout_vio_无锚点分级": {
+    "input_files": [
+      "data/common_reference_20261030/summary.json"
+    ],
+    "line_data_sha256": "260175cc5617d6b254dfd08855005fb769139221f7ebc00d59bdbd6e5b5a7f03",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/common_reference_20261030/summary.json": "543e24b271fe1c11955b94c91709e64ec8902a0f7f72ef2cb9fb61e69e861b9e"
+    },
+    "png_sha256": "7703964885db6591b4c4936eddcc84d063e956374f6a15d8d811afac85515d6c"
+  },
+  "review_layout_lio_无锚点分级": {
+    "input_files": [
+      "data/common_reference_20261030/summary.json"
+    ],
+    "line_data_sha256": "0976ea8d8b7529cea52f592ff7339948e906f6677b33146a2bdbe47acc3fb941",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/common_reference_20261030/summary.json": "543e24b271fe1c11955b94c91709e64ec8902a0f7f72ef2cb9fb61e69e861b9e"
+    },
+    "png_sha256": "d020859217b95d3b56235fe022cb496e1f153ef7f37316d60cc0c4f9dd3cb239"
+  },
+  "review_201参考坐标与锚点": {
+    "input_files": [
+      "data/single_anchor_outdoor_20261029/truth_and_range_inputs.npz"
+    ],
+    "line_data_sha256": "41a420f96f03494406ebe41547d75c2b0ad70558975b37de237e0cf9bb471c4d",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/single_anchor_outdoor_20261029/truth_and_range_inputs.npz": "ea346c12c9b70d9caf2028d3b6b1e3d67976d5eff860a93b78de656ecedfe67c"
+    },
+    "png_sha256": "09e403ecae1bdb60a80cd5acab69d5ef546694191e3181da40fd89be24164b3e"
+  },
+  "review_layout_vio_逐时定位误差": {
+    "input_files": [
+      "data/common_reference_20261030/outputs/vio_基础_no_anchor_peer.npz",
+      "data/common_reference_20261030/outputs/vio_基础_anchor_区域中部.npz",
+      "data/common_reference_20261030/outputs/vio_基础_anchor_区域右侧.npz",
+      "data/common_reference_20261030/outputs/vio_增强_no_anchor_peer.npz",
+      "data/common_reference_20261030/outputs/vio_增强_anchor_区域中部.npz",
+      "data/common_reference_20261030/outputs/vio_增强_anchor_区域右侧.npz"
+    ],
+    "line_data_sha256": "9d2606ac2926358e67205ba46fbfae9f0286bd530c8e4f025f35a29934db2d72",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/common_reference_20261030/outputs/vio_基础_no_anchor_peer.npz": "cf4c6a646a9768a7269bdb79a72201f0308d8db6941a3583a4ebd9978102b5c4",
+      "data/common_reference_20261030/outputs/vio_基础_anchor_区域中部.npz": "ab4342e67377d84fa4abf0374a995e392bbb2e5ca348f1e0f1c1665c001d024a",
+      "data/common_reference_20261030/outputs/vio_基础_anchor_区域右侧.npz": "2532f02b560d979f9b7cef6ad765924c49b5b4c611e928254f8f7676a17479a9",
+      "data/common_reference_20261030/outputs/vio_增强_no_anchor_peer.npz": "ebbb6b0b3d79821a67caa9e32fe25d76e4fb7a75fa9aa0984ecff408946de1ee",
+      "data/common_reference_20261030/outputs/vio_增强_anchor_区域中部.npz": "5ef1cf23cc0d8df6d303aa8f10645253b6dd9e05f2acc13cf13ecaadf3696cfd",
+      "data/common_reference_20261030/outputs/vio_增强_anchor_区域右侧.npz": "21ed7b05dfc8b3c36fca5110d286f8afd53dde464b34091054e460eef9c1d4dd"
+    },
+    "png_sha256": "0b5f621daafe2ded6a3f7a524a528589aa8c26f8522c5d2457505c1caf79df5e"
+  },
+  "review_layout_lio_逐时定位误差": {
+    "input_files": [
+      "data/common_reference_20261030/outputs/lio_基础_no_anchor_peer.npz",
+      "data/common_reference_20261030/outputs/lio_基础_anchor_区域中部.npz",
+      "data/common_reference_20261030/outputs/lio_基础_anchor_区域右侧.npz",
+      "data/common_reference_20261030/outputs/lio_增强_no_anchor_peer.npz",
+      "data/common_reference_20261030/outputs/lio_增强_anchor_区域中部.npz",
+      "data/common_reference_20261030/outputs/lio_增强_anchor_区域右侧.npz"
+    ],
+    "line_data_sha256": "f8a7ff08477e2f12616c39b82cbe1e211add2b18398c0c67600bd97c40f961ae",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/common_reference_20261030/outputs/lio_基础_no_anchor_peer.npz": "ebbb6b0b3d79821a67caa9e32fe25d76e4fb7a75fa9aa0984ecff408946de1ee",
+      "data/common_reference_20261030/outputs/lio_基础_anchor_区域中部.npz": "5ef1cf23cc0d8df6d303aa8f10645253b6dd9e05f2acc13cf13ecaadf3696cfd",
+      "data/common_reference_20261030/outputs/lio_基础_anchor_区域右侧.npz": "21ed7b05dfc8b3c36fca5110d286f8afd53dde464b34091054e460eef9c1d4dd",
+      "data/common_reference_20261030/outputs/lio_增强_no_anchor_peer.npz": "ef67796ab36ed2dd92cf6d87552468f8d23e3c782c62fa1a34aec5c478b046ee",
+      "data/common_reference_20261030/outputs/lio_增强_anchor_区域中部.npz": "6d98326a906827a56546946071a307d7c79f117041c49ac23bfd738ccb0f998d",
+      "data/common_reference_20261030/outputs/lio_增强_anchor_区域右侧.npz": "3ada0c5398379ee9a178e423fb40b4d3ea10b9dcc4a1a2087d3737e22d97a899"
+    },
+    "png_sha256": "7178a93b9646223740f718f1b025bcfdf115627f61fc7abe83a6d31d9bceecea"
+  },
+  "review_layout_候选布点": {
+    "input_files": [
+      "data/single_anchor_outdoor_20261029/truth_and_range_inputs.npz"
+    ],
+    "line_data_sha256": "26ed05d1f1a8e2c665fdd39f5936f72816ddca92b19e337aaec64dbed3a67eb5",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/single_anchor_outdoor_20261029/truth_and_range_inputs.npz": "ea346c12c9b70d9caf2028d3b6b1e3d67976d5eff860a93b78de656ecedfe67c"
+    },
+    "png_sha256": "252ac8a6d2643bb669a33c7af3858c7e0a3c41d5d70e2e3d475234292ca795b4"
+  },
+  "review_layout_布点误差分布": {
+    "input_files": [
+      "data/common_reference_20261030/summary.json"
+    ],
+    "line_data_sha256": "b19105b2aaffefeec05466f32fb36b40df011a76320f826519a60ab1c68a17db",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/common_reference_20261030/summary.json": "543e24b271fe1c11955b94c91709e64ec8902a0f7f72ef2cb9fb61e69e861b9e"
+    },
+    "png_sha256": "bf33786de062a017aa58eab55d8d6bca2eae59c982a1d3b37198e03a6c3b16ff"
+  },
+  "review_layout_单点估计轨迹": {
+    "input_files": [
+      "data/common_reference_20261030/outputs/lio_增强_anchor_区域中部.npz",
+      "data/common_reference_20261030/outputs/lio_增强_anchor_区域右侧.npz"
+    ],
+    "line_data_sha256": "bf9d4d05ea1927ea525043a7267a78110ae0809252e55eb373b563f5ae99e339",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/common_reference_20261030/outputs/lio_增强_anchor_区域中部.npz": "6d98326a906827a56546946071a307d7c79f117041c49ac23bfd738ccb0f998d",
+      "data/common_reference_20261030/outputs/lio_增强_anchor_区域右侧.npz": "3ada0c5398379ee9a178e423fb40b4d3ea10b9dcc4a1a2087d3737e22d97a899"
+    },
+    "png_sha256": "278faf59b0f37d95701d712f0bfc588cad51fe916a3b54d847b9b5f4ff5d5bd8"
+  },
+  "review_测距精度对照": {
+    "input_files": [
+      "data/common_reference_20261030/summary.json"
+    ],
+    "line_data_sha256": "439c414d82f42a887d1273849bb7959be548240225f9155ca274bce73c2893dd",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/common_reference_20261030/summary.json": "543e24b271fe1c11955b94c91709e64ec8902a0f7f72ef2cb9fb61e69e861b9e"
+    },
+    "png_sha256": "44567e9619d746af941f61b6a7d4d73f0c22c95a189073a896bf15131a33c0c9"
+  },
+  "replay_RTE逐车定位误差": {
+    "source_directory": "data/report_replay_20261029",
+    "reproduction": "source /opt/ros/humble/setup.bash 后 python3 tools/plot_report_replay.py --replay-rte",
+    "input_and_replay_record": "data/report_replay_20261029/复现核对.json",
+    "drawing": "实际C++回放输出或原始/livox/lidar测量；Matplotlib真实字体排版",
+    "png_sha256": "55ba9220554afd57e5964dab79189e3eb2a6817e4403080378ca5b7f267ce0a9",
+    "coordinate": "201当前位置为原点，201初始局部里程计轴固定；非随车头旋转或当刻201→202定轴",
+    "initialization_audit": "data/report_replay_20261029/初始化与坐标核对/核对结果.json"
+  },
+  "review_峰值与队形方向": {
+    "input_files": [
+      "data/fusion_peak_analysis_20261030/vio_增强.npz"
+    ],
+    "line_data_sha256": "25b6494a2ee7482a0a88b4a55b23e3dfbe690073a282e42c862bfc320a8177ca",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/fusion_peak_analysis_20261030/vio_增强.npz": "af2380e763616b18c8928a813dfd489a90302fb88b76a41fa68c59bf49b25d6c"
+    },
+    "png_sha256": "4e6b7f36bd57f77d3c08e56ba5193ee1e9185e959f8b066276e0262912a1fa16"
+  },
+  "review_同输入峰值对照": {
+    "input_files": [
+      "data/fusion_peak_analysis_20261030/vio_增强.npz",
+      "data/fusion_peak_analysis_20261030/lio_增强.npz"
+    ],
+    "line_data_sha256": "193da0cc37e78699d7c98a419507ead84bb233f13bafe7e2a373027596f9a38c",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/fusion_peak_analysis_20261030/vio_增强.npz": "af2380e763616b18c8928a813dfd489a90302fb88b76a41fa68c59bf49b25d6c",
+      "data/fusion_peak_analysis_20261030/lio_增强.npz": "8bf963ecd7431902b665002d4f529b3e338000a6758235d3e94cb7da44047b22"
+    },
+    "png_sha256": "49d33774e098868739572abca700dbfb31e5e7be85056254dfe77fa6672befd6"
+  },
+  "review_RTE建系参数对照": {
+    "input_files": [
+      "data/rte_startup_diagnostics_20261030/summary.json"
+    ],
+    "line_data_sha256": "60e954b4f12327c29558dff761604c2bc09472f536f2ce705ade8d6f1b1dc9ab",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/rte_startup_diagnostics_20261030/summary.json": "3a2ce867434617b8ed1d948b9c844bbb849f6bd8f5a741048179f16e5b7ed801"
+    },
+    "png_sha256": "f3bfd3840e44c40b42bdbcd07dfe6b457c749900bf24cdcd544cf419af321f93"
+  },
+  "05_实测在线输入输出": {
+    "png_sha256": "91595ff95f56fdbe7d3e4e78e2e481bc44db50abeb9e1ee4a427a15f891a2e07",
+    "source": "沿用前版已保存的图，图像SHA256未改动",
+    "previous_copy": "docs/报告/20261028_协同定位V1.4/内部材料/20261029_布点对比与叙述调整前/figures/05_实测在线输入输出.png"
+  },
+  "06_实测三车相对三角形": {
+    "png_sha256": "b5949a208f0b28a96fa6c5cd534a24cad6902e35f817404299a2e9be2de281fc",
+    "source": "沿用前版已保存的图，图像SHA256未改动",
+    "previous_copy": "docs/报告/20261028_协同定位V1.4/内部材料/20261029_布点对比与叙述调整前/figures/06_实测三车相对三角形.png"
+  },
+  "03_三路相机实拍": {
+    "png_sha256": "9aa1c3a34f663f012424ec9c8246e7fe14ac171f26b6f36866befb8ad2723146",
+    "source": "沿用前版已保存的图，图像SHA256未改动",
+    "previous_copy": "docs/报告/20261028_协同定位V1.4/内部材料/20261029_布点对比与叙述调整前/figures/03_三路相机实拍.png"
+  },
+  "replay_主盒实测点云": {
+    "source_directory": "data/report_replay_20261029",
+    "reproduction": "source /opt/ros/humble/setup.bash 后 python3 tools/plot_report_replay.py --replay-rte",
+    "input_and_replay_record": "data/report_replay_20261029/复现核对.json",
+    "drawing": "实际C++回放输出或原始/livox/lidar测量；Matplotlib真实字体排版",
+    "png_sha256": "52e2a49205cc646c58a537b0f0e66a2ca049aae3dd9b45fbcf44d0de014f1364"
+  },
+  "review_相对机动与可观性": {
+    "source": "data/maneuver_observability_20261101/summary.json、outputs/*.npz",
+    "conditions": [
+      {
+        "name": "低相对机动",
+        "output": "data/maneuver_observability_20261101/outputs/低相对机动.npz",
+        "alpha": 0.6
+      },
+      {
+        "name": "当前相对机动",
+        "output": "data/maneuver_observability_20261101/outputs/当前相对机动.npz",
+        "alpha": 1.0
+      },
+      {
+        "name": "高相对机动",
+        "output": "data/maneuver_observability_20261101/outputs/高相对机动.npz",
+        "alpha": 1.2
+      }
+    ],
+    "drawing": "由实际受控仿真输出绘制，未手工调整曲线",
+    "png_sha256": "e4f268dec55fc0b5fa5ac48be84862d100b07f7376770d9bb0a7191d078c7d12"
+  },
+  "review_相对机动误差过程": {
+    "source": "data/maneuver_observability_20261101/summary.json、outputs/*.npz",
+    "conditions": [
+      {
+        "name": "低相对机动",
+        "output": "data/maneuver_observability_20261101/outputs/低相对机动.npz",
+        "alpha": 0.6
+      },
+      {
+        "name": "当前相对机动",
+        "output": "data/maneuver_observability_20261101/outputs/当前相对机动.npz",
+        "alpha": 1.0
+      },
+      {
+        "name": "高相对机动",
+        "output": "data/maneuver_observability_20261101/outputs/高相对机动.npz",
+        "alpha": 1.2
+      }
+    ],
+    "drawing": "由实际受控仿真输出绘制，未手工调整曲线",
+    "png_sha256": "8dceba78caadc5fdb52f11a2fc9b2be938f7bd644697009406a6d699eed8055a"
+  },
+  "review_VIO无锚点误差过程": {
+    "input_files": [
+      "data/common_reference_20261030/outputs/vio_基础_no_anchor_peer.npz",
+      "data/common_reference_20261030/outputs/vio_增强_no_anchor_peer.npz"
+    ],
+    "line_data_sha256": "7719e34e1d146c5426adcacba566ca506d3820423c303c73d0c641da45a1a5a7",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/common_reference_20261030/outputs/vio_基础_no_anchor_peer.npz": "cf4c6a646a9768a7269bdb79a72201f0308d8db6941a3583a4ebd9978102b5c4",
+      "data/common_reference_20261030/outputs/vio_增强_no_anchor_peer.npz": "ebbb6b0b3d79821a67caa9e32fe25d76e4fb7a75fa9aa0984ecff408946de1ee"
+    },
+    "png_sha256": "4a86ed9bbc905358fdc8ec8fae498f371553f3b3e6376669d1637a6df9cbf8aa"
+  },
+  "review_RTE低速初始化误差": {
+    "input_files": [
+      "data/rte_startup_diagnostics_20261030/w10_d5_s0.02_output.csv",
+      "data/rte_expanded_20261025/exp_odometry_0.02_seed0.truth.csv",
+      "data/rte_startup_diagnostics_20261030/w10_d5_s0.05_output.csv",
+      "data/rte_expanded_20261025/exp_odometry_0.05_seed0.truth.csv",
+      "data/rte_startup_diagnostics_20261030/w10_d5_s0.10_output.csv",
+      "data/rte_expanded_20261025/exp_odometry_0.10_seed0.truth.csv"
+    ],
+    "line_data_sha256": "17e410e1c46c38a8034b722dd26d4e7ce3d61fb9c5193fc364d073a4344e22ee",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "局部放大": {
+      "时间范围_秒": [
+        90,
+        300
+      ],
+      "误差范围_米": [
+        0,
+        3
+      ],
+      "数据": "相同输出与真值逐点计算",
+      "line_data_sha256": "0fd187f9d857d4fd67af8bd1cb6a753dc519689e46ee79ec7f98895c7925814f"
+    },
+    "input_sha256": {
+      "data/rte_startup_diagnostics_20261030/w10_d5_s0.02_output.csv": "36fce6ac3b95aa9aa1958d6f5e1d96334ae87fc49bf4006906b07b41444f3267",
+      "data/rte_expanded_20261025/exp_odometry_0.02_seed0.truth.csv": "14698adba300033f5a7e82c69b7b17001f5333428ff817df3c62874195258a35",
+      "data/rte_startup_diagnostics_20261030/w10_d5_s0.05_output.csv": "5143cfbadaf923793259bbade7bdda91b265f73e196f35cdffcbe2812ac83649",
+      "data/rte_expanded_20261025/exp_odometry_0.05_seed0.truth.csv": "14698adba300033f5a7e82c69b7b17001f5333428ff817df3c62874195258a35",
+      "data/rte_startup_diagnostics_20261030/w10_d5_s0.10_output.csv": "708f62e4a4ef073a671c3a9ab0f3bd1aaf8d2df51123530131081b157e6ce7a7",
+      "data/rte_expanded_20261025/exp_odometry_0.10_seed0.truth.csv": "14698adba300033f5a7e82c69b7b17001f5333428ff817df3c62874195258a35"
+    },
+    "png_sha256": "a989b1f69cc949eb8599e14d586a1d4e4eab8fa7c7422ecb6b68f052d89a03da"
+  }
+}

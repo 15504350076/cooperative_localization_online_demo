@@ -32,6 +32,7 @@ typedef struct zju_coop_three_config_rte {
   double max_range_innovation_m;  /* 初始化后离群值门限，默认1m。 */
   double max_translation_std_m;   /* 仅在初次初始化时限制FIM不确定性。 */
   double max_yaw_std_rad;
+  double minimum_initialization_motion_span_m; /* 初次建系前滑窗运动范围；0表示不额外限制。 */
 } zju_coop_three_config_rte_t;
 
 typedef struct zju_coop_three_snapshot_rte {

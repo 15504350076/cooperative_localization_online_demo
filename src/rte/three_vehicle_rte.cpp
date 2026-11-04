@@ -181,12 +181,39 @@ std::vector<Vector> seeds(zju_coop_three_handle_rte_t& h) {
   if (available[1] && available[2]) result.push_back(pack(h, {Transform{}, compose(pair[1], inverse(pair[2])), pair[1]}));
   return result;
 }
+bool has_initialization_motion(const zju_coop_three_handle_rte_t& h, uint64_t now,
+                              double minimum_span_m) {
+  double largest_span = 0.0;
+  for (const auto& poses : h.poses) {
+    if (poses.size() < 2) continue;
+    double min_x = std::numeric_limits<double>::infinity();
+    double max_x = -std::numeric_limits<double>::infinity();
+    double min_y = std::numeric_limits<double>::infinity();
+    double max_y = -std::numeric_limits<double>::infinity();
+    std::size_t count = 0;
+    for (const auto& pose : poses) {
+      if (!fresh(pose.time, now, h.config.window_duration_ns, h.config.max_epoch_skew_ns)) continue;
+      min_x = std::min(min_x, pose.position.x());
+      max_x = std::max(max_x, pose.position.x());
+      min_y = std::min(min_y, pose.position.y());
+      max_y = std::max(max_y, pose.position.y());
+      ++count;
+    }
+    if (count >= 2) largest_span = std::max(largest_span, std::hypot(max_x - min_x, max_y - min_y));
+  }
+  return largest_span >= minimum_span_m;
+}
 void correct(zju_coop_three_handle_rte_t& h, uint64_t now) {
   std::vector<Observation> data;
   for (auto& edge : h.edges)
     for (const auto& sample : edge.samples)
       if (fresh(sample.time, now, h.config.window_duration_ns, h.config.max_epoch_skew_ns)) data.push_back(sample);
   if (data.size() < 2 * h.config.minimum_samples) { h.quality = ZJU_COOP_RTE_NO_ESTIMATE; return; }
+  if (!h.initialized && h.config.minimum_initialization_motion_span_m > 0.0 &&
+      !has_initialization_motion(h, now, h.config.minimum_initialization_motion_span_m)) {
+    h.quality = ZJU_COOP_RTE_NO_ESTIMATE;
+    return;
+  }
   std::vector<Fit> fits;
   for (const auto& seed : seeds(h)) fits.push_back(optimize(h, data, seed));
   if (fits.empty()) { h.quality = ZJU_COOP_RTE_NO_ESTIMATE; return; }
@@ -360,6 +387,7 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_three_config_init_rte(zju_coop_thre
   c->solve_interval_ns = 200000000; c->window_duration_ns = 5000000000ULL;
   c->condition_limit = 1e10; c->max_rms_residual_m = 0.3; c->max_range_innovation_m = 1.0;
   c->max_translation_std_m = 0.25; c->max_yaw_std_rad = 0.1;
+  c->minimum_initialization_motion_span_m = 0.0;
   return ZJU_COOP_OK;
 }
 zju_coop_error_code_t ZJU_COOP_CALL zju_coop_three_snapshot_init_rte(zju_coop_three_snapshot_rte_t* s) {
@@ -384,6 +412,8 @@ zju_coop_error_code_t ZJU_COOP_CALL zju_coop_three_create_rte(
       !std::isfinite(config->max_range_innovation_m) || config->max_range_innovation_m <= 0 ||
       !std::isfinite(config->max_translation_std_m) || config->max_translation_std_m <= 0 ||
       !std::isfinite(config->max_yaw_std_rad) || config->max_yaw_std_rad <= 0 ||
+      !std::isfinite(config->minimum_initialization_motion_span_m) ||
+      config->minimum_initialization_motion_span_m < 0 ||
       !finite_position(config->local_origin_heights_m)) return ZJU_COOP_INVALID_ARGUMENT;
   for (int i = 0; i < 3; ++i) if (!finite_position(config->antenna_lever_arms_body_m + 3 * i)) return ZJU_COOP_INVALID_ARGUMENT;
   try {

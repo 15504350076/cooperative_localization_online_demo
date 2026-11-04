@@ -1,0 +1,842 @@
+{
+  "conditions": [
+    {
+      "name": "w5_d10_s0.02",
+      "window_s": 5,
+      "minimum_motion_span_m": 10,
+      "range_sigma_m": 0.02,
+      "first_valid_s": 127.2,
+      "diagnostic_stage_counts": {
+        "accepted": 1,
+        "motion_span": 489,
+        "position_uncertainty": 38,
+        "samples": 3
+      },
+      "metrics": {
+        "evaluated_rows": 5001,
+        "ready_rows": 2881,
+        "status_counts": {
+          "0": 1968,
+          "1": 2881,
+          "2": 152
+        },
+        "first_ready_s": 127.2,
+        "final_corrections": 721,
+        "accepted_ranges": 9003,
+        "rejected_ranges": 0,
+        "solve_p95_ms": 0.602915,
+        "solve_max_ms": 20.928812,
+        "local_final_displacement_m": [
+          51.748365895934924,
+          49.94442966861581,
+          46.74228474123419
+        ],
+        "local_ready": [
+          true,
+          true,
+          true
+        ],
+        "local_fault": [
+          false,
+          false,
+          false
+        ],
+        "range_fit_rms_m": 0.019616295052464948,
+        "vehicles": {
+          "2": {
+            "position_rmse_m": 0.2068901144630839,
+            "position_p95_m": 0.44029045414662654,
+            "position_max_m": 1.3246029181719436,
+            "yaw_rmse_deg": 0.31764759416219773
+          },
+          "3": {
+            "position_rmse_m": 0.23961485837046795,
+            "position_p95_m": 0.5584575341906499,
+            "position_max_m": 2.1167497748232327,
+            "yaw_rmse_deg": 0.28085048896064757
+          }
+        },
+        "position_rmse_m": 0.22385128971534582,
+        "ready_fraction_after_motion": 0.6400799822261719,
+        "dropout_stale_seen": false,
+        "recovered_after_dropout": false
+      },
+      "common_interval_s": [
+        216.24,
+        300
+      ],
+      "common_interval_valid_rows": 1397,
+      "common_interval_rmse_m": 0.20260959762468206,
+      "baseline_reproduces_original": true
+    },
+    {
+      "name": "w5_d10_s0.05",
+      "window_s": 5,
+      "minimum_motion_span_m": 10,
+      "range_sigma_m": 0.05,
+      "first_valid_s": 215.52,
+      "diagnostic_stage_counts": {
+        "accepted": 1,
+        "geometry": 1,
+        "motion_span": 719,
+        "position_uncertainty": 175,
+        "samples": 3
+      },
+      "metrics": {
+        "evaluated_rows": 5001,
+        "ready_rows": 1409,
+        "status_counts": {
+          "0": 2888,
+          "1": 1409,
+          "2": 704
+        },
+        "first_ready_s": 215.52,
+        "final_corrections": 353,
+        "accepted_ranges": 9003,
+        "rejected_ranges": 0,
+        "solve_p95_ms": 0.324702,
+        "solve_max_ms": 47.165207,
+        "local_final_displacement_m": [
+          51.748365895934924,
+          49.94442966861581,
+          46.74228474123419
+        ],
+        "local_ready": [
+          true,
+          true,
+          true
+        ],
+        "local_fault": [
+          false,
+          false,
+          false
+        ],
+        "range_fit_rms_m": 0.0493680141118181,
+        "vehicles": {
+          "2": {
+            "position_rmse_m": 1.0077315023702917,
+            "position_p95_m": 2.7186700165535447,
+            "position_max_m": 5.055531557480699,
+            "yaw_rmse_deg": 1.997158225084505
+          },
+          "3": {
+            "position_rmse_m": 1.4026507305961229,
+            "position_p95_m": 4.077610762435014,
+            "position_max_m": 6.789783153726186,
+            "yaw_rmse_deg": 0.663381008671839
+          }
+        },
+        "position_rmse_m": 1.2212599749666984,
+        "ready_fraction_after_motion": 0.3130415463230393,
+        "dropout_stale_seen": false,
+        "recovered_after_dropout": false
+      },
+      "common_interval_s": [
+        216.24,
+        300
+      ],
+      "common_interval_valid_rows": 1397,
+      "common_interval_rmse_m": 1.2264178042968095,
+      "baseline_reproduces_original": true
+    },
+    {
+      "name": "w5_d10_s0.10",
+      "window_s": 5,
+      "minimum_motion_span_m": 10,
+      "range_sigma_m": 0.1,
+      "first_valid_s": 216.24,
+      "diagnostic_stage_counts": {
+        "accepted": 1,
+        "motion_span": 719,
+        "not_converged": 1,
+        "position_uncertainty": 178,
+        "samples": 3
+      },
+      "metrics": {
+        "evaluated_rows": 5001,
+        "ready_rows": 1393,
+        "status_counts": {
+          "0": 2888,
+          "1": 1393,
+          "2": 712,
+          "3": 8
+        },
+        "first_ready_s": 216.24,
+        "final_corrections": 349,
+        "accepted_ranges": 9003,
+        "rejected_ranges": 0,
+        "solve_p95_ms": 0.391096,
+        "solve_max_ms": 69.918696,
+        "local_final_displacement_m": [
+          51.748365895934924,
+          49.94442966861581,
+          46.74228474123419
+        ],
+        "local_ready": [
+          true,
+          true,
+          true
+        ],
+        "local_fault": [
+          false,
+          false,
+          false
+        ],
+        "range_fit_rms_m": 0.09878737886701318,
+        "vehicles": {
+          "2": {
+            "position_rmse_m": 1.173600753961689,
+            "position_p95_m": 3.023198102585062,
+            "position_max_m": 5.555086753711175,
+            "yaw_rmse_deg": 2.4654314612266655
+          },
+          "3": {
+            "position_rmse_m": 1.6395141058261486,
+            "position_p95_m": 4.554922632115419,
+            "position_max_m": 7.432922029618508,
+            "yaw_rmse_deg": 1.1845559148801559
+          }
+        },
+        "position_rmse_m": 1.4257182808855264,
+        "ready_fraction_after_motion": 0.3094867807153966,
+        "dropout_stale_seen": false,
+        "recovered_after_dropout": false
+      },
+      "common_interval_s": [
+        216.24,
+        300
+      ],
+      "common_interval_valid_rows": 1393,
+      "common_interval_rmse_m": 1.4257182808855264,
+      "baseline_reproduces_original": true
+    },
+    {
+      "name": "w5_d5_s0.02",
+      "window_s": 5,
+      "minimum_motion_span_m": 5,
+      "range_sigma_m": 0.02,
+      "first_valid_s": 36.0,
+      "diagnostic_stage_counts": {
+        "accepted": 1,
+        "motion_span": 147,
+        "samples": 3
+      },
+      "metrics": {
+        "evaluated_rows": 5001,
+        "ready_rows": 4401,
+        "status_counts": {
+          "0": 600,
+          "1": 4401
+        },
+        "first_ready_s": 36.0,
+        "final_corrections": 1101,
+        "accepted_ranges": 9003,
+        "rejected_ranges": 0,
+        "solve_p95_ms": 0.635596,
+        "solve_max_ms": 84.596974,
+        "local_final_displacement_m": [
+          51.748365895934924,
+          49.94442966861581,
+          46.74228474123419
+        ],
+        "local_ready": [
+          true,
+          true,
+          true
+        ],
+        "local_fault": [
+          false,
+          false,
+          false
+        ],
+        "range_fit_rms_m": 0.019626084454648186,
+        "vehicles": {
+          "2": {
+            "position_rmse_m": 0.20861426152007573,
+            "position_p95_m": 0.45256142096308377,
+            "position_max_m": 1.324602918171809,
+            "yaw_rmse_deg": 0.27483948299670913
+          },
+          "3": {
+            "position_rmse_m": 0.24216521501152424,
+            "position_p95_m": 0.5658038995672957,
+            "position_max_m": 2.11674977482302,
+            "yaw_rmse_deg": 0.2578954961274204
+          }
+        },
+        "position_rmse_m": 0.2260131649607433,
+        "ready_fraction_after_motion": 0.9777827149522328,
+        "dropout_stale_seen": false,
+        "recovered_after_dropout": false
+      },
+      "common_interval_s": [
+        216.24,
+        300
+      ],
+      "common_interval_valid_rows": 1397,
+      "common_interval_rmse_m": 0.20260959738602177,
+      "baseline_reproduces_original": false
+    },
+    {
+      "name": "w5_d5_s0.05",
+      "window_s": 5,
+      "minimum_motion_span_m": 5,
+      "range_sigma_m": 0.05,
+      "first_valid_s": 36.0,
+      "diagnostic_stage_counts": {
+        "accepted": 1,
+        "motion_span": 147,
+        "samples": 3
+      },
+      "metrics": {
+        "evaluated_rows": 5001,
+        "ready_rows": 2682,
+        "status_counts": {
+          "0": 600,
+          "1": 2682,
+          "2": 96,
+          "3": 59,
+          "6": 1560,
+          "7": 4
+        },
+        "first_ready_s": 36.0,
+        "final_corrections": 672,
+        "accepted_ranges": 6046,
+        "rejected_ranges": 2957,
+        "solve_p95_ms": 0.30319,
+        "solve_max_ms": 56.619096,
+        "local_final_displacement_m": [
+          51.748365895934924,
+          49.94442966861581,
+          46.74228474123419
+        ],
+        "local_ready": [
+          true,
+          true,
+          true
+        ],
+        "local_fault": [
+          false,
+          false,
+          false
+        ],
+        "range_fit_rms_m": 0.10764789033364884,
+        "vehicles": {
+          "2": {
+            "position_rmse_m": 19.55282763027292,
+            "position_p95_m": 33.64456082521365,
+            "position_max_m": 37.64822483550045,
+            "yaw_rmse_deg": 32.92816269454025
+          },
+          "3": {
+            "position_rmse_m": 23.17233269059177,
+            "position_p95_m": 34.7189855088374,
+            "position_max_m": 38.02995101823169,
+            "yaw_rmse_deg": 38.38753732154722
+          }
+        },
+        "position_rmse_m": 21.439100618526794,
+        "ready_fraction_after_motion": 0.5958675849811154,
+        "dropout_stale_seen": false,
+        "recovered_after_dropout": false
+      },
+      "common_interval_s": [
+        216.24,
+        300
+      ],
+      "common_interval_valid_rows": 0,
+      "common_interval_rmse_m": null,
+      "baseline_reproduces_original": false
+    },
+    {
+      "name": "w5_d5_s0.10",
+      "window_s": 5,
+      "minimum_motion_span_m": 5,
+      "range_sigma_m": 0.1,
+      "first_valid_s": 37.44,
+      "diagnostic_stage_counts": {
+        "accepted": 1,
+        "motion_span": 147,
+        "position_uncertainty": 6,
+        "samples": 3
+      },
+      "metrics": {
+        "evaluated_rows": 5001,
+        "ready_rows": 4301,
+        "status_counts": {
+          "0": 600,
+          "1": 4301,
+          "2": 24,
+          "3": 76
+        },
+        "first_ready_s": 37.44,
+        "final_corrections": 1076,
+        "accepted_ranges": 9003,
+        "rejected_ranges": 0,
+        "solve_p95_ms": 0.614945,
+        "solve_max_ms": 94.288631,
+        "local_final_displacement_m": [
+          51.748365895934924,
+          49.94442966861581,
+          46.74228474123419
+        ],
+        "local_ready": [
+          true,
+          true,
+          true
+        ],
+        "local_fault": [
+          false,
+          false,
+          false
+        ],
+        "range_fit_rms_m": 0.0997239351536193,
+        "vehicles": {
+          "2": {
+            "position_rmse_m": 5.244639535081828,
+            "position_p95_m": 13.29160877196524,
+            "position_max_m": 14.872115502364556,
+            "yaw_rmse_deg": 8.102139467450487
+          },
+          "3": {
+            "position_rmse_m": 7.027790617390902,
+            "position_p95_m": 17.966507550533102,
+            "position_max_m": 21.351680475721587,
+            "yaw_rmse_deg": 9.795612556477748
+          }
+        },
+        "position_rmse_m": 6.200648547322728,
+        "ready_fraction_after_motion": 0.9555654299044657,
+        "dropout_stale_seen": false,
+        "recovered_after_dropout": false
+      },
+      "common_interval_s": [
+        216.24,
+        300
+      ],
+      "common_interval_valid_rows": 1393,
+      "common_interval_rmse_m": 1.4257182808513253,
+      "baseline_reproduces_original": false
+    },
+    {
+      "name": "w5_d0_s0.02",
+      "window_s": 5,
+      "minimum_motion_span_m": 0,
+      "range_sigma_m": 0.02,
+      "first_valid_s": 32.64,
+      "diagnostic_stage_counts": {
+        "accepted": 1,
+        "geometry": 121,
+        "not_converged": 3,
+        "position_uncertainty": 7,
+        "samples": 3
+      },
+      "metrics": {
+        "evaluated_rows": 5001,
+        "ready_rows": 4457,
+        "status_counts": {
+          "0": 20,
+          "1": 4457,
+          "2": 512,
+          "3": 12
+        },
+        "first_ready_s": 32.64,
+        "final_corrections": 1115,
+        "accepted_ranges": 8964,
+        "rejected_ranges": 39,
+        "solve_p95_ms": 0.519575,
+        "solve_max_ms": 90.051643,
+        "local_final_displacement_m": [
+          51.748365895934924,
+          49.94442966861581,
+          46.74228474123419
+        ],
+        "local_ready": [
+          true,
+          true,
+          true
+        ],
+        "local_fault": [
+          false,
+          false,
+          false
+        ],
+        "range_fit_rms_m": 0.05033063214157199,
+        "vehicles": {
+          "2": {
+            "position_rmse_m": 4.730052256125047,
+            "position_p95_m": 15.924200258609613,
+            "position_max_m": 19.740930200975882,
+            "yaw_rmse_deg": 28.67348154462958
+          },
+          "3": {
+            "position_rmse_m": 5.615750001677799,
+            "position_p95_m": 19.28988863979345,
+            "position_max_m": 24.197916511998145,
+            "yaw_rmse_deg": 21.616488447608745
+          }
+        },
+        "position_rmse_m": 5.191822532936668,
+        "ready_fraction_after_motion": 0.9902243945789825,
+        "dropout_stale_seen": false,
+        "recovered_after_dropout": false
+      },
+      "common_interval_s": [
+        216.24,
+        300
+      ],
+      "common_interval_valid_rows": 1397,
+      "common_interval_rmse_m": 0.20260959709751894,
+      "baseline_reproduces_original": false
+    },
+    {
+      "name": "w5_d0_s0.05",
+      "window_s": 5,
+      "minimum_motion_span_m": 0,
+      "range_sigma_m": 0.05,
+      "first_valid_s": 33.36,
+      "diagnostic_stage_counts": {
+        "accepted": 1,
+        "geometry": 121,
+        "not_converged": 5,
+        "position_uncertainty": 8,
+        "samples": 3
+      },
+      "metrics": {
+        "evaluated_rows": 5001,
+        "ready_rows": 200,
+        "status_counts": {
+          "0": 20,
+          "1": 200,
+          "2": 516,
+          "3": 67,
+          "6": 4194,
+          "7": 4
+        },
+        "first_ready_s": 33.36,
+        "final_corrections": 50,
+        "accepted_ranges": 1465,
+        "rejected_ranges": 7538,
+        "solve_p95_ms": 0.002524,
+        "solve_max_ms": 91.848651,
+        "local_final_displacement_m": [
+          51.748365895934924,
+          49.94442966861581,
+          46.74228474123419
+        ],
+        "local_ready": [
+          true,
+          true,
+          true
+        ],
+        "local_fault": [
+          false,
+          false,
+          false
+        ],
+        "range_fit_rms_m": 0.21720950619647827,
+        "vehicles": {
+          "2": {
+            "position_rmse_m": 5.113159648856657,
+            "position_p95_m": 19.501393542999377,
+            "position_max_m": 19.78406554501892,
+            "yaw_rmse_deg": 102.33302848052831
+          },
+          "3": {
+            "position_rmse_m": 31.329378878425715,
+            "position_p95_m": 36.79847658164785,
+            "position_max_m": 37.207890208028125,
+            "yaw_rmse_deg": 100.9405555426197
+          }
+        },
+        "position_rmse_m": 22.446317988733067,
+        "ready_fraction_after_motion": 0.04443457009553432,
+        "dropout_stale_seen": false,
+        "recovered_after_dropout": false
+      },
+      "common_interval_s": [
+        216.24,
+        300
+      ],
+      "common_interval_valid_rows": 0,
+      "common_interval_rmse_m": null,
+      "baseline_reproduces_original": false
+    },
+    {
+      "name": "w5_d0_s0.10",
+      "window_s": 5,
+      "minimum_motion_span_m": 0,
+      "range_sigma_m": 0.1,
+      "first_valid_s": 37.44,
+      "diagnostic_stage_counts": {
+        "accepted": 1,
+        "geometry": 121,
+        "not_converged": 3,
+        "position_uncertainty": 27,
+        "samples": 3
+      },
+      "metrics": {
+        "evaluated_rows": 5001,
+        "ready_rows": 4301,
+        "status_counts": {
+          "0": 20,
+          "1": 4301,
+          "2": 592,
+          "3": 88
+        },
+        "first_ready_s": 37.44,
+        "final_corrections": 1076,
+        "accepted_ranges": 9003,
+        "rejected_ranges": 0,
+        "solve_p95_ms": 0.862904,
+        "solve_max_ms": 88.936022,
+        "local_final_displacement_m": [
+          51.748365895934924,
+          49.94442966861581,
+          46.74228474123419
+        ],
+        "local_ready": [
+          true,
+          true,
+          true
+        ],
+        "local_fault": [
+          false,
+          false,
+          false
+        ],
+        "range_fit_rms_m": 0.0997239351536193,
+        "vehicles": {
+          "2": {
+            "position_rmse_m": 5.244639535081828,
+            "position_p95_m": 13.29160877196524,
+            "position_max_m": 14.872115502364556,
+            "yaw_rmse_deg": 8.102139467450487
+          },
+          "3": {
+            "position_rmse_m": 7.027790617390902,
+            "position_p95_m": 17.966507550533102,
+            "position_max_m": 21.351680475721587,
+            "yaw_rmse_deg": 9.795612556477748
+          }
+        },
+        "position_rmse_m": 6.200648547322728,
+        "ready_fraction_after_motion": 0.9555654299044657,
+        "dropout_stale_seen": false,
+        "recovered_after_dropout": false
+      },
+      "common_interval_s": [
+        216.24,
+        300
+      ],
+      "common_interval_valid_rows": 1393,
+      "common_interval_rmse_m": 1.4257182808513253,
+      "baseline_reproduces_original": false
+    },
+    {
+      "name": "w10_d5_s0.02",
+      "window_s": 10,
+      "minimum_motion_span_m": 5,
+      "range_sigma_m": 0.02,
+      "first_valid_s": 36.0,
+      "diagnostic_stage_counts": {
+        "accepted": 1,
+        "motion_span": 147,
+        "samples": 3
+      },
+      "metrics": {
+        "evaluated_rows": 5001,
+        "ready_rows": 4401,
+        "status_counts": {
+          "0": 600,
+          "1": 4401
+        },
+        "first_ready_s": 36.0,
+        "final_corrections": 1101,
+        "accepted_ranges": 9003,
+        "rejected_ranges": 0,
+        "solve_p95_ms": 0.677185,
+        "solve_max_ms": 59.065914,
+        "local_final_displacement_m": [
+          51.748365895934924,
+          49.94442966861581,
+          46.74228474123419
+        ],
+        "local_ready": [
+          true,
+          true,
+          true
+        ],
+        "local_fault": [
+          false,
+          false,
+          false
+        ],
+        "range_fit_rms_m": 0.01986223745721965,
+        "vehicles": {
+          "2": {
+            "position_rmse_m": 0.06567954600298435,
+            "position_p95_m": 0.11532132136004583,
+            "position_max_m": 0.5409470177976831,
+            "yaw_rmse_deg": 0.0842971226893216
+          },
+          "3": {
+            "position_rmse_m": 0.06999309208019383,
+            "position_p95_m": 0.15397560075405364,
+            "position_max_m": 0.40886464089254276,
+            "yaw_rmse_deg": 0.06872483334816605
+          }
+        },
+        "position_rmse_m": 0.06787059636582189,
+        "ready_fraction_after_motion": 0.9777827149522328,
+        "dropout_stale_seen": false,
+        "recovered_after_dropout": false
+      },
+      "common_interval_s": [
+        216.24,
+        300
+      ],
+      "common_interval_valid_rows": 1397,
+      "common_interval_rmse_m": 0.0657319130796107,
+      "baseline_reproduces_original": false
+    },
+    {
+      "name": "w10_d5_s0.05",
+      "window_s": 10,
+      "minimum_motion_span_m": 5,
+      "range_sigma_m": 0.05,
+      "first_valid_s": 36.0,
+      "diagnostic_stage_counts": {
+        "accepted": 1,
+        "motion_span": 147,
+        "samples": 3
+      },
+      "metrics": {
+        "evaluated_rows": 5001,
+        "ready_rows": 4401,
+        "status_counts": {
+          "0": 600,
+          "1": 4401
+        },
+        "first_ready_s": 36.0,
+        "final_corrections": 1101,
+        "accepted_ranges": 9003,
+        "rejected_ranges": 0,
+        "solve_p95_ms": 0.655013,
+        "solve_max_ms": 63.693235,
+        "local_final_displacement_m": [
+          51.748365895934924,
+          49.94442966861581,
+          46.74228474123419
+        ],
+        "local_ready": [
+          true,
+          true,
+          true
+        ],
+        "local_fault": [
+          false,
+          false,
+          false
+        ],
+        "range_fit_rms_m": 0.049656176367240006,
+        "vehicles": {
+          "2": {
+            "position_rmse_m": 0.1663008664458449,
+            "position_p95_m": 0.2912677017361081,
+            "position_max_m": 1.363197184024964,
+            "yaw_rmse_deg": 0.21396233437923798
+          },
+          "3": {
+            "position_rmse_m": 0.17918976715276144,
+            "position_p95_m": 0.38825473342751005,
+            "position_max_m": 1.074946127381317,
+            "yaw_rmse_deg": 0.1713677088196053
+          }
+        },
+        "position_rmse_m": 0.17286548358897388,
+        "ready_fraction_after_motion": 0.9777827149522328,
+        "dropout_stale_seen": false,
+        "recovered_after_dropout": false
+      },
+      "common_interval_s": [
+        216.24,
+        300
+      ],
+      "common_interval_valid_rows": 1397,
+      "common_interval_rmse_m": 0.17440077395879452,
+      "baseline_reproduces_original": false
+    },
+    {
+      "name": "w10_d5_s0.10",
+      "window_s": 10,
+      "minimum_motion_span_m": 5,
+      "range_sigma_m": 0.1,
+      "first_valid_s": 36.24,
+      "diagnostic_stage_counts": {
+        "accepted": 1,
+        "motion_span": 147,
+        "position_uncertainty": 1,
+        "samples": 3
+      },
+      "metrics": {
+        "evaluated_rows": 5001,
+        "ready_rows": 4397,
+        "status_counts": {
+          "0": 600,
+          "1": 4397,
+          "2": 4
+        },
+        "first_ready_s": 36.24,
+        "final_corrections": 1100,
+        "accepted_ranges": 8691,
+        "rejected_ranges": 312,
+        "solve_p95_ms": 0.475622,
+        "solve_max_ms": 62.686409,
+        "local_final_displacement_m": [
+          51.748365895934924,
+          49.94442966861581,
+          46.74228474123419
+        ],
+        "local_ready": [
+          true,
+          true,
+          true
+        ],
+        "local_fault": [
+          false,
+          false,
+          false
+        ],
+        "range_fit_rms_m": 0.10924997096897761,
+        "vehicles": {
+          "2": {
+            "position_rmse_m": 9.839452253309965,
+            "position_p95_m": 24.647330323783304,
+            "position_max_m": 28.905404488166113,
+            "yaw_rmse_deg": 7.93463689239198
+          },
+          "3": {
+            "position_rmse_m": 5.294528186572955,
+            "position_p95_m": 15.96656246859438,
+            "position_max_m": 23.231184109458688,
+            "yaw_rmse_deg": 11.890023329117732
+          }
+        },
+        "position_rmse_m": 7.900849617717769,
+        "ready_fraction_after_motion": 0.9768940235503222,
+        "dropout_stale_seen": false,
+        "recovered_after_dropout": false
+      },
+      "common_interval_s": [
+        216.24,
+        300
+      ],
+      "common_interval_valid_rows": 1397,
+      "common_interval_rmse_m": 0.36520571659309736,
+      "baseline_reproduces_original": false
+    }
+  ],
+  "elapsed_seconds": 11.152988910675049,
+  "original_algorithms_unchanged": true
+}

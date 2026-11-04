@@ -1,0 +1,27 @@
+{
+  "输入与方法_sha256": {
+    "data/single_anchor_outdoor_20261029/truth_and_range_inputs.npz": "ea346c12c9b70d9caf2028d3b6b1e3d67976d5eff860a93b78de656ecedfe67c",
+    "tools/analyze_straight_maneuvers.py": "08e9b5cbd1709270d8b32a818b43fccb2062b9510e330727122b75a566dc7b0c",
+    "tools/evaluate_single_anchor.py": "c8fe36385c2282ea039b943d952afb1985aa86b5af3eca7321630ac5e6ff8d6e",
+    "tools/evaluate_anchor_layout.py": "5f64145fad4ab99d32a50aa284acf979012af711bf987e134a2dc0e84162e67e",
+    "tools/evaluate_sensor_anchor_v14.py": "c5822383c11069ed19c2053d44b03c777d1bd2066585c738b405d552603d6581",
+    "tools/plot_sensor_anchor_v14.py": "cd8597279120235dfba62eaec63b21db99ab66123eb567aecf7002b45607f3d6"
+  },
+  "输出_sha256": {
+    "data/straight_maneuvers_20261102/outputs/不同速平行直行.npz": "396d81d25d8f896a55de0e7b54794ddb9213f0f8fc8df394eb4afdbe1bda6a5f",
+    "data/straight_maneuvers_20261102/outputs/同速平行直行.npz": "2ef43418c0de0f5815c27a7bc74bef9a923d67d4148a2dab1c97f0bc308bca2d",
+    "data/straight_maneuvers_20261102/outputs/非平行直行.npz": "b8fabca58fb18aea97b9b6adfe64d5a946c64f06ba581fb378b1f1e973609498",
+    "data/straight_maneuvers_20261102/summary.json": "1d0bf0c5890702336911ed9b72de8013c0d6e0cf1505752dd0b35a9e91fec6a9"
+  },
+  "图表_sha256": {
+    "docs/报告/20261028_协同定位V1.4/figures/review_平行与非平行直线轨迹.png": "31d5473c816870d18ebbac40a516220849cb1070f38a7cad35a4d2752bad4962",
+    "docs/报告/20261028_协同定位V1.4/figures/review_平行与非平行直线轨迹.svg": "22cf9ce70a3adf31b6c0d4c6784b1618fa17daa7d75988f417e5b6a0ab8c8eea",
+    "docs/报告/20261028_协同定位V1.4/figures/review_平行与非平行直线轨迹.pdf": "b68f5c7877c7e1e1511a9e23bc5d6bbf6acfe690afa57ef2fc414d2befb6626b",
+    "docs/报告/20261028_协同定位V1.4/figures/review_直线机动定位误差.png": "d48f30ee89beb56f4caa7f7ed43f7233df9b7ad661be1544c42ba336779bd523",
+    "docs/报告/20261028_协同定位V1.4/figures/review_直线机动定位误差.svg": "9811f317e1f63654d8e370a2d16f6a689155cae22d46026f733ceebe6d5dbb4d",
+    "docs/报告/20261028_协同定位V1.4/figures/review_直线机动定位误差.pdf": "7bbc24a89885de04ccf915b98b0ca160e7986389158c3b900be1aedf5971e3bd"
+  },
+  "重算命令": "OPENBLAS_NUM_THREADS=1 python3 tools/analyze_straight_maneuvers.py",
+  "仅重绘命令": "PYTHONPATH=tools OPENBLAS_NUM_THREADS=1 python3 tools/analyze_straight_maneuvers.py --plot-only",
+  "说明": "三类直线运动各分别运行无锚点与单锚点，每条件20次；曲线由相对位置输出与仿真真值计算，敏感度使用理想局部位移及真值线性化。"
+}

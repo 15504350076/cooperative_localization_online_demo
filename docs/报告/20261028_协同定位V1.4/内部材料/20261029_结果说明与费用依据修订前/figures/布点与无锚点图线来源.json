@@ -1,0 +1,104 @@
+{
+  "layout_imu_无锚点分级": {
+    "input_files": [
+      "data/single_anchor_layout_20261029/summary.json"
+    ],
+    "line_data_sha256": "68ac1d936fa79ff9e6e7bb554084d6027faec98b096769ff6ca9e07441d678ce",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/single_anchor_layout_20261029/summary.json": "5801688609cc50b42c62ba926d9077c27250004387629f9480dadcf23d0468ec"
+    }
+  },
+  "layout_vio_无锚点分级": {
+    "input_files": [
+      "data/single_anchor_layout_20261029/summary.json"
+    ],
+    "line_data_sha256": "3bde640afb6718dd6b1b7ad693364130fde7710b90c7abd683a496d1dc74d7bb",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/single_anchor_layout_20261029/summary.json": "5801688609cc50b42c62ba926d9077c27250004387629f9480dadcf23d0468ec"
+    }
+  },
+  "layout_lio_无锚点分级": {
+    "input_files": [
+      "data/single_anchor_layout_20261029/summary.json"
+    ],
+    "line_data_sha256": "8dda5f63d3ecd203fc00c9054b94717943d8c0656d9985dbd58d1bf9bbd420a6",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/single_anchor_layout_20261029/summary.json": "5801688609cc50b42c62ba926d9077c27250004387629f9480dadcf23d0468ec"
+    }
+  },
+  "layout_候选布点": {
+    "input_files": [
+      "data/single_anchor_outdoor_20261029/truth_and_range_inputs.npz"
+    ],
+    "line_data_sha256": "26ed05d1f1a8e2c665fdd39f5936f72816ddca92b19e337aaec64dbed3a67eb5",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/single_anchor_outdoor_20261029/truth_and_range_inputs.npz": "ea346c12c9b70d9caf2028d3b6b1e3d67976d5eff860a93b78de656ecedfe67c"
+    }
+  },
+  "layout_布点误差分布": {
+    "input_files": [
+      "data/single_anchor_layout_20261029/summary.json"
+    ],
+    "line_data_sha256": "79cddf467997100e7e6cc66af554bb518e47f279a86a60602bce120e63bbcccc",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/single_anchor_layout_20261029/summary.json": "5801688609cc50b42c62ba926d9077c27250004387629f9480dadcf23d0468ec"
+    }
+  },
+  "layout_vio_逐时定位误差": {
+    "input_files": [
+      "data/single_anchor_layout_20261029/outputs/vio_基础_no_anchor_peer.npz",
+      "data/single_anchor_layout_20261029/outputs/vio_基础_anchor_区域中部.npz",
+      "data/single_anchor_layout_20261029/outputs/vio_基础_anchor_区域右侧.npz",
+      "data/single_anchor_layout_20261029/outputs/vio_增强_no_anchor_peer.npz",
+      "data/single_anchor_layout_20261029/outputs/vio_增强_anchor_区域中部.npz",
+      "data/single_anchor_layout_20261029/outputs/vio_增强_anchor_区域右侧.npz"
+    ],
+    "line_data_sha256": "7d160cfdb32672c184d30ebd67c5fa62e0b9ac7240d18149c96388ce48c30a7c",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/single_anchor_layout_20261029/outputs/vio_基础_no_anchor_peer.npz": "8d849159661b29db3a80d94326bea7fe8bdafa7c35009519de0e7069a6c131de",
+      "data/single_anchor_layout_20261029/outputs/vio_基础_anchor_区域中部.npz": "94aea6dc195eb7d0ceec88c8b1ff6b412a17159c5a723dc677139507a9bf60ba",
+      "data/single_anchor_layout_20261029/outputs/vio_基础_anchor_区域右侧.npz": "8d3142a786d83cdf1463410b9821f0fe1c003585d25b83041d8d56f374ff85d2",
+      "data/single_anchor_layout_20261029/outputs/vio_增强_no_anchor_peer.npz": "1f4e64e147365724ce708dcb7ae3df7131943d679ade237bb4aea9756b75e308",
+      "data/single_anchor_layout_20261029/outputs/vio_增强_anchor_区域中部.npz": "1fdf1ae73bb1fee1b60f04b6ba26256460a0e7d7baffe25946466a4734d92b78",
+      "data/single_anchor_layout_20261029/outputs/vio_增强_anchor_区域右侧.npz": "e009ff6c96e49b3bc6a8a11cf58dc048463b0d8f2d5545987b9f7290e353f2a7"
+    }
+  },
+  "layout_lio_逐时定位误差": {
+    "input_files": [
+      "data/single_anchor_layout_20261029/outputs/lio_基础_no_anchor_peer.npz",
+      "data/single_anchor_layout_20261029/outputs/lio_基础_anchor_区域中部.npz",
+      "data/single_anchor_layout_20261029/outputs/lio_基础_anchor_区域右侧.npz",
+      "data/single_anchor_layout_20261029/outputs/lio_增强_no_anchor_peer.npz",
+      "data/single_anchor_layout_20261029/outputs/lio_增强_anchor_区域中部.npz",
+      "data/single_anchor_layout_20261029/outputs/lio_增强_anchor_区域右侧.npz"
+    ],
+    "line_data_sha256": "ef19b3cdc066883b19821ecfd1b886d044783c47c42d4a13431b7b0fcfc5dffb",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/single_anchor_layout_20261029/outputs/lio_基础_no_anchor_peer.npz": "1f4e64e147365724ce708dcb7ae3df7131943d679ade237bb4aea9756b75e308",
+      "data/single_anchor_layout_20261029/outputs/lio_基础_anchor_区域中部.npz": "1fdf1ae73bb1fee1b60f04b6ba26256460a0e7d7baffe25946466a4734d92b78",
+      "data/single_anchor_layout_20261029/outputs/lio_基础_anchor_区域右侧.npz": "e009ff6c96e49b3bc6a8a11cf58dc048463b0d8f2d5545987b9f7290e353f2a7",
+      "data/single_anchor_layout_20261029/outputs/lio_增强_no_anchor_peer.npz": "995a523df353e4cb1e296e0a9f9091a612dff9e8a01095af2ea44412780b6f97",
+      "data/single_anchor_layout_20261029/outputs/lio_增强_anchor_区域中部.npz": "0440531777b36dd9090c37a30fbf3a39b068c56a0c64385cba4fd543b5a964c7",
+      "data/single_anchor_layout_20261029/outputs/lio_增强_anchor_区域右侧.npz": "066b5164da45daf6730e122c39c67a3ab58133031b6fe200f2b6b58b2e834226"
+    }
+  },
+  "layout_单点估计轨迹": {
+    "input_files": [
+      "data/single_anchor_layout_20261029/outputs/lio_增强_anchor_区域中部.npz",
+      "data/single_anchor_layout_20261029/outputs/lio_增强_anchor_区域右侧.npz"
+    ],
+    "line_data_sha256": "afd811306b649a1b1fcd11270e904081317a5625386178d8437d27bbe8191f68",
+    "drawing": "Matplotlib字体排字与数据折线；未使用生成式图片，未对轨迹事后拟合",
+    "input_sha256": {
+      "data/single_anchor_layout_20261029/outputs/lio_增强_anchor_区域中部.npz": "0440531777b36dd9090c37a30fbf3a39b068c56a0c64385cba4fd543b5a964c7",
+      "data/single_anchor_layout_20261029/outputs/lio_增强_anchor_区域右侧.npz": "066b5164da45daf6730e122c39c67a3ab58133031b6fe200f2b6b58b2e834226"
+    }
+  }
+}

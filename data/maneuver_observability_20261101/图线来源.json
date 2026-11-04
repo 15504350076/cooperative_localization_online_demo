@@ -1,0 +1,28 @@
+{
+  "input": "data/single_anchor_outdoor_20261029/truth_and_range_inputs.npz",
+  "profile": "vio_增强",
+  "range_sigma_m": 0.1,
+  "trials": 20,
+  "conditions": [
+    {
+      "name": "低相对机动",
+      "output": "data/maneuver_observability_20261101/outputs/低相对机动.npz",
+      "alpha": 0.6
+    },
+    {
+      "name": "当前相对机动",
+      "output": "data/maneuver_observability_20261101/outputs/当前相对机动.npz",
+      "alpha": 1.0
+    },
+    {
+      "name": "高相对机动",
+      "output": "data/maneuver_observability_20261101/outputs/高相对机动.npz",
+      "alpha": 1.2
+    }
+  ],
+  "figures": [
+    "review_相对机动与可观性",
+    "review_相对机动误差过程"
+  ],
+  "drawing": "由实际受控仿真输出绘制，未手工调整曲线"
+}

@@ -1,0 +1,27 @@
+{
+  "输入与方法_sha256": {
+    "data/single_anchor_outdoor_20261029/truth_and_range_inputs.npz": "ea346c12c9b70d9caf2028d3b6b1e3d67976d5eff860a93b78de656ecedfe67c",
+    "tools/analyze_maneuver_types.py": "3bf34f41d10949642d3470e33db5493bdf6a9bcfcb55539dba2e9324922f56da",
+    "tools/evaluate_single_anchor.py": "c8fe36385c2282ea039b943d952afb1985aa86b5af3eca7321630ac5e6ff8d6e",
+    "tools/evaluate_sensor_anchor_v14.py": "c5822383c11069ed19c2053d44b03c777d1bd2066585c738b405d552603d6581",
+    "tools/plot_sensor_anchor_v14.py": "cd8597279120235dfba62eaec63b21db99ab66123eb567aecf7002b45607f3d6"
+  },
+  "输出_sha256": {
+    "data/maneuver_types_20261102/outputs/同向平行.npz": "47c2256ecd3bd5557dceb32f7d05451105d347ddc8a20003056df7b19a20c256",
+    "data/maneuver_types_20261102/outputs/相对加减速.npz": "15e2575456859ea5ef6912b453b9e66c8b456a7bf3fbdb0cdc428515c22dd077",
+    "data/maneuver_types_20261102/outputs/转弯变队形.npz": "c3224cb9fa3903a6d1c61c2373fa5e5012d6e3f4a18b8de38a7c02a17626ac11",
+    "data/maneuver_types_20261102/outputs/非平行运动.npz": "8746d0d3462bf0a909b763c62ddf42cda4e585181d9d830c99cd5ef56189f2b4",
+    "data/maneuver_types_20261102/summary.json": "a3159871714f9dc34d24b77458126e1ff160d315faf95139db22e49adc318137"
+  },
+  "图表_sha256": {
+    "docs/报告/20261028_协同定位V1.4/figures/review_不同类型机动轨迹.png": "98080a29c01889a28333ebda03f6dc77175075b65019823ebd2e6a7db93e888c",
+    "docs/报告/20261028_协同定位V1.4/figures/review_不同类型机动轨迹.svg": "880334af92982fb3233fd579933c61a3deb6a5a975a28b82fd2c4346bd16edf2",
+    "docs/报告/20261028_协同定位V1.4/figures/review_不同类型机动轨迹.pdf": "c6cb1e972e8095e833d6201f74433bc54879dd4d68597ab9759d127583e51420",
+    "docs/报告/20261028_协同定位V1.4/figures/review_不同类型机动对照.png": "b6ccbf3e8ca4fc880e9b5b98a43ddbc644be3123039114930417f20120d5e269",
+    "docs/报告/20261028_协同定位V1.4/figures/review_不同类型机动对照.svg": "8a2fa19755edad723a20fbc51a200e3bad68e16742ae5bf3f0a71d7707fba80d",
+    "docs/报告/20261028_协同定位V1.4/figures/review_不同类型机动对照.pdf": "96375d973985f8c8eb82ca30e96b64048709d742f2d4256c2269a9c4441cc6ff"
+  },
+  "重算命令": "OPENBLAS_NUM_THREADS=1 python3 tools/analyze_maneuver_types.py",
+  "仅重绘命令": "PYTHONPATH=tools OPENBLAS_NUM_THREADS=1 python3 tools/analyze_maneuver_types.py --plot-only",
+  "说明": "误差曲线由20次定位输出与仿真真值逐时计算；文字由Matplotlib排版。"
+}

@@ -1,0 +1,992 @@
+[
+  {
+    "evaluated_rows": 668,
+    "ready_rows": 435,
+    "status_counts": {
+      "0": 20,
+      "1": 435,
+      "2": 184,
+      "3": 4,
+      "6": 25
+    },
+    "first_ready_s": 12.48,
+    "final_corrections": 109,
+    "accepted_ranges": 1146,
+    "rejected_ranges": 0,
+    "solve_p95_ms": 3.8866924499999977,
+    "solve_max_ms": 465.97379,
+    "local_final_displacement_m": [
+      19.039059624050292,
+      31.939506615101855,
+      44.42420043658064
+    ],
+    "local_ready": [
+      true,
+      true,
+      true
+    ],
+    "local_fault": [
+      false,
+      false,
+      false
+    ],
+    "range_fit_rms_m": 5.263697417548804e-08,
+    "vehicles": {
+      "2": {
+        "position_rmse_m": 4.875821381971645e-07,
+        "position_p95_m": 1.2773176204986023e-06,
+        "position_max_m": 1.9879986753421927e-06,
+        "yaw_rmse_deg": 4.948596449115433e-06
+      },
+      "3": {
+        "position_rmse_m": 2.869001543034472e-07,
+        "position_p95_m": 5.266554923186608e-07,
+        "position_max_m": 6.317746814597119e-07,
+        "yaw_rmse_deg": 2.9763654417617866e-06
+      }
+    },
+    "position_rmse_m": 4.000300238908704e-07,
+    "ready_fraction_after_motion": 0.9294871794871795,
+    "dropout_stale_seen": true,
+    "recovered_after_dropout": true,
+    "name": "sim_odometry_0.00_seed0",
+    "mode": "odometry",
+    "range_sigma_m": 0.0,
+    "seed": 0
+  },
+  {
+    "evaluated_rows": 801,
+    "ready_rows": 520,
+    "status_counts": {
+      "0": 224,
+      "1": 520,
+      "2": 24,
+      "3": 4,
+      "6": 29
+    },
+    "first_ready_s": 12.6,
+    "final_corrections": 129,
+    "accepted_ranges": 841,
+    "rejected_ranges": 305,
+    "solve_p95_ms": 1.472087,
+    "solve_max_ms": 156.045362,
+    "local_final_displacement_m": [
+      19.02381245513634,
+      31.92502649299782,
+      44.41437389692817
+    ],
+    "local_ready": [
+      true,
+      true,
+      true
+    ],
+    "local_fault": [
+      false,
+      false,
+      false
+    ],
+    "range_fit_rms_m": 0.07042247161885248,
+    "vehicles": {
+      "2": {
+        "position_rmse_m": 5.17388447180532,
+        "position_p95_m": 11.459716364690863,
+        "position_max_m": 11.872914329977617,
+        "yaw_rmse_deg": 34.84979508417326
+      },
+      "3": {
+        "position_rmse_m": 8.38935966953149,
+        "position_p95_m": 22.423577769396452,
+        "position_max_m": 26.07994386222234,
+        "yaw_rmse_deg": 74.49563213904985
+      }
+    },
+    "position_rmse_m": 6.9695923909633954,
+    "ready_fraction_after_motion": 0.9269162210338681,
+    "dropout_stale_seen": true,
+    "recovered_after_dropout": true,
+    "name": "sim_imu_ideal_0.00_seed0",
+    "mode": "imu_ideal",
+    "range_sigma_m": 0.0,
+    "seed": 0
+  },
+  {
+    "evaluated_rows": 668,
+    "ready_rows": 419,
+    "status_counts": {
+      "0": 20,
+      "1": 419,
+      "2": 192,
+      "3": 12,
+      "6": 25
+    },
+    "first_ready_s": 13.44,
+    "final_corrections": 105,
+    "accepted_ranges": 1146,
+    "rejected_ranges": 0,
+    "solve_p95_ms": 1.1356477999999999,
+    "solve_max_ms": 87.319159,
+    "local_final_displacement_m": [
+      19.039059624050292,
+      31.939506615101855,
+      44.42420043658064
+    ],
+    "local_ready": [
+      true,
+      true,
+      true
+    ],
+    "local_fault": [
+      false,
+      false,
+      false
+    ],
+    "range_fit_rms_m": 0.018711881261157526,
+    "vehicles": {
+      "2": {
+        "position_rmse_m": 0.08466901848485857,
+        "position_p95_m": 0.19214134134986888,
+        "position_max_m": 0.3190573873068875,
+        "yaw_rmse_deg": 0.35365589305549583
+      },
+      "3": {
+        "position_rmse_m": 0.1565314369938687,
+        "position_p95_m": 0.37366990581063875,
+        "position_max_m": 0.5583066162218554,
+        "yaw_rmse_deg": 0.3970077557341791
+      }
+    },
+    "position_rmse_m": 0.1258390508915154,
+    "ready_fraction_after_motion": 0.8952991452991453,
+    "dropout_stale_seen": true,
+    "recovered_after_dropout": true,
+    "name": "sim_odometry_0.02_seed0",
+    "mode": "odometry",
+    "range_sigma_m": 0.02,
+    "seed": 0
+  },
+  {
+    "evaluated_rows": 668,
+    "ready_rows": 423,
+    "status_counts": {
+      "0": 20,
+      "1": 423,
+      "2": 192,
+      "3": 8,
+      "6": 25
+    },
+    "first_ready_s": 13.2,
+    "final_corrections": 106,
+    "accepted_ranges": 1146,
+    "rejected_ranges": 0,
+    "solve_p95_ms": 4.342729349999999,
+    "solve_max_ms": 426.8585,
+    "local_final_displacement_m": [
+      19.039059624050292,
+      31.939506615101855,
+      44.42420043658064
+    ],
+    "local_ready": [
+      true,
+      true,
+      true
+    ],
+    "local_fault": [
+      false,
+      false,
+      false
+    ],
+    "range_fit_rms_m": 0.01987556634239568,
+    "vehicles": {
+      "2": {
+        "position_rmse_m": 0.10196597563820792,
+        "position_p95_m": 0.18640851326522875,
+        "position_max_m": 0.43177737454062126,
+        "yaw_rmse_deg": 0.733961780422527
+      },
+      "3": {
+        "position_rmse_m": 0.09271787043506814,
+        "position_p95_m": 0.21416175724473527,
+        "position_max_m": 0.29677565933391975,
+        "yaw_rmse_deg": 0.8530106070948559
+      }
+    },
+    "position_rmse_m": 0.09745168979003313,
+    "ready_fraction_after_motion": 0.9038461538461539,
+    "dropout_stale_seen": true,
+    "recovered_after_dropout": true,
+    "name": "sim_odometry_0.02_seed1",
+    "mode": "odometry",
+    "range_sigma_m": 0.02,
+    "seed": 1
+  },
+  {
+    "evaluated_rows": 668,
+    "ready_rows": 419,
+    "status_counts": {
+      "0": 20,
+      "1": 419,
+      "2": 192,
+      "3": 12,
+      "6": 25
+    },
+    "first_ready_s": 13.44,
+    "final_corrections": 105,
+    "accepted_ranges": 1146,
+    "rejected_ranges": 0,
+    "solve_p95_ms": 1.2991499499999997,
+    "solve_max_ms": 169.617115,
+    "local_final_displacement_m": [
+      19.039059624050292,
+      31.939506615101855,
+      44.42420043658064
+    ],
+    "local_ready": [
+      true,
+      true,
+      true
+    ],
+    "local_fault": [
+      false,
+      false,
+      false
+    ],
+    "range_fit_rms_m": 0.019836106733320025,
+    "vehicles": {
+      "2": {
+        "position_rmse_m": 0.16543267306684337,
+        "position_p95_m": 0.3565174290892189,
+        "position_max_m": 0.8567126838961572,
+        "yaw_rmse_deg": 0.6736265427965997
+      },
+      "3": {
+        "position_rmse_m": 0.24680229549492438,
+        "position_p95_m": 0.5283252977600188,
+        "position_max_m": 1.3564486662999171,
+        "yaw_rmse_deg": 0.5904967427974334
+      }
+    },
+    "position_rmse_m": 0.21009443398101368,
+    "ready_fraction_after_motion": 0.8952991452991453,
+    "dropout_stale_seen": true,
+    "recovered_after_dropout": true,
+    "name": "sim_odometry_0.02_seed2",
+    "mode": "odometry",
+    "range_sigma_m": 0.02,
+    "seed": 2
+  },
+  {
+    "evaluated_rows": 668,
+    "ready_rows": 423,
+    "status_counts": {
+      "0": 20,
+      "1": 423,
+      "2": 188,
+      "3": 12,
+      "6": 25
+    },
+    "first_ready_s": 13.2,
+    "final_corrections": 106,
+    "accepted_ranges": 1146,
+    "rejected_ranges": 0,
+    "solve_p95_ms": 3.6990509999999954,
+    "solve_max_ms": 300.323368,
+    "local_final_displacement_m": [
+      19.039059624050292,
+      31.939506615101855,
+      44.42420043658064
+    ],
+    "local_ready": [
+      true,
+      true,
+      true
+    ],
+    "local_fault": [
+      false,
+      false,
+      false
+    ],
+    "range_fit_rms_m": 0.019595212101577497,
+    "vehicles": {
+      "2": {
+        "position_rmse_m": 0.09401308460877691,
+        "position_p95_m": 0.20312229908354856,
+        "position_max_m": 0.40598481488357835,
+        "yaw_rmse_deg": 0.5302407806717567
+      },
+      "3": {
+        "position_rmse_m": 0.12911669253593955,
+        "position_p95_m": 0.2529769868988988,
+        "position_max_m": 0.6264666554711483,
+        "yaw_rmse_deg": 0.5647669361434347
+      }
+    },
+    "position_rmse_m": 0.11293710720812136,
+    "ready_fraction_after_motion": 0.9038461538461539,
+    "dropout_stale_seen": true,
+    "recovered_after_dropout": true,
+    "name": "sim_odometry_0.02_seed3",
+    "mode": "odometry",
+    "range_sigma_m": 0.02,
+    "seed": 3
+  },
+  {
+    "evaluated_rows": 668,
+    "ready_rows": 419,
+    "status_counts": {
+      "0": 20,
+      "1": 419,
+      "2": 188,
+      "3": 16,
+      "6": 25
+    },
+    "first_ready_s": 13.44,
+    "final_corrections": 105,
+    "accepted_ranges": 1140,
+    "rejected_ranges": 6,
+    "solve_p95_ms": 3.6528051999999955,
+    "solve_max_ms": 347.643327,
+    "local_final_displacement_m": [
+      19.039059624050292,
+      31.939506615101855,
+      44.42420043658064
+    ],
+    "local_ready": [
+      true,
+      true,
+      true
+    ],
+    "local_fault": [
+      false,
+      false,
+      false
+    ],
+    "range_fit_rms_m": 0.07325040933267851,
+    "vehicles": {
+      "2": {
+        "position_rmse_m": 5.0699254348642775,
+        "position_p95_m": 11.550215789695644,
+        "position_max_m": 12.053664205952224,
+        "yaw_rmse_deg": 30.581354594464067
+      },
+      "3": {
+        "position_rmse_m": 8.477835356701924,
+        "position_p95_m": 22.536638801049502,
+        "position_max_m": 26.036921882376404,
+        "yaw_rmse_deg": 70.67785721826766
+      }
+    },
+    "position_rmse_m": 6.984906450713172,
+    "ready_fraction_after_motion": 0.8952991452991453,
+    "dropout_stale_seen": true,
+    "recovered_after_dropout": true,
+    "name": "sim_odometry_0.02_seed4",
+    "mode": "odometry",
+    "range_sigma_m": 0.02,
+    "seed": 4
+  },
+  {
+    "evaluated_rows": 668,
+    "ready_rows": 399,
+    "status_counts": {
+      "0": 20,
+      "1": 399,
+      "2": 212,
+      "3": 12,
+      "6": 25
+    },
+    "first_ready_s": 14.64,
+    "final_corrections": 100,
+    "accepted_ranges": 1146,
+    "rejected_ranges": 0,
+    "solve_p95_ms": 3.478795649999999,
+    "solve_max_ms": 326.985262,
+    "local_final_displacement_m": [
+      19.039059624050292,
+      31.939506615101855,
+      44.42420043658064
+    ],
+    "local_ready": [
+      true,
+      true,
+      true
+    ],
+    "local_fault": [
+      false,
+      false,
+      false
+    ],
+    "range_fit_rms_m": 0.09345156793597277,
+    "vehicles": {
+      "2": {
+        "position_rmse_m": 0.46685550248682645,
+        "position_p95_m": 0.9098444064710536,
+        "position_max_m": 2.437706112731498,
+        "yaw_rmse_deg": 1.7156365964199927
+      },
+      "3": {
+        "position_rmse_m": 0.8782063768903772,
+        "position_p95_m": 1.9291120013865104,
+        "position_max_m": 4.14134811918574,
+        "yaw_rmse_deg": 1.6379293227751812
+      }
+    },
+    "position_rmse_m": 0.7032782168577207,
+    "ready_fraction_after_motion": 0.8525641025641025,
+    "dropout_stale_seen": true,
+    "recovered_after_dropout": true,
+    "name": "sim_odometry_0.10_seed0",
+    "mode": "odometry",
+    "range_sigma_m": 0.1,
+    "seed": 0
+  },
+  {
+    "evaluated_rows": 668,
+    "ready_rows": 403,
+    "status_counts": {
+      "0": 20,
+      "1": 403,
+      "2": 204,
+      "3": 16,
+      "6": 25
+    },
+    "first_ready_s": 14.4,
+    "final_corrections": 101,
+    "accepted_ranges": 1139,
+    "rejected_ranges": 7,
+    "solve_p95_ms": 3.1645543999999997,
+    "solve_max_ms": 416.070491,
+    "local_final_displacement_m": [
+      19.039059624050292,
+      31.939506615101855,
+      44.42420043658064
+    ],
+    "local_ready": [
+      true,
+      true,
+      true
+    ],
+    "local_fault": [
+      false,
+      false,
+      false
+    ],
+    "range_fit_rms_m": 0.12062734942725964,
+    "vehicles": {
+      "2": {
+        "position_rmse_m": 4.829709844104539,
+        "position_p95_m": 11.50640459992619,
+        "position_max_m": 11.97331667592032,
+        "yaw_rmse_deg": 25.27669768598785
+      },
+      "3": {
+        "position_rmse_m": 8.55005855391685,
+        "position_p95_m": 22.67597436781188,
+        "position_max_m": 26.162930066890016,
+        "yaw_rmse_deg": 64.06522757510548
+      }
+    },
+    "position_rmse_m": 6.943687725324597,
+    "ready_fraction_after_motion": 0.8611111111111112,
+    "dropout_stale_seen": true,
+    "recovered_after_dropout": true,
+    "name": "sim_odometry_0.10_seed1",
+    "mode": "odometry",
+    "range_sigma_m": 0.1,
+    "seed": 1
+  },
+  {
+    "evaluated_rows": 668,
+    "ready_rows": 399,
+    "status_counts": {
+      "0": 20,
+      "1": 399,
+      "2": 208,
+      "3": 16,
+      "6": 25
+    },
+    "first_ready_s": 14.64,
+    "final_corrections": 100,
+    "accepted_ranges": 1146,
+    "rejected_ranges": 0,
+    "solve_p95_ms": 3.9263567499999987,
+    "solve_max_ms": 190.030409,
+    "local_final_displacement_m": [
+      19.039059624050292,
+      31.939506615101855,
+      44.42420043658064
+    ],
+    "local_ready": [
+      true,
+      true,
+      true
+    ],
+    "local_fault": [
+      false,
+      false,
+      false
+    ],
+    "range_fit_rms_m": 0.09899643706463658,
+    "vehicles": {
+      "2": {
+        "position_rmse_m": 0.9027636577133593,
+        "position_p95_m": 2.2530277418728826,
+        "position_max_m": 4.331551990604864,
+        "yaw_rmse_deg": 2.940905699040395
+      },
+      "3": {
+        "position_rmse_m": 1.37311627503059,
+        "position_p95_m": 3.2918206469322677,
+        "position_max_m": 6.7915253342859385,
+        "yaw_rmse_deg": 2.713305713876639
+      }
+    },
+    "position_rmse_m": 1.1619876347108615,
+    "ready_fraction_after_motion": 0.8525641025641025,
+    "dropout_stale_seen": true,
+    "recovered_after_dropout": true,
+    "name": "sim_odometry_0.10_seed2",
+    "mode": "odometry",
+    "range_sigma_m": 0.1,
+    "seed": 2
+  },
+  {
+    "evaluated_rows": 668,
+    "ready_rows": 403,
+    "status_counts": {
+      "0": 20,
+      "1": 403,
+      "2": 204,
+      "3": 16,
+      "6": 25
+    },
+    "first_ready_s": 14.4,
+    "final_corrections": 101,
+    "accepted_ranges": 1140,
+    "rejected_ranges": 6,
+    "solve_p95_ms": 5.7822308,
+    "solve_max_ms": 628.008727,
+    "local_final_displacement_m": [
+      19.039059624050292,
+      31.939506615101855,
+      44.42420043658064
+    ],
+    "local_ready": [
+      true,
+      true,
+      true
+    ],
+    "local_fault": [
+      false,
+      false,
+      false
+    ],
+    "range_fit_rms_m": 0.1193966042964981,
+    "vehicles": {
+      "2": {
+        "position_rmse_m": 4.8515718931640075,
+        "position_p95_m": 11.522294138024506,
+        "position_max_m": 12.033226154809112,
+        "yaw_rmse_deg": 25.383224142442966
+      },
+      "3": {
+        "position_rmse_m": 8.586274863003606,
+        "position_p95_m": 22.69110442369208,
+        "position_max_m": 26.261038889935467,
+        "yaw_rmse_deg": 64.09435403145986
+      }
+    },
+    "position_rmse_m": 6.973588239120035,
+    "ready_fraction_after_motion": 0.8611111111111112,
+    "dropout_stale_seen": true,
+    "recovered_after_dropout": true,
+    "name": "sim_odometry_0.10_seed3",
+    "mode": "odometry",
+    "range_sigma_m": 0.1,
+    "seed": 3
+  },
+  {
+    "evaluated_rows": 668,
+    "ready_rows": 399,
+    "status_counts": {
+      "0": 20,
+      "1": 399,
+      "2": 216,
+      "3": 8,
+      "6": 25
+    },
+    "first_ready_s": 14.64,
+    "final_corrections": 100,
+    "accepted_ranges": 1146,
+    "rejected_ranges": 0,
+    "solve_p95_ms": 6.799930849999997,
+    "solve_max_ms": 511.009329,
+    "local_final_displacement_m": [
+      19.039059624050292,
+      31.939506615101855,
+      44.42420043658064
+    ],
+    "local_ready": [
+      true,
+      true,
+      true
+    ],
+    "local_fault": [
+      false,
+      false,
+      false
+    ],
+    "range_fit_rms_m": 0.09973769559508061,
+    "vehicles": {
+      "2": {
+        "position_rmse_m": 0.5033790466777889,
+        "position_p95_m": 1.5096992780128884,
+        "position_max_m": 1.7991738580700416,
+        "yaw_rmse_deg": 1.9540466457432066
+      },
+      "3": {
+        "position_rmse_m": 0.939838027410251,
+        "position_p95_m": 2.0547622327518553,
+        "position_max_m": 3.092374020002062,
+        "yaw_rmse_deg": 1.4553536320432638
+      }
+    },
+    "position_rmse_m": 0.7538852639495719,
+    "ready_fraction_after_motion": 0.8525641025641025,
+    "dropout_stale_seen": true,
+    "recovered_after_dropout": true,
+    "name": "sim_odometry_0.10_seed4",
+    "mode": "odometry",
+    "range_sigma_m": 0.1,
+    "seed": 4
+  },
+  {
+    "evaluated_rows": 801,
+    "ready_rows": 504,
+    "status_counts": {
+      "0": 224,
+      "1": 504,
+      "2": 24,
+      "3": 20,
+      "6": 29
+    },
+    "first_ready_s": 13.4,
+    "final_corrections": 125,
+    "accepted_ranges": 841,
+    "rejected_ranges": 305,
+    "solve_p95_ms": 1.573111,
+    "solve_max_ms": 183.969256,
+    "local_final_displacement_m": [
+      18.681137020104913,
+      32.96648295776089,
+      42.8701172150853
+    ],
+    "local_ready": [
+      true,
+      true,
+      true
+    ],
+    "local_fault": [
+      false,
+      false,
+      false
+    ],
+    "range_fit_rms_m": 0.07776539465437236,
+    "vehicles": {
+      "2": {
+        "position_rmse_m": 5.113902433338274,
+        "position_p95_m": 11.499734901742874,
+        "position_max_m": 11.873251012609167,
+        "yaw_rmse_deg": 30.71398722982609
+      },
+      "3": {
+        "position_rmse_m": 8.527721768716795,
+        "position_p95_m": 22.59180856406409,
+        "position_max_m": 26.07111873480038,
+        "yaw_rmse_deg": 70.43492623461235
+      }
+    },
+    "position_rmse_m": 7.031146302785536,
+    "ready_fraction_after_motion": 0.8983957219251337,
+    "dropout_stale_seen": true,
+    "recovered_after_dropout": true,
+    "name": "sim_imu_noisy_0.02_seed0",
+    "mode": "imu_noisy",
+    "range_sigma_m": 0.02,
+    "seed": 0
+  },
+  {
+    "evaluated_rows": 801,
+    "ready_rows": 496,
+    "status_counts": {
+      "0": 224,
+      "1": 496,
+      "2": 20,
+      "3": 32,
+      "6": 29
+    },
+    "first_ready_s": 13.4,
+    "final_corrections": 123,
+    "accepted_ranges": 846,
+    "rejected_ranges": 300,
+    "solve_p95_ms": 1.122405,
+    "solve_max_ms": 179.160699,
+    "local_final_displacement_m": [
+      18.513190380583463,
+      30.522414379291465,
+      43.51348986703132
+    ],
+    "local_ready": [
+      true,
+      true,
+      true
+    ],
+    "local_fault": [
+      false,
+      false,
+      false
+    ],
+    "range_fit_rms_m": 0.027149200294689004,
+    "vehicles": {
+      "2": {
+        "position_rmse_m": 0.46471284466191576,
+        "position_p95_m": 1.1512643374737712,
+        "position_max_m": 1.309679946398545,
+        "yaw_rmse_deg": 2.4420684752007613
+      },
+      "3": {
+        "position_rmse_m": 1.165639698107547,
+        "position_p95_m": 2.15042583273943,
+        "position_max_m": 3.5794158303256505,
+        "yaw_rmse_deg": 2.0314336794948002
+      }
+    },
+    "position_rmse_m": 0.8873201039641847,
+    "ready_fraction_after_motion": 0.8841354723707665,
+    "dropout_stale_seen": true,
+    "recovered_after_dropout": true,
+    "name": "sim_imu_noisy_0.02_seed1",
+    "mode": "imu_noisy",
+    "range_sigma_m": 0.02,
+    "seed": 1
+  },
+  {
+    "evaluated_rows": 801,
+    "ready_rows": 504,
+    "status_counts": {
+      "0": 224,
+      "1": 504,
+      "2": 24,
+      "3": 20,
+      "6": 29
+    },
+    "first_ready_s": 13.4,
+    "final_corrections": 125,
+    "accepted_ranges": 846,
+    "rejected_ranges": 300,
+    "solve_p95_ms": 2.156165,
+    "solve_max_ms": 288.035144,
+    "local_final_displacement_m": [
+      17.76042168290532,
+      31.932255336135295,
+      46.196856791515465
+    ],
+    "local_ready": [
+      true,
+      true,
+      true
+    ],
+    "local_fault": [
+      false,
+      false,
+      false
+    ],
+    "range_fit_rms_m": 0.028007899985460546,
+    "vehicles": {
+      "2": {
+        "position_rmse_m": 1.911956574398432,
+        "position_p95_m": 4.1425804485119055,
+        "position_max_m": 5.87004621755186,
+        "yaw_rmse_deg": 7.149389116479396
+      },
+      "3": {
+        "position_rmse_m": 4.117672767950458,
+        "position_p95_m": 8.606068525798147,
+        "position_max_m": 11.54707739225598,
+        "yaw_rmse_deg": 7.31767277270334
+      }
+    },
+    "position_rmse_m": 3.2102030283384084,
+    "ready_fraction_after_motion": 0.8983957219251337,
+    "dropout_stale_seen": true,
+    "recovered_after_dropout": true,
+    "name": "sim_imu_noisy_0.02_seed2",
+    "mode": "imu_noisy",
+    "range_sigma_m": 0.02,
+    "seed": 2
+  },
+  {
+    "evaluated_rows": 801,
+    "ready_rows": 476,
+    "status_counts": {
+      "0": 224,
+      "1": 476,
+      "2": 44,
+      "3": 28,
+      "6": 29
+    },
+    "first_ready_s": 14.6,
+    "final_corrections": 118,
+    "accepted_ranges": 846,
+    "rejected_ranges": 300,
+    "solve_p95_ms": 2.013941,
+    "solve_max_ms": 253.512858,
+    "local_final_displacement_m": [
+      18.681137020104913,
+      32.96648295776089,
+      42.8701172150853
+    ],
+    "local_ready": [
+      true,
+      true,
+      true
+    ],
+    "local_fault": [
+      false,
+      false,
+      false
+    ],
+    "range_fit_rms_m": 0.10121723956573403,
+    "vehicles": {
+      "2": {
+        "position_rmse_m": 0.8544998235719848,
+        "position_p95_m": 1.867088309479816,
+        "position_max_m": 3.549419454732778,
+        "yaw_rmse_deg": 2.697692209972101
+      },
+      "3": {
+        "position_rmse_m": 1.5692761808800118,
+        "position_p95_m": 3.351343401565027,
+        "position_max_m": 6.412657993571108,
+        "yaw_rmse_deg": 2.2804618774368195
+      }
+    },
+    "position_rmse_m": 1.2634867787915132,
+    "ready_fraction_after_motion": 0.8484848484848485,
+    "dropout_stale_seen": true,
+    "recovered_after_dropout": true,
+    "name": "sim_imu_noisy_0.10_seed0",
+    "mode": "imu_noisy",
+    "range_sigma_m": 0.1,
+    "seed": 0
+  },
+  {
+    "evaluated_rows": 801,
+    "ready_rows": 480,
+    "status_counts": {
+      "0": 224,
+      "1": 480,
+      "2": 36,
+      "3": 32,
+      "6": 29
+    },
+    "first_ready_s": 14.6,
+    "final_corrections": 119,
+    "accepted_ranges": 846,
+    "rejected_ranges": 300,
+    "solve_p95_ms": 2.428528,
+    "solve_max_ms": 257.098433,
+    "local_final_displacement_m": [
+      18.513190380583463,
+      30.522414379291465,
+      43.51348986703132
+    ],
+    "local_ready": [
+      true,
+      true,
+      true
+    ],
+    "local_fault": [
+      false,
+      false,
+      false
+    ],
+    "range_fit_rms_m": 0.0983495218783796,
+    "vehicles": {
+      "2": {
+        "position_rmse_m": 0.6459574221516509,
+        "position_p95_m": 1.1458236571127782,
+        "position_max_m": 2.4413960870914355,
+        "yaw_rmse_deg": 2.866695886519808
+      },
+      "3": {
+        "position_rmse_m": 1.3271279530281437,
+        "position_p95_m": 3.398423980289259,
+        "position_max_m": 4.260122578895868,
+        "yaw_rmse_deg": 2.159472944970379
+      }
+    },
+    "position_rmse_m": 1.043678493344928,
+    "ready_fraction_after_motion": 0.8556149732620321,
+    "dropout_stale_seen": true,
+    "recovered_after_dropout": true,
+    "name": "sim_imu_noisy_0.10_seed1",
+    "mode": "imu_noisy",
+    "range_sigma_m": 0.1,
+    "seed": 1
+  },
+  {
+    "evaluated_rows": 801,
+    "ready_rows": 484,
+    "status_counts": {
+      "0": 224,
+      "1": 484,
+      "2": 36,
+      "3": 28,
+      "6": 29
+    },
+    "first_ready_s": 14.4,
+    "final_corrections": 120,
+    "accepted_ranges": 840,
+    "rejected_ranges": 306,
+    "solve_p95_ms": 1.765102,
+    "solve_max_ms": 227.380079,
+    "local_final_displacement_m": [
+      17.76042168290532,
+      31.932255336135295,
+      46.196856791515465
+    ],
+    "local_ready": [
+      true,
+      true,
+      true
+    ],
+    "local_fault": [
+      false,
+      false,
+      false
+    ],
+    "range_fit_rms_m": 0.12103050773792791,
+    "vehicles": {
+      "2": {
+        "position_rmse_m": 5.355856522899324,
+        "position_p95_m": 11.437368289194671,
+        "position_max_m": 11.777998270209343,
+        "yaw_rmse_deg": 25.752064051922133
+      },
+      "3": {
+        "position_rmse_m": 9.761916508741303,
+        "position_p95_m": 22.809582053919822,
+        "position_max_m": 26.216757833237885,
+        "yaw_rmse_deg": 64.57216627549086
+      }
+    },
+    "position_rmse_m": 7.873379611625468,
+    "ready_fraction_after_motion": 0.8627450980392157,
+    "dropout_stale_seen": true,
+    "recovered_after_dropout": true,
+    "name": "sim_imu_noisy_0.10_seed2",
+    "mode": "imu_noisy",
+    "range_sigma_m": 0.1,
+    "seed": 2
+  }
+]

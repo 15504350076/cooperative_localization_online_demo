@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>三车RTE坐标系 · 对照与回放</title>
+<style>
+:root{color-scheme:light;--ink:#193d3d;--muted:#5f7473;--line:#d8e2df;--teal:#167b77;--orange:#c76b30}
+*{box-sizing:border-box}body{margin:0;background:#f2f5f1;color:var(--ink);font:15px/1.65 "Noto Sans CJK SC","Microsoft YaHei",sans-serif}
+main{max-width:2200px;margin:auto;padding:20px 24px}header{display:flex;justify-content:space-between;gap:25px;align-items:center}
+h1{font-size:28px;line-height:1.3;margin:5px 0}h2{font-size:20px;margin:0 0 6px}p{margin:6px 0;color:var(--muted)}small,.eyebrow{font-size:13px;color:var(--muted)}.eyebrow{letter-spacing:2px}
+.badge{padding:8px 14px;border-radius:24px;background:#e2eddf;white-space:nowrap}.notice{margin:20px 0;padding:12px 18px;border-left:4px solid var(--orange);background:#fff4e4;color:#75502b}
+.tabs{display:flex;gap:8px;margin:16px 0}.tabs button{padding:9px 24px;font-size:17px}.tabs button[aria-selected="true"]{color:white;background:var(--teal);border-color:var(--teal)}button:focus-visible,select:focus-visible{outline:3px solid #6fb8b0;outline-offset:3px}[hidden]{display:none!important}
+.controls{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px;background:white;border:1px solid var(--line);border-radius:12px}
+select,button{font:inherit;color:var(--ink);background:white;border:1px solid #b9cdc8;border-radius:7px;padding:6px 12px}button{cursor:pointer}button:hover{background:#eaf3ef}input{accent-color:var(--teal)}#time{flex:1;min-width:120px}
+.views{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:12px}.card{background:white;border:1px solid var(--line);border-radius:12px;overflow:hidden}.card .top{padding:16px 18px 0;display:flex;align-items:center;justify-content:space-between;gap:8px}.number{color:var(--teal);font-size:13px;font-weight:700;letter-spacing:1px}.plot{width:100%;height:clamp(460px,calc((100vw - 112px) / 3),720px);display:block}.expand{font-size:14px;white-space:nowrap;padding:6px 9px}.views.focused{grid-template-columns:1fr}.views.focused .card:not(.selected){display:none}.views.focused .plot{height:clamp(540px,calc(100vh - 285px),1000px)}
+.panel{padding:22px;max-width:1440px;margin:0 auto}.facts{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0}.fact{padding:10px 12px;background:#f0f5f2;border-radius:7px}.fact b{display:block;font-size:20px}.fact small{display:block}.table-scroll{overflow-x:auto}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:17px}th,td{padding:12px;text-align:right;border-bottom:1px solid var(--line)}th:first-child,td:first-child{text-align:left}th{color:var(--muted);font-weight:500}.legend{font-size:15px;color:var(--muted);margin:12px 0}.legend span{margin-right:18px}a{color:var(--teal)}.explain{font-size:16px}.explain h3{font-size:19px;margin:24px 0 6px}.frame{font:14px/1.7 monospace;color:var(--muted);overflow-wrap:anywhere}code{font-size:14px;overflow-wrap:anywhere}#status{font-weight:600;color:var(--teal)}.hidden{display:none!important}
+@media(max-width:1100px){.views{grid-template-columns:1fr}.plot{height:500px}.views.focused .plot{height:600px}main{padding:16px}header{display:block}.badge{display:inline-block;margin-top:8px}.card .top h2{font-size:20px}.facts{grid-template-columns:1fr}.tabs button{padding:9px 16px}.panel{padding:18px}table{font-size:15px}}
+</style>
+<main>
+<header><div><div class="eyebrow">协同定位 / 坐标约定</div><h1>同一组车辆，三种坐标表达</h1></div><div class="badge" id="badge">几何示意 · 无真实定位数据</div></header>
+<nav class="tabs" role="tablist" aria-label="页面内容">
+<button id="tab-graphs" role="tab" aria-selected="true" aria-controls="graphs-panel" data-tab="graphs">图形视图</button>
+<button id="tab-data" role="tab" aria-selected="false" aria-controls="data-panel" data-tab="data" tabindex="-1">坐标数据</button>
+<button id="tab-guide" role="tab" aria-selected="false" aria-controls="guide-panel" data-tab="guide" tabindex="-1">使用说明</button>
+</nav>
+<section id="graphs-panel" role="tabpanel" aria-labelledby="tab-graphs">
+<div class="controls">
+<label for="scenario">运动情景</label><select id="scenario"><option value="orbit">201、203不动，202绕201运动</option><option value="fleet">三车整体平移并转向</option><option value="training">大运动范围三车运动</option><option value="heading">只有201原地转向</option><option value="mirror">203穿过201—202连线</option></select>
+<button id="play">暂停</button><button id="reset">回到起点</button><label for="time">时间</label><input id="time" type="range" min="0" max="40" step="0.1" value="0"><output id="seconds">0.0 秒</output>
+</div>
+<div class="legend"><span style="color:#167b77">● 201 / 逻辑1</span><span style="color:#c76b30">● 202 / 逻辑2</span><span style="color:#5369b0">● 203 / 逻辑3</span>箭头表示车头方向，轨迹线表示运动历史。</div>
+<div class="views" id="views">
+<section class="card" data-plot="triangle"><div class="top"><div><div class="number">01 / UWB相对几何</div><h2>连线定轴，原点跟车</h2></div><button class="expand" data-view="triangle" aria-pressed="false">单图放大</button></div><canvas class="plot" id="triangle" aria-label="旧UWB三角形坐标对照"></canvas></section>
+<section class="card" data-plot="relative"><div class="top"><div><div class="number">02 / RTE相对坐标</div><h2>轴向固定，原点跟车</h2></div><button class="expand" data-view="relative" aria-pressed="false">单图放大</button></div><canvas class="plot" id="relative" aria-label="RTE固定轴向相对坐标"></canvas></section>
+<section class="card" data-plot="task"><div class="top"><div><div class="number">03 / 任务坐标</div><h2>轴向固定，原点固定</h2></div><button class="expand" data-view="task" aria-pressed="false">单图放大</button></div><canvas class="plot" id="task" aria-label="固定任务坐标与三车轨迹"></canvas></section>
+</div>
+</section>
+<section id="data-panel" role="tabpanel" aria-labelledby="tab-data" hidden>
+<section class="card panel"><h2>读取坐标与有效性</h2><div class="legend"><span style="color:#167b77">● 201 / 逻辑1</span><span style="color:#c76b30">● 202 / 逻辑2</span><span style="color:#5369b0">● 203 / 逻辑3</span>箭头：车头；淡线：历史轨迹</div>
+<div class="facts"><div class="fact"><small>当前状态</small><b id="status">几何示意</b></div><div class="fact"><small>任务X轴相对输入L1的角度</small><b id="angle">35.0°（示意）</b></div></div>
+<label for="tableFrame">表格坐标</label> <select id="tableFrame"><option value="relative">RTE固定轴向相对系</option><option value="task">固定任务系</option><option value="triangle">UWB几何规范化对照</option></select>
+<div class="table-scroll"><table><thead><tr><th>车辆</th><th>X / 米</th><th>Y / 米</th><th>车头航向 / 度</th><th>位置有效</th></tr></thead><tbody id="rows"></tbody></table></div>
+<p id="epoch" class="explain">示意时间不对应真实传感器Header。</p></section>
+</section>
+<section id="guide-panel" role="tabpanel" aria-labelledby="tab-guide" hidden>
+<section class="card panel explain"><h2>如何解读三种坐标</h2><div class="notice" id="notice">此页默认展示理想几何动画，用来解释坐标差异；网页不发送车辆控制指令。</div><p id="insight"></p>
+<h3>01 UWB规范相对三角形</h3><p>201始终为原点；X轴每帧对准202；203取正Y镜像分支。202绕行时，静止的203也会在图上移动。镜像规范化不能判定真实左右关系。</p><div class="frame">coop_ref_1_relative（几何对照，非旧节点实测输出）</div>
+<h3>02 固定轴向相对坐标</h3><p>原点跟随201；X轴只在首次有效历元对准202，之后不随车头或连线转动。适合相对队形与协同状态表达；201位置为零，其航向可以改变。</p><div class="frame" id="relativeFrame">coop_rte_1_relative_fixed</div>
+<h3>03 固定任务坐标</h3><p>原点为首次有效历元的201位置；与相对坐标保持同一轴向，显示整体运动轨迹。适合轨迹、地图和规划对接；地图北向通过外部变换接入。</p><div class="frame" id="taskFrame">coop_rte_1_task（网页/JSON视图）</div>
+<h3>数据与会话</h3><p><b>原输入仍保留：</b><code>coop_rte_1_local</code>的原点在201当前的位置，轴向平行201局部里程计系L1；新适配器只施加统一旋转，并用同历元201位置还原任务平移。</p><p><b>新轴只锁定一次：</b>首个有效历元记为t₀，201→202方向记为β；此后保持β。203可在正Y或负Y侧，不强制翻成正Y。</p><p><b>新相对话题：</b><code>/cooperative_localization/rte/coordinates/poses_2d</code>。任务坐标仅在本页与<code>/api/state</code>中提供，保持与原相对位置消息分开。</p><p><b>状态更新时间：</b>有效Header超过0.5秒不推进即撤销有效位；时间回退锁定为不可用，需重启会话。位姿和参考车里程计按原始Header配对，录包时间单独保存。</p><p><b>会话管理：</b>任一局部里程计复位或参考车改变时，协调重启RTE和此适配器。网页中的新坐标系不自动发布TF。</p><p>完整约定、启动步骤和本轮测试问题见 <a href="../参考/46_RTE坐标系与独立可视化.md">46_RTE坐标系与独立可视化.md</a>（本地文件阅读）。</p></section>
+</section>
+</main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id), colors=['#167b77','#c76b30','#5369b0'];
+const rot=(p,a)=>[Math.cos(a)*p[0]-Math.sin(a)*p[1],Math.sin(a)*p[0]+Math.cos(a)*p[1]];
+const wrap=a=>Math.atan2(Math.sin(a),Math.cos(a));
+let live=null, payload=null, playing=true, elapsed=0, last=performance.now(), lastStamp='', histories={triangle:[],relative:[],task:[]};
+const insights={orbit:'先看203：它在场地里不动，中图和右图位置不变；左图由于X轴跟着202旋转，203坐标持续变化。这说明旧规范三角形适合显示几何关系，不能直接作为固定轴向的航位推算坐标。',fleet:'中图中201仍为零，另外两车表达相对201的位移；右图保留201的平移，可观察整个编队经过的轨迹。原点跟车与固定原点承担不同用途。',training:'该情景将三车运动范围扩展到较大尺度，右图保留约百米范围内的整体轨迹，中图继续表达相对201的队形变化；拖动时间条可查看远距离、转向和车间距变化。',heading:'201原地转向时，中图坐标轴不旋转，201的位置仍为零，但车头箭头和航向值会变化。因此“201在原点”不等于“201航向为零”。',mirror:'203越过两车连线时，中图和右图的Y坐标会改变符号；旧三角形强制使用正Y，无法表达越线前后的真实左右关系。'};
+function demo(t,scenario){
+ let host=[0,0], a=0, p2=[5,0], p3=[1.4,3], yaws=[0,Math.PI/2,0];
+ if(scenario==='orbit'){a=t/8;p2=rot(p2,a);yaws[1]=a+Math.PI/2;}
+ if(scenario==='fleet'){a=t/12;host=[3*Math.sin(t/12),t/7];p2=rot(p2,a).map((x,i)=>x+host[i]);p3=rot(p3,a).map((x,i)=>x+host[i]);yaws=[a,a,a];}
+ if(scenario==='training'){const u=t;host=[24*Math.sin(u/9),18*Math.sin(u/11)];p2=[25+20*Math.sin(u/8),-8+16*Math.cos(u/10)];p3=[-30+26*Math.cos(u/12),18*Math.sin(u/7)];yaws=[Math.atan2(Math.cos(u/9),1),Math.atan2(-Math.sin(u/8),1),Math.atan2(Math.cos(u/12),-Math.sin(u/7))];}
+ if(scenario==='heading')yaws[0]=t/5;
+ if(scenario==='mirror')p3[1]=3*Math.cos(t/7);
+ const task=[host,p2,p3].map((p,i)=>({id:i+1,x:p[0],y:p[1],yaw:wrap(yaws[i]),yaw_valid:true,position_valid:true}));
+ const relative=task.map(v=>({...v,x:v.x-host[0],y:v.y-host[1]}));
+ const theta=Math.atan2(relative[1].y,relative[1].x), side=rot([relative[2].x,relative[2].y],-theta)[1]<0?-1:1;
+ const triangle=relative.map(v=>{const p=rot([v.x,v.y],-theta);return {...v,x:p[0],y:side*p[1],yaw_valid:false};});
+ return {valid:true,live:false,triangle,relative,task,anchor:{beta:35*Math.PI/180},stamp_ns:'示意',reason:'理想几何动画；未运行RTE'};
+}
+function draw(id, vehicles, valid, history){
+ const canvas=$(id), box=canvas.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
+ if(!box.width||!box.height)return;
+ if(canvas.width!==Math.round(box.width*dpr)||canvas.height!==Math.round(box.height*dpr)){canvas.width=Math.round(box.width*dpr);canvas.height=Math.round(box.height*dpr);}
+ const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);const w=box.width,h=box.height;
+ ctx.clearRect(0,0,w,h);const maxCoord=Math.max(2,...vehicles.flatMap(v=>[Math.abs(v.x),Math.abs(v.y)]),...history.flatMap(frame=>frame.flatMap(v=>[Math.abs(v.x),Math.abs(v.y)])));
+ const desired=maxCoord*1.2,base=10**Math.floor(Math.log10(desired/3)),ratio=desired/3/base;
+ const step=(ratio<=1.000000001?1:ratio<=2.000000001?2:ratio<=5.000000001?5:10)*base,extent=Math.ceil(desired/step)*step;
+ const scale=Math.min(w-110,h-110)/(extent*2),cx=w/2,cy=h/2,left=cx-extent*scale,right=cx+extent*scale,top=cy-extent*scale,bottom=cy+extent*scale;
+ const xy=v=>[cx+v.x*scale,cy-v.y*scale];ctx.font='17px sans-serif';ctx.lineWidth=1;
+ for(let i=-Math.round(extent/step);i<=Math.round(extent/step);i++){
+  const n=Number((i*step).toPrecision(10));ctx.strokeStyle=i===0?'#809e97':'#e3ebe8';ctx.lineWidth=i===0?1.8:1;
+  ctx.beginPath();ctx.moveTo(cx+n*scale,top);ctx.lineTo(cx+n*scale,bottom);ctx.stroke();ctx.beginPath();ctx.moveTo(left,cy-n*scale);ctx.lineTo(right,cy-n*scale);ctx.stroke();
+  ctx.fillStyle='#46665f';ctx.textAlign='center';ctx.fillText(String(n),cx+n*scale,bottom+25);ctx.textAlign='right';ctx.fillText(String(n),left-12,cy-n*scale+6);
+ }
+ ctx.textAlign='right';ctx.font='18px sans-serif';ctx.fillText('X / 米',right,bottom+49);ctx.textAlign='left';ctx.fillText('Y / 米',left,top-18);
+ if(!valid){ctx.fillStyle='#8d6450';ctx.font='20px sans-serif';ctx.textAlign='center';ctx.fillText('当前无有效坐标',w/2,h/2-24);ctx.textAlign='left';return;}
+ vehicles.forEach((v,i)=>{ctx.strokeStyle=colors[i]+'a6';ctx.lineWidth=2.8;ctx.beginPath();history.forEach((frame,k)=>{const p=frame[i];if(p){const [x,y]=xy(p);k?ctx.lineTo(x,y):ctx.moveTo(x,y);}});ctx.stroke();});
+ ctx.setLineDash([7,5]);ctx.strokeStyle='#819f97';ctx.lineWidth=2;ctx.beginPath();vehicles.forEach((v,i)=>{const [x,y]=xy(v);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.closePath();ctx.stroke();ctx.setLineDash([]);
+ vehicles.forEach((v,i)=>{const [x,y]=xy(v);ctx.fillStyle=colors[i];ctx.beginPath();ctx.arc(x,y,9,0,Math.PI*2);ctx.fill();ctx.strokeStyle='white';ctx.lineWidth=2;ctx.stroke();ctx.font='bold 19px sans-serif';ctx.fillText(v.id<=3?String(200+v.id):String(v.id),x+14,y-13);if(v.yaw_valid){const dx=32*Math.cos(v.yaw),dy=-32*Math.sin(v.yaw);ctx.strokeStyle=colors[i];ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+dx,y+dy);ctx.lineTo(x+dx-11*Math.cos(v.yaw+.4),y+dy+11*Math.sin(v.yaw+.4));ctx.moveTo(x+dx,y+dy);ctx.lineTo(x+dx-11*Math.cos(v.yaw-.4),y+dy+11*Math.sin(v.yaw-.4));ctx.stroke();}});
+}
+function render(){
+ const view=live?payload:live===false?demo(elapsed,$('scenario').value):{valid:false};
+ if(!view)return;
+ if(!live){histories={triangle:[],relative:[],task:[]};if(live===false)for(let t=0;t<=elapsed;t+=.25){const past=demo(t,$('scenario').value);for(const key in histories)histories[key].push(past[key]);}}
+ else if(view.valid&&view.stamp_ns!==lastStamp){for(const key in histories){histories[key].push(view[key]);if(histories[key].length>500)histories[key].shift();}lastStamp=view.stamp_ns;}
+ for(const key in histories)draw(key,view[key]||[],view.valid,histories[key]);
+ $('seconds').textContent=elapsed.toFixed(1)+' 秒';$('time').value=elapsed;
+ $('status').textContent=live?(view.valid?'变换有效（试验）':'等待 / 不可用'):'几何示意';
+ $('angle').textContent=view.anchor?(view.anchor.beta*180/Math.PI).toFixed(1)+'°'+(live?'':'（示意）'):'尚未锁定';
+ $('rows').replaceChildren();for(const v of view[$('tableFrame').value]||[]){const row=document.createElement('tr');const good=!!view.valid;const text=[v.id<=3?`${200+v.id}（${v.id}）`:String(v.id),good?v.x.toFixed(3):'—',good?v.y.toFixed(3):'—',good&&v.yaw_valid?(v.yaw*180/Math.PI).toFixed(1):'未知',good?'是':'否'];for(const x of text){const td=document.createElement('td');td.textContent=x;row.append(td);}$('rows').append(row);}
+ $('epoch').textContent=live?`原始测量Header：${view.stamp_ns||'等待'} 纳秒；有效Header推进后的本机经过时间：${view.age_s==null?'未知':view.age_s.toFixed(2)+'秒'}。${view.reason||''}`:'示意时间不对应真实传感器Header。';
+ $('insight').textContent=live?'当前数据来自RTE输入；左图仅将同一批RTE几何规范化，以比较旧坐标定义，不是原UWB节点实测结果。坐标变换不会提高RTE精度，也不会把无效结果变为有效。':insights[$('scenario').value];
+ if(view.relative_frame)$('relativeFrame').textContent=view.relative_frame;
+ if(view.task_frame)$('taskFrame').textContent=view.task_frame+'（网页/JSON视图）';
+}
+async function poll(){
+ try{const response=await fetch('/api/state',{cache:'no-store',signal:AbortSignal.timeout(1500)});if(!response.ok)throw Error('HTTP错误');payload=await response.json();live=payload.live;
+ if(live){$('badge').textContent='ROS 2输入 · RTE试验通道';$('notice').textContent='当前为真实ROS消息的坐标转换视图。坐标有效字段来自输入与变换状态；定位精度按独立测试结果读取。旧UWB程序和原RTE输出均保留。';for(const id of ['scenario','play','reset','time'])$(id).disabled=true;}}
+ catch(error){if(live!==false){live=true;payload={valid:false,reason:'HTTP数据连接中断；未切换到示意数据'};}}
+ render();setTimeout(poll,150);
+}
+$('play').onclick=()=>{playing=!playing;$('play').textContent=playing?'暂停':'播放';};
+$('reset').onclick=()=>{elapsed=0;render();};$('scenario').onchange=()=>{elapsed=0;render();};
+$('time').oninput=()=>{elapsed=Number($('time').value);playing=false;$('play').textContent='播放';render();};$('tableFrame').onchange=render;
+const tabs=[...document.querySelectorAll('[role="tab"]')];
+function selectTab(tab){
+ for(const button of tabs){const active=button===tab;button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;$(button.getAttribute('aria-controls')).hidden=!active;}
+ requestAnimationFrame(render);
+}
+tabs.forEach((button,index)=>{button.onclick=()=>selectTab(button);button.onkeydown=event=>{if(event.key==='ArrowRight'||event.key==='ArrowLeft'){event.preventDefault();const next=tabs[(index+(event.key==='ArrowRight'?1:tabs.length-1))%tabs.length];next.focus();selectTab(next);}};});
+document.querySelectorAll('.expand').forEach(button=>{button.onclick=()=>{
+ const card=button.closest('.card'),wasSelected=card.classList.contains('selected');
+ $('views').classList.toggle('focused',!wasSelected);
+ document.querySelectorAll('[data-plot]').forEach(item=>item.classList.toggle('selected',!wasSelected&&item===card));
+ document.querySelectorAll('.expand').forEach(item=>{const active=!wasSelected&&item===button;item.textContent=active?'恢复三图':'单图放大';item.setAttribute('aria-pressed',String(active));});
+ requestAnimationFrame(render);
+};});
+function animate(now){const dt=Math.min((now-last)/1000,.1);last=now;if(live===false&&playing)elapsed=(elapsed+dt)%40;render();requestAnimationFrame(animate);}
+if(location.protocol==='file:')live=false;else poll();requestAnimationFrame(animate);
+window.coordinateDemo=demo; // 用同一计算入口进行浏览器几何回归，未暴露任何硬件操作。
+</script>
+</html>
